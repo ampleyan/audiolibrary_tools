@@ -14,7 +14,7 @@ CONFIG – edit before running:
 """
 
 SOURCE_DIR = r"D:\MUSIC\TO PROCESS"   # folder containing album sub-folders
-DRY_RUN    = True                      # set False to actually rename
+DRY_RUN    = False                      # set False to actually rename
 
 # Known overrides – add any folder whose auto-detected name comes out wrong.
 # Key = current folder name, Value = desired folder name (or None to auto-detect).
@@ -47,7 +47,7 @@ SKIP_FOLDERS = {
 
 # ---------------------------------------------------------------------------
 
-import os, re
+import os, re, shutil
 
 from musiclib import (
     AUDIO_EXT, safe_name, build_folder_name,
@@ -134,7 +134,10 @@ def main():
             new_name = auto_detect_name(path, fd)
 
         if not new_name:
-            print(f"  ⚠  no audio found, skipping: {fd}")
+            contents = [f for f in os.listdir(path) if not f.startswith('.')]
+            print(f"  🗑  no audio, removing ({len(contents)} file(s)): {fd}")
+            if not DRY_RUN:
+                shutil.rmtree(path)
             skipped += 1
             continue
 
