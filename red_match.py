@@ -155,6 +155,10 @@ class RedAPI:
         """Return full torrent details including file list."""
         return self._get('/ajax.php', {'action': 'torrent', 'id': torrent_id})
 
+    def get_group(self, group_id):
+        """Return full torrent group with ALL torrents (search results may omit some)."""
+        return self._get('/ajax.php', {'action': 'torrentgroup', 'id': group_id})
+
     def download_torrent(self, torrent_id, dest_path):
         """
         Download .torrent file to dest_path (Path object).
@@ -731,7 +735,7 @@ def prepare_upload_candidate(folder_path, group, mismatch_torrents, local_fmt, l
         ),
         'instructions': [
             f"1. Verify local files are a valid {local_fmt} release of this album.",
-            f"2. Create a torrent for: {folder_path}",
+            f"2. Create a torrent pointing to the folder inside {UPLOAD_DIR}",
             f"   Announce URL: {RED_BASE_URL}/announce/{{YOUR_PASSKEY}}",
             f"   Private: yes",
             f"3. Upload to group: {RED_BASE_URL}/torrents.php?id={group_id}",
@@ -740,21 +744,154 @@ def prepare_upload_candidate(folder_path, group, mismatch_torrents, local_fmt, l
         ],
     }
 
-    # Write JSON to UPLOAD_DIR
-    upload_dir = Path(UPLOAD_DIR)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    safe_folder = re.sub(r'[<>:"/\\|?*]', '_', folder_path.name)
-    out_path = upload_dir / f"{safe_folder}._upload_info.json"
-    out_path.write_bytes(json.dumps(info, ensure_ascii=False, indent=2).encode('utf-8'))
-
     print(f"\n  UPLOAD CANDIDATE detected:")
     print(f"    Group   : {group_artist} - {group_name} ({group_year})")
     print(f"    RED URL : {RED_BASE_URL}/torrents.php?id={group_id}")
     print(f"    RED has : {', '.join(existing_fmts)}")
     print(f"    You have: {local_fmt}  ({len(local_files)} files)")
-    print(f"    Saved   : {out_path}")
 
-    return out_path
+    return info   # caller handles validation + staging
+
+
+# ─── UPLOAD VALIDATION & STAGING ─────────────────────────────────────────────
+
+import subprocess as _sp
+
+def _ffmpeg_available():
+    try:
+        _sp.run(['ffmpeg', '-version'], capture_output=True, check=True, timeout=5)
+        return True
+    except Exception:
+        return False
+
+
+def _spectral_check(audio_file, test_hz=16000, threshold_db=-50.0):
+    """
+    Apply a high-pass filter at test_hz via ffmpeg and measure the remaining volume.
+    If max volume above test_hz is below threshold_db, the file likely has no
+    high-frequency content — typical of a lossy transcode.
+
+    Returns (ok: bool, description: str).
+    """
+    try:
+        result = _sp.run(
+            ['ffmpeg', '-v', 'quiet', '-i', str(audio_file),
+             '-af', f'highpass=f={test_hz},volumedetect',
+             '-t', '90', '-f', 'null', '-'],
+            capture_output=True, text=True, timeout=120,
+        )
+        m = re.search(r'max_volume:\s*(-?[\d.]+)\s*dB', result.stderr)
+        if m:
+            max_vol = float(m.group(1))
+            if max_vol < threshold_db:
+                return False, (
+                    f"max volume above {test_hz} Hz is {max_vol:.1f} dB "
+                    f"(threshold {threshold_db} dB) — possible transcode"
+                )
+        return True, ''
+    except Exception as e:
+        return True, f"spectral check error (skipped): {e}"
+
+
+def validate_upload_candidate(folder_path, local_fmt, local_files):
+    """
+    Run format consistency and spectral checks on the upload candidate.
+
+    Checks:
+      1. Every file's actual bitrate matches the claimed format.
+      2. Bitrates are consistent across the folder (no mixed-bitrate folder).
+      3. Spectral integrity — high-frequency content present, indicating a
+         proper encode rather than a lossy-to-lossy transcode.
+
+    Returns (passed: bool, issues: list[str], warnings: list[str]).
+    issues   = hard failures (block upload staging)
+    warnings = soft notes (don't block, just inform)
+    """
+    issues   = []
+    warnings = []
+
+    # ── 1. Bitrate consistency ────────────────────────────────────────────
+    actual_fmts = {}
+    for f in local_files:
+        af = get_fmt(f)
+        actual_fmts[f.name] = af
+        if af != local_fmt:
+            issues.append(f"Bitrate mismatch: {f.name} is actually {af} (expected {local_fmt})")
+
+    unique_fmts = set(actual_fmts.values())
+    if len(unique_fmts) > 1:
+        issues.append(f"Mixed bitrates in folder: {', '.join(sorted(unique_fmts))}")
+
+    # ── 2. Spectral check via ffmpeg ─────────────────────────────────────
+    fmt_prefix = local_fmt.split()[0]   # 'MP3', 'FLAC', …
+
+    # Cutoff to test and minimum acceptable volume above it
+    spectral_params = {
+        'MP3': (16000, -50.0),    # proper MP3 should have content above 16kHz
+        'FLAC': (19000, -60.0),   # FLAC from CD should reach 19kHz+
+    }
+    params = spectral_params.get(fmt_prefix)
+
+    if params:
+        if not _ffmpeg_available():
+            warnings.append("ffmpeg not found — spectral check skipped (install ffmpeg)")
+        else:
+            check_files = local_files[:3]   # check first 3 tracks
+            print(f"  Running spectral check on {len(check_files)} file(s)...")
+            for f in check_files:
+                ok, desc = _spectral_check(f, *params)
+                if not ok:
+                    issues.append(f"Spectral fail: {f.name}: {desc}")
+                else:
+                    print(f"    OK  {f.name}")
+
+    passed = len(issues) == 0
+    return passed, issues, warnings
+
+
+def stage_upload_candidate(folder_path, info, issues, warnings, passed):
+    """
+    If validation passed: move folder to UPLOAD_DIR, write _upload_info.json inside.
+    If failed: write JSON to UPLOAD_DIR/_INVALID/ and leave files in place.
+    Returns 'upload_candidate' or 'upload_invalid'.
+    """
+    info = dict(info)
+    info['validation_passed'] = passed
+    info['validation_issues'] = issues
+    info['validation_warnings'] = warnings
+
+    if not passed:
+        invalid_dir = Path(UPLOAD_DIR) / '_INVALID'
+        invalid_dir.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r'[<>:"/\\|?*]', '_', folder_path.name)
+        out  = invalid_dir / f"{safe}._upload_info.json"
+        out.write_bytes(json.dumps(info, ensure_ascii=False, indent=2).encode('utf-8'))
+        print(f"  Validation FAILED — files left in place.")
+        print(f"  Info saved: {out}")
+        return 'upload_invalid'
+
+    if DRY_RUN:
+        print(f"  DRY RUN — would move folder to {UPLOAD_DIR}")
+        return 'upload_candidate'
+
+    # Move folder into UPLOAD_DIR
+    upload_dir = Path(UPLOAD_DIR)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    dest = upload_dir / folder_path.name
+
+    if dest.exists():
+        print(f"  WARN: {dest} already exists — not moving")
+    else:
+        shutil.move(str(folder_path), str(dest))
+        print(f"  Moved to: {dest}")
+
+    # Write _upload_info.json inside the staged folder
+    info['local_folder'] = str(dest)
+    (dest / '_upload_info.json').write_bytes(
+        json.dumps(info, ensure_ascii=False, indent=2).encode('utf-8')
+    )
+    print(f"  Written: _upload_info.json")
+    return 'upload_candidate'
 
 
 # ─── PROCESS ONE FOLDER ──────────────────────────────────────────────────────
@@ -777,6 +914,40 @@ def process_folder(folder_path, api, cache):
     mtime_sum  = sum(p.stat().st_mtime for p in local_files)
     cached     = cache.get(cache_key, {})
     cache_hit  = abs(cached.get('_mtime_sum', -1) - mtime_sum) < 0.01
+
+    # ── Check persistent status from previous run ──────────────────────────
+    prev_status = cached.get('_status') if cache_hit else None
+
+    if prev_status == 'matched':
+        tf = cached.get('_torrent_file', '')
+        print(f"  Already matched & injected (torrent: {Path(tf).name if tf else '?'}) — skipping.")
+        return 'matched'
+
+    if prev_status == 'completing':
+        dl_dir = cached.get('_download_dir', '')
+        print(f"  Public download queued — waiting for completion in: {dl_dir or PUBLIC_DL_DIR}")
+        return 'completing'
+
+    if prev_status == 'pending_download':
+        # Files were renamed and folder matched last run, but torrent download failed.
+        # Retry the download now without re-doing the RED search/matching.
+        tid          = cached.get('_torrent_id')
+        save_path    = cached.get('_qbt_save_path', '')
+        torrent_file = Path(cached.get('_torrent_file', '')) if cached.get('_torrent_file') else None
+        if tid and torrent_file:
+            print(f"  Retrying failed torrent download (#{tid})...")
+            try:
+                torrent_file.parent.mkdir(parents=True, exist_ok=True)
+                api.download_torrent(tid, torrent_file)
+                print(f"  Downloaded: {torrent_file.name}")
+                ok = inject_torrent(torrent_file, Path(save_path) if save_path else folder_path.parent)
+                if ok:
+                    cached['_status'] = 'matched'
+                    _save_match_cache(cache)
+                    return 'matched'
+            except Exception as e:
+                print(f"  Retry failed: {e}")
+            return 'error'
 
     if cache_hit:
         print("  Using cached RED results (set MATCH_CACHE_FILE='' to disable).")
@@ -922,19 +1093,46 @@ def process_folder(folder_path, api, cache):
                 artist, album, year, local_files,
             )
             if result:
+                if result == 'completing':
+                    cache[cache_key]['_status']       = 'completing'
+                    cache[cache_key]['_download_dir'] = str(
+                        Path(PUBLIC_DL_DIR) / (td.get('filePath', '') or folder_path.name)
+                    )
+                    _save_match_cache(cache)
                 return result
 
-        # Check whether any of the format-mismatched groups is an upload candidate
-        # (i.e. the group exists on RED but lacks our local format)
+        # Check whether any of the format-mismatched groups is an upload candidate.
+        # Fetch the FULL group (search results only return a subset of torrents)
+        # so we don't flag a format as missing when RED already has it.
         if format_mismatch_groups:
             upload_results = []
             for gid, (group, mismatch_torrents) in format_mismatch_groups.items():
-                result = prepare_upload_candidate(
-                    folder_path, group, mismatch_torrents, local_fmt, local_files
+                all_torrents = mismatch_torrents   # fallback if fetch fails
+                try:
+                    print(f"  Fetching full group {gid} to verify missing formats...")
+                    full = api.get_group(gid)
+                    all_torrents = full.get('torrents', mismatch_torrents)
+                    present_fmts = ', '.join(
+                        f"{t.get('format')} {t.get('encoding')}" for t in all_torrents
+                    )
+                    print(f"  Group has {len(all_torrents)} torrent(s): {present_fmts}")
+                except Exception as e:
+                    print(f"  Could not fetch full group {gid}: {e} — using search results only")
+                info = prepare_upload_candidate(
+                    folder_path, group, all_torrents, local_fmt, local_files
                 )
-                if result:
+                if info:
+                    passed, issues, warnings = validate_upload_candidate(
+                        folder_path, local_fmt, local_files
+                    )
+                    result = stage_upload_candidate(
+                        folder_path, info, issues, warnings, passed
+                    )
                     upload_results.append(result)
             if upload_results:
+                # Return the worst outcome: upload_invalid beats upload_candidate
+                if any(r == 'upload_invalid' for r in upload_results):
+                    return 'upload_invalid'
                 return 'upload_candidate'
         print("  No usable match found.")
         return 'not_found'
@@ -1010,30 +1208,43 @@ def process_folder(folder_path, api, cache):
     # ── Download .torrent ───────────────────────────────────────────────────
     torrent_save_dir = Path(TORRENT_DIR)
     torrent_save_dir.mkdir(parents=True, exist_ok=True)
-    torrent_file = torrent_save_dir / f"red_{best_torrent['id']}.torrent"
+    tid          = best_torrent['id']
+    torrent_file = torrent_save_dir / f"red_{tid}.torrent"
+
+    # qBittorrent save_path: parent when torrent has a root folder (it will create
+    # the subfolder itself); the folder itself when torrent is flat (no root).
+    qbt_save_path = folder_path.parent if torrent_root else folder_path
 
     try:
-        api.download_torrent(best_torrent['id'], torrent_file)
+        api.download_torrent(tid, torrent_file)
         print(f"  Downloaded: {torrent_file.name}")
     except Exception as e:
         print(f"  ERROR downloading torrent: {e}")
-        # Save a stub so the torrent can be downloaded manually later
-        tid     = best_torrent['id']
         dl_link = f"{RED_BASE_URL}/torrents.php?action=download&id={tid}"
         stub    = torrent_file.with_suffix('.download_manually.txt')
         stub.write_text(
             f"Torrent download failed: {e}\n\n"
             f"Download URL : {dl_link}\n"
-            f"Save to      : {torrent_file}\n"
-            f"Then inject  : qBittorrent → Add Torrent, save path = {folder_path.parent}\n",
+            f"Save .torrent to : {torrent_file}\n"
+            f"qBittorrent save path : {qbt_save_path}\n"
+            f"(Add torrent manually, set save path as above)\n",
             encoding='utf-8',
         )
-        print(f"  Saved manual-download info: {stub}")
-        return 'error'
+        print(f"  Saved manual-download info: {stub.name}")
+        # Remember state so next run retries the download automatically
+        cache[cache_key]['_status']        = 'pending_download'
+        cache[cache_key]['_torrent_id']    = tid
+        cache[cache_key]['_torrent_file']  = str(torrent_file)
+        cache[cache_key]['_qbt_save_path'] = str(qbt_save_path)
+        _save_match_cache(cache)
+        return 'pending_download'
 
     # ── Inject into qBittorrent ─────────────────────────────────────────────
-    # save_path is the PARENT of the album folder (torrent contains the root folder)
-    ok = inject_torrent(torrent_file, folder_path.parent)
+    ok = inject_torrent(torrent_file, qbt_save_path)
+    if ok:
+        cache[cache_key]['_status']       = 'matched'
+        cache[cache_key]['_torrent_file'] = str(torrent_file)
+        _save_match_cache(cache)
     return 'matched' if ok else 'error'
 
 
@@ -1132,10 +1343,13 @@ def main():
     print(f"Found {total} folder(s) to process.  DRY_RUN={DRY_RUN}\n")
 
     counts = {'matched': 0, 'not_found': 0, 'dry_run': 0, 'skip': 0,
-              'error': 0, 'upload_candidate': 0, 'completing': 0}
+              'error': 0, 'upload_candidate': 0, 'upload_invalid': 0,
+              'completing': 0, 'pending_download': 0}
     not_found_list = []
     upload_candidate_list = []
+    upload_invalid_list = []
     completing_list = []
+    pending_list = []
 
     for i, folder in enumerate(folders, 1):
         print(f"[{i}/{total}] {folder.name}")
@@ -1152,8 +1366,12 @@ def main():
             not_found_list.append(folder.name)
         elif status == 'upload_candidate':
             upload_candidate_list.append(folder.name)
+        elif status == 'upload_invalid':
+            upload_invalid_list.append(folder.name)
         elif status == 'completing':
             completing_list.append(folder.name)
+        elif status == 'pending_download':
+            pending_list.append(folder.name)
 
     print()
     print('=' * 60)
@@ -1162,18 +1380,28 @@ def main():
     print(f"  Matched & injected   : {counts['matched']}")
     print(f"  Dry-run previewed    : {counts['dry_run']}")
     print(f"  Completing (public)  : {counts['completing']}")
+    print(f"  Pending dl (retry)   : {counts['pending_download']}")
     print(f"  Upload candidates    : {counts['upload_candidate']}")
+    print(f"  Upload invalid       : {counts['upload_invalid']}")
     print(f"  Not found on RED     : {counts['not_found']}")
     print(f"  Skipped (no audio)   : {counts['skip']}")
     print(f"  Errors               : {counts['error']}")
+    if pending_list:
+        print(f"\n  Pending torrent download (will auto-retry on next run):")
+        for name in pending_list:
+            print(f"    ! {name}  →  see {TORRENT_DIR}\\red_*.download_manually.txt")
     if completing_list:
         print(f"\n  Completing via public torrent (in {PUBLIC_DL_DIR}):")
         for name in completing_list:
             print(f"    ~ {name}")
     if upload_candidate_list:
-        print(f"\n  Upload candidates (info in {UPLOAD_DIR}):")
+        print(f"\n  Upload candidates (staged in {UPLOAD_DIR}):")
         for name in upload_candidate_list:
             print(f"    + {name}")
+    if upload_invalid_list:
+        print(f"\n  Upload invalid — failed validation (info in {UPLOAD_DIR}/_INVALID/):")
+        for name in upload_invalid_list:
+            print(f"    ✗ {name}")
     if not_found_list:
         print(f"\n  Not found on RED:")
         for name in not_found_list:
