@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(grep -v '/$')",
-      "Bash(grep -v -E '\\(complete|downloading|new|onlyraretracks|FAKES|FOLDERS TO CHECK|IN PROGRESS|REV|Sort 2 Single Trax|New folder|MUSIC|oef|soulseek_batch_tracks|CHECK\\)/$')"
+      "Bash(grep -v -E '\\(complete|downloading|new|onlyraretracks|FAKES|FOLDERS TO CHECK|IN PROGRESS|REV|Sort 2 Single Trax|New folder|MUSIC|oef|soulseek_batch_tracks|CHECK\\)/$')",
+      "Bash(gh repo:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "WebFetch(domain:api.github.com)",
+      "Bash(gh api:*)"
     ]
   }
 }

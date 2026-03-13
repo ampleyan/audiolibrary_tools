@@ -32,12 +32,13 @@ QBT_HOST       = "http://kodisrv:8080"  # qBittorrent Web UI on kodisrv
 QBT_USERNAME   = "ampleyan"
 QBT_PASSWORD   = "Xus70aiaf71"
 
+# LOCAL_FOLDER   = r"D:\MUSIC\REDACTED"   # folder to process (single album or dir of albums)
 LOCAL_FOLDER   = r"D:\MUSIC\REDACTED"   # folder to process (single album or dir of albums)
 TORRENT_DIR    = r"D:\MUSIC\TORRENTS"   # where downloaded .torrent files are saved
 DEST_DIR       = r"D:\MUSIC\REDACTED"   # where matched+renamed folders land (same = rename in-place)
 UPLOAD_DIR     = r"D:\MUSIC\UPLOAD_CANDIDATES"  # where upload candidate info files are written
-PUBLIC_DL_DIR        = r"/mnt/media/MUSIC/REDACTED/TO_COMPLETE"        # fresh full-album downloads land here
-COMPLETION_LOG_FILE  = r"/mnt/media/MUSIC/REDACTED/completion_log.json" # tracks original vs redownloaded albums
+PUBLIC_DL_DIR        = r"D:\MUSIC\REDACTED\TO_COMPLETE"        # fresh full-album downloads land here
+COMPLETION_LOG_FILE  = r"D:\MUSIC\REDACTED\completion_log.json" # tracks original vs redownloaded albums
 
 # Prowlarr — used to search public trackers when local file count < RED torrent count.
 # Leave empty to skip public tracker search.
@@ -58,9 +59,31 @@ SKIP_FOLDERS = {
     'Roxy lijst 1',
 }
 
+# red_oxide integration — transcode matched FLAC folders to MP3 and upload automatically.
+# red_oxide is called after a successful FLAC cross-seed so it can produce MP3 320/V0 versions.
+# Set RED_OXIDE_BIN = '' to disable.
+RED_OXIDE_BIN          = r""                       # path to red_oxide binary (e.g. r"C:\tools\red_oxide.exe")
+RED_OXIDE_TRANSCODE_DIR = r"D:\MUSIC\TRANSCODES"   # where red_oxide writes transcoded files
+RED_OXIDE_FORMATS      = ['mp3320', 'mp3-v0']      # formats to produce; remove any you don't want
+RED_OXIDE_AUTO_UPLOAD  = False                     # True = upload to RED automatically after transcoding
+
+# Format sorting — move processed folders into per-format subfolders.
+# Set SORT_BY_FORMAT = True to enable.  Runs after all folders are processed.
+SORT_BY_FORMAT = False
+FORMAT_DIRS = {
+    'FLAC':  r"D:\MUSIC\REDACTED\flac",
+    'MP3':   r"D:\MUSIC\REDACTED\mp3",
+    'AAC':   r"D:\MUSIC\REDACTED\aac",
+    'OGG':   r"D:\MUSIC\REDACTED\ogg",
+    'WAV':   r"D:\MUSIC\REDACTED\wav",
+}
+
+# Loose file collection — audio files extracted from SKIP_FOLDERS land here.
+LOOSE_DIR = r"D:\MUSIC\REDACTED\LOOSE"
+
 SIZE_TOLERANCE  = 0.005  # 0.5% — files within this size delta are considered same
 MIN_NAME_SIM    = 0.55   # minimum similarity score (0-1) for name-only fallback match
-DRY_RUN        = False    # True = show plan only, False = rename + inject
+DRY_RUN        = True    # True = show plan only, False = rename + inject
 
 # ─── END CONFIG ───────────────────────────────────────────────────────────────
 
@@ -894,6 +917,68 @@ def stage_upload_candidate(folder_path, info, issues, warnings, passed):
     return 'upload_candidate'
 
 
+# ─── RED OXIDE INTEGRATION ───────────────────────────────────────────────────
+
+def _launch_red_oxide(folder_path, group, torrent, qbt_save_path):
+    """
+    Launch red_oxide to transcode a matched FLAC folder to MP3 and upload to RED.
+
+    Called after a successful FLAC cross-seed.  red_oxide receives:
+      - The permalink URL of the matched RED torrent (source for transcoding)
+      - --content-directory: parent of the local folder (where qBittorrent saves files)
+      - --transcode-directory: where transcoded files will be written
+      - --torrent-directory: where new .torrent files will be saved
+      - --allowed-transcode-formats: formats to produce (mp3320, mp3-v0, etc.)
+      - -a/--automatic-upload: upload to RED without manual intervention
+
+    red_oxide runs as a background process — red_match.py does not wait for it.
+    """
+    if not RED_OXIDE_BIN:
+        return
+
+    gid = group.get('groupId', '')
+    tid = torrent.get('id', '')
+    if not gid or not tid:
+        print("  red_oxide: could not build permalink URL (missing group/torrent ID)")
+        return
+
+    perma_url = f"{RED_BASE_URL}/torrents.php?id={gid}&torrentid={tid}"
+
+    cmd = [RED_OXIDE_BIN, 'transcode']
+
+    if RED_OXIDE_AUTO_UPLOAD:
+        cmd.append('--automatic-upload')
+
+    # content-directory is the folder that CONTAINS the album folder
+    # (red_oxide resolves torrent file paths relative to this directory)
+    cmd += ['--content-directory', str(qbt_save_path)]
+
+    if RED_OXIDE_TRANSCODE_DIR:
+        cmd += ['--transcode-directory', RED_OXIDE_TRANSCODE_DIR]
+
+    cmd += ['--torrent-directory', TORRENT_DIR]
+
+    for fmt in RED_OXIDE_FORMATS:
+        cmd += ['--allowed-transcode-formats', fmt]
+
+    cmd.append(perma_url)
+
+    print(f"  red_oxide: launching transcode for {perma_url}")
+    print(f"             formats: {', '.join(RED_OXIDE_FORMATS)}")
+    if DRY_RUN:
+        print(f"  DRY RUN — would run: {' '.join(cmd)}")
+        return
+
+    try:
+        _sp.Popen(cmd)
+        print(f"  red_oxide: started (runs in background)")
+    except FileNotFoundError:
+        print(f"  red_oxide: binary not found: {RED_OXIDE_BIN}")
+        print(f"             Set RED_OXIDE_BIN in config to the correct path.")
+    except Exception as e:
+        print(f"  red_oxide: failed to launch: {e}")
+
+
 # ─── PROCESS ONE FOLDER ──────────────────────────────────────────────────────
 
 def process_folder(folder_path, api, cache):
@@ -1174,6 +1259,16 @@ def process_folder(folder_path, api, cache):
 
     if DRY_RUN:
         print("\n  DRY RUN — no changes made. Set DRY_RUN = False to execute.")
+        # Persist the match so --report can show it without re-querying RED
+        cache[cache_key]['_status']       = 'ready'
+        cache[cache_key]['_torrent_id']   = best_torrent.get('id')
+        cache[cache_key]['_group_url']    = f"{RED_BASE_URL}/torrents.php?id={best_group.get('groupId', '')}"
+        cache[cache_key]['_group_artist'] = group_artist
+        cache[cache_key]['_group_name']   = group_name
+        cache[cache_key]['_group_year']   = str(group_year)
+        cache[cache_key]['_local_fmt']    = local_fmt
+        cache[cache_key]['_file_count']   = len(best_match)
+        _save_match_cache(cache)
         return 'dry_run'
 
     # ── Rename files ────────────────────────────────────────────────────────
@@ -1245,6 +1340,12 @@ def process_folder(folder_path, api, cache):
         cache[cache_key]['_status']       = 'matched'
         cache[cache_key]['_torrent_file'] = str(torrent_file)
         _save_match_cache(cache)
+
+        # ── red_oxide: transcode FLAC → MP3 and upload ───────────────────
+        # Only makes sense for FLAC sources; red_oxide skips formats already on RED.
+        if local_fmt_prefix == 'FLAC' and RED_OXIDE_BIN:
+            _launch_red_oxide(folder_path, best_group, best_torrent, qbt_save_path)
+
     return 'matched' if ok else 'error'
 
 
@@ -1304,12 +1405,266 @@ def _check_access(api):
     return True
 
 
+# ─── FORMAT SORTING ──────────────────────────────────────────────────────────
+
+def sort_folders_by_format(root):
+    """
+    Move album folders in root into per-format subfolders defined in FORMAT_DIRS.
+
+    Format is detected from the first audio file found in each folder.
+    The format prefix (FLAC, MP3, AAC, …) is looked up in FORMAT_DIRS.
+    Folders whose format has no entry in FORMAT_DIRS are left in place.
+    """
+    root = Path(root)
+    entries = [
+        p for p in root.iterdir()
+        if p.is_dir() and not p.name.startswith('.')
+        and p.name not in {Path(d).name for d in FORMAT_DIRS.values()}
+    ]
+
+    if not entries:
+        print("  No folders to sort.")
+        return
+
+    print(f"\nSorting {len(entries)} folder(s) by format...")
+    moved = skipped = errors = 0
+
+    for folder in sorted(entries, key=lambda p: p.name):
+        audio_files = sorted(
+            p for p in folder.iterdir()
+            if p.is_file() and p.suffix.lower() in AUDIO_EXT
+        )
+        if not audio_files:
+            print(f"  SKIP (no audio): {folder.name}")
+            skipped += 1
+            continue
+
+        fmt        = get_fmt(audio_files[0])          # e.g. 'MP3 320', 'FLAC 24bit', 'FLAC'
+        fmt_prefix = fmt.split()[0]                    # 'MP3', 'FLAC', 'AAC', …
+        dest_root  = FORMAT_DIRS.get(fmt_prefix)
+
+        if not dest_root:
+            print(f"  SKIP (no dir for {fmt_prefix}): {folder.name}")
+            skipped += 1
+            continue
+
+        dest = Path(dest_root) / folder.name
+
+        if dest == folder:
+            skipped += 1
+            continue
+
+        print(f"  [{fmt_prefix}] {folder.name}")
+
+        if DRY_RUN:
+            print(f"         → {dest}")
+            moved += 1
+            continue
+
+        if dest.exists():
+            print(f"    WARN: target already exists, skipping: {dest}")
+            skipped += 1
+            continue
+
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(folder), str(dest))
+            moved += 1
+        except Exception as e:
+            print(f"    ERROR: {e}")
+            errors += 1
+
+    label = "Would move" if DRY_RUN else "Moved"
+    print(f"  {label} {moved} folder(s), skipped {skipped}, errors {errors}.")
+
+
+# ─── LOOSE FILE COLLECTION ───────────────────────────────────────────────────
+
+def collect_loose_from_skip_folders(root):
+    """
+    Scan root for folders matching SKIP_FOLDERS keywords, then move every audio
+    file found inside them (recursively) to LOOSE_DIR.
+
+    Naming conflicts are resolved by prefixing the source folder name:
+      original/path/track.mp3  →  LOOSE/SourceFolder__track.mp3
+    """
+    root     = Path(root)
+    loose    = Path(LOOSE_DIR)
+
+    def _is_skip(name):
+        nl = name.lower()
+        return any(kw.lower() in nl for kw in SKIP_FOLDERS)
+
+    skip_dirs = [
+        p for p in root.iterdir()
+        if p.is_dir() and _is_skip(p.name)
+    ]
+
+    if not skip_dirs:
+        print("  No skip-folders found.")
+        return
+
+    print(f"\nCollecting loose audio from {len(skip_dirs)} skip-folder(s) → {LOOSE_DIR}")
+    print(f"DRY_RUN={DRY_RUN}\n")
+
+    moved = skipped = errors = 0
+
+    for skip_dir in sorted(skip_dirs, key=lambda p: p.name):
+        audio_files = sorted(
+            p for p in skip_dir.rglob('*')
+            if p.is_file() and p.suffix.lower() in AUDIO_EXT
+        )
+        if not audio_files:
+            print(f"  [{skip_dir.name}]  no audio files — skipping folder")
+            continue
+
+        print(f"  [{skip_dir.name}]  {len(audio_files)} audio file(s)")
+
+        for src in audio_files:
+            dest = loose / src.name
+
+            # Resolve naming conflict: prefix with immediate parent folder name
+            if dest.exists() or dest == src:
+                dest = loose / f"{src.parent.name}__{src.name}"
+            # If still conflicts, add a counter
+            if dest.exists():
+                stem, suffix = src.stem, src.suffix
+                for n in range(2, 9999):
+                    dest = loose / f"{src.parent.name}__{stem}_{n}{suffix}"
+                    if not dest.exists():
+                        break
+
+            print(f"    {'WOULD MOVE' if DRY_RUN else 'MOVE'}  {src.relative_to(root)}  →  {dest.name}")
+
+            if DRY_RUN:
+                moved += 1
+                continue
+
+            try:
+                loose.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src), str(dest))
+                moved += 1
+            except Exception as e:
+                print(f"    ERROR: {e}")
+                errors += 1
+
+    label = "Would move" if DRY_RUN else "Moved"
+    print(f"\n  {label} {moved} file(s), skipped {skipped}, errors {errors}.")
+
+
+# ─── REPORT ──────────────────────────────────────────────────────────────────
+
+def print_report():
+    """
+    Print a human-readable summary of all cached folder statuses.
+    Useful to see which albums are ready to cross-seed without re-running RED queries.
+    """
+    cache = _load_match_cache()
+    if not cache:
+        print("Cache is empty — run the script first (DRY_RUN=True) to populate it.")
+        return
+
+    groups = {
+        'ready':            [],   # dry-run match found, not yet executed
+        'matched':          [],   # already cross-seeded
+        'upload_candidate': [],   # format missing from RED group
+        'completing':       [],   # public download queued
+        'pending_download': [],   # torrent download failed, will retry
+    }
+
+    for folder_name, entry in sorted(cache.items()):
+        if folder_name.startswith('_'):
+            continue
+        status = entry.get('_status', 'unknown')
+        if status in groups:
+            groups[status].append((folder_name, entry))
+
+    tw = 100
+
+    def _section(title, items, row_fn):
+        if not items:
+            return
+        print(f"\n{'─' * tw}")
+        print(f"  {title}  ({len(items)})")
+        print(f"{'─' * tw}")
+        for folder_name, entry in items:
+            print(row_fn(folder_name, entry))
+
+    _section(
+        "READY TO CROSS-SEED  (DRY_RUN=False to execute)",
+        groups['ready'],
+        lambda name, e: (
+            f"  {e.get('_local_fmt','?'):12}  "
+            f"{e.get('_file_count','?'):>3} files  "
+            f"{e.get('_group_artist','')[:30]:30}  "
+            f"{e.get('_group_name','')[:35]:35}  "
+            f"({e.get('_group_year','')})  "
+            f"torrent #{e.get('_torrent_id','?')}"
+        ),
+    )
+
+    _section(
+        "ALREADY MATCHED & SEEDING",
+        groups['matched'],
+        lambda name, e: (
+            f"  {name[:60]:60}  torrent #{e.get('_torrent_id', '?')}"
+        ),
+    )
+
+    _section(
+        "UPLOAD CANDIDATES  (format missing from RED group)",
+        groups['upload_candidate'],
+        lambda name, e: f"  {name}",
+    )
+
+    _section(
+        "COMPLETING VIA PUBLIC TORRENT",
+        groups['completing'],
+        lambda name, e: f"  {name}  →  {e.get('_download_dir', PUBLIC_DL_DIR)}",
+    )
+
+    _section(
+        "PENDING TORRENT DOWNLOAD  (will retry on next run)",
+        groups['pending_download'],
+        lambda name, e: f"  {name}  torrent #{e.get('_torrent_id', '?')}",
+    )
+
+    ready_count = len(groups['ready'])
+    print(f"\n{'═' * tw}")
+    print(f"  Ready to cross-seed: {ready_count}  |  "
+          f"Already seeding: {len(groups['matched'])}  |  "
+          f"Upload candidates: {len(groups['upload_candidate'])}  |  "
+          f"Completing: {len(groups['completing'])}  |  "
+          f"Pending: {len(groups['pending_download'])}")
+    if ready_count:
+        print(f"\n  Run with DRY_RUN=False to process {ready_count} ready folder(s).")
+    print(f"{'═' * tw}")
+
+
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 
 def main():
     if not RED_API_KEY:
         print("ERROR: RED_API_KEY is not set. Edit the CONFIG section at the top.")
         sys.exit(1)
+
+    # --sort [dir]: run format sorting only, skip RED matching
+    if len(sys.argv) > 1 and sys.argv[1] == '--sort':
+        sort_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(DEST_DIR)
+        print(f"Format sort: {sort_dir}  DRY_RUN={DRY_RUN}")
+        sort_folders_by_format(sort_dir)
+        return
+
+    # --report: show cached status of all folders (no RED queries)
+    if len(sys.argv) > 1 and sys.argv[1] == '--report':
+        print_report()
+        return
+
+    # --collect-loose [dir]: move audio from skip-folders into LOOSE_DIR
+    if len(sys.argv) > 1 and sys.argv[1] == '--collect-loose':
+        scan_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(LOCAL_FOLDER)
+        collect_loose_from_skip_folders(scan_dir)
+        return
 
     root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(LOCAL_FOLDER)
     if not root.exists():
@@ -1323,21 +1678,47 @@ def main():
 
     cache = _load_match_cache()
 
+    # Build set of directory names to always skip — includes SKIP_FOLDERS keywords
+    # plus the names of known output directories so they're never treated as albums.
+    # FORMAT_DIRS are NOT excluded here — they are containers for albums and must be traversed.
+    _output_dir_names = {
+        Path(d).name for d in [
+            LOOSE_DIR, PUBLIC_DL_DIR, UPLOAD_DIR, TORRENT_DIR,
+        ] if d
+    }
+
+    def _should_skip(name):
+        if name in _output_dir_names:
+            return True
+        nl = name.lower()
+        return any(kw.lower() in nl for kw in SKIP_FOLDERS)
+
+    def _collect_album_folders(directory):
+        """
+        Recursively find all directories that directly contain audio files.
+        Directories that only contain other directories (like format sort folders)
+        are traversed but not processed themselves.
+        """
+        results = []
+        for p in sorted(directory.iterdir(), key=lambda x: x.name):
+            if not p.is_dir() or p.name.startswith('.') or _should_skip(p.name):
+                continue
+            has_audio = any(
+                f.suffix.lower() in AUDIO_EXT for f in p.iterdir() if f.is_file()
+            )
+            if has_audio:
+                results.append(p)
+            else:
+                results.extend(_collect_album_folders(p))
+        return results
+
     # Single album folder (has audio at root) or batch directory of album folders
     has_audio = any(p.suffix.lower() in AUDIO_EXT
                     for p in root.iterdir() if p.is_file())
     if has_audio:
         folders = [root]
     else:
-        def _should_skip(name):
-            nl = name.lower()
-            return any(kw.lower() in nl for kw in SKIP_FOLDERS)
-
-        folders = sorted(
-            [p for p in root.iterdir()
-             if p.is_dir() and not p.name.startswith('.') and not _should_skip(p.name)],
-            key=lambda p: p.name
-        )
+        folders = _collect_album_folders(root)
 
     total = len(folders)
     print(f"Found {total} folder(s) to process.  DRY_RUN={DRY_RUN}\n")
@@ -1377,7 +1758,8 @@ def main():
     print('=' * 60)
     print(f"  SUMMARY  ({total} folders)")
     print('=' * 60)
-    print(f"  Matched & injected   : {counts['matched']}")
+    oxide_note = f"  (red_oxide transcoding {'enabled' if RED_OXIDE_BIN else 'disabled — set RED_OXIDE_BIN to enable'})"
+    print(f"  Matched & injected   : {counts['matched']}{oxide_note if counts['matched'] else ''}")
     print(f"  Dry-run previewed    : {counts['dry_run']}")
     print(f"  Completing (public)  : {counts['completing']}")
     print(f"  Pending dl (retry)   : {counts['pending_download']}")
@@ -1406,6 +1788,9 @@ def main():
         print(f"\n  Not found on RED:")
         for name in not_found_list:
             print(f"    - {name}")
+
+    if SORT_BY_FORMAT:
+        sort_folders_by_format(DEST_DIR)
 
 
 if __name__ == '__main__':
