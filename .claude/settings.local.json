@@ -8,7 +8,25 @@
       "WebFetch(domain:github.com)",
       "WebSearch",
       "WebFetch(domain:api.github.com)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(cmd.exe /c \"dir D:\\\\WORKSPACE\\\\projects\\\\audiolibrary_tools\\\\docs\")",
+      "Bash(powershell -Command \"Get-ChildItem 'D:\\\\WORKSPACE\\\\projects\\\\audiolibrary_tools\\\\docs' -Recurse\")",
+      "Bash(python yt_slsk.py --help)",
+      "Bash(python tests/test_yt_slsk.py)",
+      "Bash(python yt_slsk.py --fetch \"https://www.youtube.com/watch?v=UaNtuUK30Zo&list=PLbGg3INHWHkzX9G_J3XxDtKw3KoACjMnS\")",
+      "Bash(python -c \"import yt_dlp; ydl = yt_dlp.YoutubeDL\\({''extract_flat'': True, ''skip_download'': True, ''yes_playlist'': True}\\); info = ydl.extract_info\\(''https://www.youtube.com/watch?v=UaNtuUK30Zo&list=PLbGg3INHWHkzX9G_J3XxDtKw3KoACjMnS'', download=False\\); print\\(type\\(info\\)\\); print\\(list\\(info.keys\\(\\)\\) if info else ''None''\\); print\\(''entries:'', len\\(info.get\\(''entries'', []\\) or []\\) if info else 0\\)\")",
+      "Bash(python -c \"import yt_dlp; ydl = yt_dlp.YoutubeDL\\({''extract_flat'': True, ''skip_download'': True}\\); info = ydl.extract_info\\(''https://www.youtube.com/playlist?list=PLbGg3INHWHkzX9G_J3XxDtKw3KoACjMnS'', download=False\\); entries = info.get\\(''entries'', []\\) or []; print\\(''entries:'', len\\(entries\\)\\); [print\\(e.get\\(''title''\\)\\) for e in entries[:5] if e]\")",
+      "Bash(python yt_slsk.py --fetch \"https://youtube.com/playlist?list=PLbGg3INHWHkzX9G_J3XxDtKw3KoACjMnS&si=ZsPgKFz6ratHWyfF\")",
+      "Bash(python yt_slsk.py --fetch)",
+      "Bash(python yt_slsk.py --download)",
+      "Bash(./sldl.exe --help)",
+      "Bash(sed 's/^\\\\s*//')",
+      "Bash(./sldl.exe --help conditions)",
+      "Bash(./sldl.exe --help config)",
+      "Bash(./sldl.exe --help file-conditions)",
+      "Bash(./sldl.exe --help input)"
     ]
   }
 }
