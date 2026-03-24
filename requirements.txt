@@ -3,3 +3,5 @@ requests
 rapidfuzz
 qbittorrent-api
 yt-dlp
+numpy
+scipy

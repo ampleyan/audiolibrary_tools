@@ -26,7 +26,11 @@
       "Bash(./sldl.exe --help conditions)",
       "Bash(./sldl.exe --help config)",
       "Bash(./sldl.exe --help file-conditions)",
-      "Bash(./sldl.exe --help input)"
+      "Bash(./sldl.exe --help input)",
+      "Bash(cd:*)",
+      "Bash(python -m pytest tests/test_yt_slsk.py -v)",
+      "Bash(python -c \":*)",
+      "Bash(python -c \"import config; from lib.musiclib import build_folder_name; print\\(''all imports OK''\\)\")"
     ]
   }
 }

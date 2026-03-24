@@ -20,7 +20,7 @@ echo.
 echo Running organizer in DRY RUN mode first...
 echo (No files will be moved yet - just shows the plan)
 echo.
-python organize_music.py
+python scripts\organize_music.py
 
 echo.
 echo ============================================

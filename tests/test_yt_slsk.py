@@ -1,12 +1,12 @@
 import sys, os, json, csv, tempfile
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent.parent))
-from yt_slsk import (
+from lib.queue import (
     clean_title, normalize_key,
     load_log, save_log, assign_queue_status,
     write_queue, read_queue,
     load_result_csv, save_result_csv,
-    parse_output_line,
 )
+from lib.downloader import parse_output_line
 
 # ─── clean_title ──────────────────────────────────────────────────────────────
 

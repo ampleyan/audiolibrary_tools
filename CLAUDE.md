@@ -4,37 +4,78 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A collection of standalone Python scripts for organizing a music library. No package/module structure — each script runs independently.
+A collection of Python scripts for music library automation: organizing local audio files, cross-seeding with Redacted.sh (RED), and downloading from Soulseek via YouTube playlists.
+
+## Project Structure
+
+```
+audiolibrary_tools/
+├── config.py                  ← All settings in one place — edit this to configure
+├── lib/
+│   ├── musiclib.py            ← Tag reading, folder naming, shared music helpers
+│   ├── audio.py               ← AudioAnalyzer (FFT fake-FLAC detection)
+│   ├── downloader.py          ← SoulseekDownloader (sldl subprocess wrapper)
+│   ├── queue.py               ← QueueManager + CSV helpers for yt_slsk workflow
+│   └── red_api.py             ← RedAPI client + parse_red_filelist()
+├── scripts/
+│   ├── organize_music.py      ← Scan + move audio into Artist - Album (Year) - Fmt folders
+│   ├── organize_loose.py      ← Group loose flat audio files into album folders in-place
+│   ├── rename_folders.py      ← Rename existing album folders to naming convention
+│   ├── red_match.py           ← Match local albums to RED torrents, cross-seed via qBT
+│   ├── yt_slsk.py             ← YouTube playlist → Soulseek batch downloader
+│   └── navidrome_export.py    ← Export Navidrome playlist to M3U
+├── data/                      ← Runtime data files (gitignored)
+│   ├── yt_slsk_queue.csv
+│   ├── yt_slsk_not_found.csv
+│   ├── yt_slsk_failed.csv
+│   └── yt_slsk_summary.txt
+├── tools/sldl/                ← sldl binary + sldl.conf
+├── tests/
+│   └── test_yt_slsk.py
+└── run_organizer.bat          ← Quick launcher for organize_music.py
+```
 
 ## Running the Scripts
 
 ```bash
-# Install dependency (only one)
-pip install mutagen
+pip install -r requirements.txt
 
-# Or use the bat helper (runs organize_music.py in dry-run mode)
-run_organizer.bat
+# Organizer
+python scripts/organize_music.py    # dry-run by default
+python scripts/organize_loose.py
+python scripts/rename_folders.py
+
+# YouTube → Soulseek downloader
+python scripts/yt_slsk.py --fetch [URL]
+python scripts/yt_slsk.py --download
+
+# RED cross-seeding
+python scripts/red_match.py
+python scripts/red_match.py "Z:\path\to\folder"
+
+# Navidrome
+python scripts/navidrome_export.py [playlist_name] [output.m3u]
+
+# Tests
+python tests/test_yt_slsk.py
 ```
-
-Each script has a `DRY_RUN = True` flag at the top. Always run dry first, review the plan, then set `DRY_RUN = False`.
-
-## Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `organize_music.py` | Scans a folder tree, groups audio by metadata, moves albums to `Artist - Album (Year) - Format` folders. Handles sub-folders and loose files. |
-| `organize_loose.py` | Lighter version — groups *loose* audio files (flat directory only) into album folders in-place. |
-| `rename_folders.py` | Renames *existing* album sub-folders to the standard naming convention. Has an `OVERRIDES` dict for folders that auto-detect incorrectly. |
 
 ## Configuration
 
-Each script has a config block at the top:
+All settings live in `config.py` at the project root. Scripts import it via:
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import config
+```
 
-- `SOURCE_DIR` / `DEST_DIR` — hardcoded Windows paths (e.g. `D:\MUSIC\TO PROCESS`)
-- `DRY_RUN` — always `True` by default
-- `SKIP_FOLDERS` — utility folder names to ignore
-- `JUNK_ALBUM_TAGS` — download-site watermarks to strip from album tags
-- `MIN_TRACKS_FOR_FOLDER` / `MIN_TRACKS` — minimum tracks before grouping into a folder
+Key settings:
+- `DRY_RUN` / `RED_DRY_RUN` — always `True` by default; set `False` to apply changes
+- `MUSIC_PROCESS_DIR` — staging folder scanned by organizer scripts
+- `MUSIC_LIBRARY_DIR` — destination library folder
+- `RED_API_KEY`, `RED_PASSKEY` — Redacted.sh credentials
+- `SLSKD_CMD` — path to sldl.exe (default: `tools/sldl/sldl.exe`)
 
 ## Folder Naming Convention
 
@@ -52,6 +93,11 @@ Format values: `MP3 320`, `MP3 256`, `MP3 192`, `MP3 160`, `MP3 128`, `FLAC`, `F
 - **Year**: originalyear → originaldate → date → TDRC (prefers original release year)
 - **Album**: TALB → album; junk tags and URLs are stripped
 
-## Key Shared Logic
+## Shared Logic
 
-`safe_name()`, `get_tags()`, `get_artist()`, `get_album()`, `get_year()`, `get_fmt()` are duplicated across all three scripts (no shared module). When fixing a bug in one, check the others.
+All shared helpers live in `lib/` — do not duplicate across scripts:
+- `lib/musiclib.py`: `safe_name()`, `get_tags()`, `get_artist()`, `get_album()`, `get_year()`, `get_fmt()`, `build_folder_name()`, `read_metadata()`
+- `lib/audio.py`: `AudioAnalyzer.is_real_flac()` — FFT spectral analysis to detect upscaled fake FLACs
+- `lib/downloader.py`: `SoulseekDownloader.run()` — wraps sldl subprocess, parses output line-by-line
+- `lib/queue.py`: `QueueManager`, `clean_title()`, CSV read/write helpers
+- `lib/red_api.py`: `RedAPI` (rate-limited RED REST client), `parse_red_filelist()`

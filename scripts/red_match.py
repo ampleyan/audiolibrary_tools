@@ -18,78 +18,49 @@ Requirements:
   pip install requests mutagen rapidfuzz qbittorrent-api
 
 Usage:
-  python red_match.py                        # processes LOCAL_FOLDER
-  python red_match.py "Z:\\path\\to\\folder" # override folder from CLI
+  python scripts/red_match.py                        # processes LOCAL_FOLDER
+  python scripts/red_match.py "Z:\\path\\to\\folder" # override folder from CLI
+
+Configuration: edit config.py at the project root.
 """
 
-# ─── CONFIG ───────────────────────────────────────────────────────────────────
-
-RED_API_KEY    = "4dbb8953.c44b57d5f7349e80a13a01e6762fe584"                      # RED > Profile > Security > API Keys
-RED_PASSKEY    = "36f18a11cb74306dc29c14719a62769d"              # RED > Profile > Security > Passkey (needed for upload torrent announce URL)
-RED_BASE_URL   = "https://redacted.sh"
-
-QBT_HOST       = "http://kodisrv:8080"  # qBittorrent Web UI on kodisrv
-QBT_USERNAME   = "ampleyan"
-QBT_PASSWORD   = "Xus70aiaf71"
-
-# LOCAL_FOLDER   = r"D:\MUSIC\REDACTED"   # folder to process (single album or dir of albums)
-LOCAL_FOLDER   = r"D:\MUSIC\REDACTED"   # folder to process (single album or dir of albums)
-TORRENT_DIR    = r"D:\MUSIC\TORRENTS"   # where downloaded .torrent files are saved
-DEST_DIR       = r"D:\MUSIC\REDACTED"   # where matched+renamed folders land (same = rename in-place)
-UPLOAD_DIR     = r"D:\MUSIC\UPLOAD_CANDIDATES"  # where upload candidate info files are written
-PUBLIC_DL_DIR        = r"D:\MUSIC\REDACTED\TO_COMPLETE"        # fresh full-album downloads land here
-COMPLETION_LOG_FILE  = r"D:\MUSIC\REDACTED\completion_log.json" # tracks original vs redownloaded albums
-
-# Prowlarr — used to search public trackers when local file count < RED torrent count.
-# Leave empty to skip public tracker search.
-PROWLARR_URL     = "http://kodisrv:9696"   # Prowlarr Web UI
-PROWLARR_API_KEY = "784837cfcf9e47dab431c0acdb59fcb9"                       # Prowlarr Settings > General > API Key
-
-# RED API result cache — reuse dry-run results on the real run without re-querying.
-# Stores search results + torrent file lists, invalidated by local audio file mtimes.
-# Set to '' to disable.  Delete the file to force a fresh query.
-MATCH_CACHE_FILE = r"D:\MUSIC\red_match_cache.json"
-
-# Folders to skip — any folder whose name contains one of these strings (case-insensitive)
-# is ignored entirely (exact match OR substring).
-SKIP_FOLDERS = {
-    'complete', 'downloading', 'new', 'onlyraretracks', 'FAKES',
-    'FOLDERS TO CHECK', 'IN PROGRESS', 'REV', 'Sort 2 Single Trax',
-    'New folder (2)', 'MUSIC', 'CHECK', 'oef', 'soulseek_batch_tracks',
-    'Roxy lijst 1',
-}
-
-# red_oxide integration — transcode matched FLAC folders to MP3 and upload automatically.
-# red_oxide is called after a successful FLAC cross-seed so it can produce MP3 320/V0 versions.
-# Set RED_OXIDE_BIN = '' to disable.
-RED_OXIDE_BIN          = r""                       # path to red_oxide binary (e.g. r"C:\tools\red_oxide.exe")
-RED_OXIDE_TRANSCODE_DIR = r"D:\MUSIC\TRANSCODES"   # where red_oxide writes transcoded files
-RED_OXIDE_FORMATS      = ['mp3320', 'mp3-v0']      # formats to produce; remove any you don't want
-RED_OXIDE_AUTO_UPLOAD  = False                     # True = upload to RED automatically after transcoding
-
-# Format sorting — move processed folders into per-format subfolders.
-# Set SORT_BY_FORMAT = True to enable.  Runs after all folders are processed.
-SORT_BY_FORMAT = False
-FORMAT_DIRS = {
-    'FLAC':  r"D:\MUSIC\REDACTED\flac",
-    'MP3':   r"D:\MUSIC\REDACTED\mp3",
-    'AAC':   r"D:\MUSIC\REDACTED\aac",
-    'OGG':   r"D:\MUSIC\REDACTED\ogg",
-    'WAV':   r"D:\MUSIC\REDACTED\wav",
-}
-
-# Loose file collection — audio files extracted from SKIP_FOLDERS land here.
-LOOSE_DIR = r"D:\MUSIC\REDACTED\LOOSE"
-
-SIZE_TOLERANCE  = 0.005  # 0.5% — files within this size delta are considered same
-MIN_NAME_SIM    = 0.55   # minimum similarity score (0-1) for name-only fallback match
-DRY_RUN        = True    # True = show plan only, False = rename + inject
-
-# ─── END CONFIG ───────────────────────────────────────────────────────────────
-
-import os, re, sys, time, shutil, json
-from difflib import SequenceMatcher
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import config
+
+# ── Config aliases (keeps the rest of this file unchanged) ────────────────────
+RED_API_KEY           = config.RED_API_KEY
+RED_PASSKEY           = config.RED_PASSKEY
+RED_BASE_URL          = config.RED_BASE_URL
+QBT_HOST              = config.QBT_HOST
+QBT_USERNAME          = config.QBT_USERNAME
+QBT_PASSWORD          = config.QBT_PASSWORD
+LOCAL_FOLDER          = config.LOCAL_FOLDER
+TORRENT_DIR           = config.TORRENT_DIR
+DEST_DIR              = config.RED_DEST_DIR
+UPLOAD_DIR            = config.UPLOAD_DIR
+PUBLIC_DL_DIR         = config.PUBLIC_DL_DIR
+COMPLETION_LOG_FILE   = config.COMPLETION_LOG_FILE
+PROWLARR_URL          = config.PROWLARR_URL
+PROWLARR_API_KEY      = config.PROWLARR_API_KEY
+MATCH_CACHE_FILE      = config.MATCH_CACHE_FILE
+SKIP_FOLDERS          = config.RED_SKIP_FOLDERS
+RED_OXIDE_BIN         = config.RED_OXIDE_BIN
+RED_OXIDE_TRANSCODE_DIR = config.RED_OXIDE_TRANSCODE_DIR
+RED_OXIDE_FORMATS     = config.RED_OXIDE_FORMATS
+RED_OXIDE_AUTO_UPLOAD = config.RED_OXIDE_AUTO_UPLOAD
+SORT_BY_FORMAT        = config.SORT_BY_FORMAT
+FORMAT_DIRS           = config.FORMAT_DIRS
+LOOSE_DIR             = config.LOOSE_DIR
+SIZE_TOLERANCE        = config.RED_SIZE_TOLERANCE
+MIN_NAME_SIM          = config.RED_MIN_NAME_SIM
+DRY_RUN               = config.RED_DRY_RUN
+# ─────────────────────────────────────────────────────────────────────────────
+
+import os, re, time, shutil, json
+from difflib import SequenceMatcher
 from collections import defaultdict
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -102,7 +73,7 @@ try:
 except ImportError:
     USE_RAPIDFUZZ = False
 
-from musiclib import AUDIO_EXT, get_fmt, read_metadata
+from lib.musiclib import AUDIO_EXT, get_fmt, read_metadata
 
 # RED format strings → local fmt prefix mapping for pre-filtering
 _RED_FMT_MAP = {
@@ -145,96 +116,7 @@ def _save_match_cache(cache):
 
 # ─── RED API ─────────────────────────────────────────────────────────────────
 
-class RedAPI:
-    def __init__(self, api_key, base_url):
-        self.session = requests.Session()
-        self.session.headers.update({'Authorization': api_key})
-        self.base_url = base_url.rstrip('/')
-        self._last_req = 0.0
-
-    def _get(self, path, params):
-        # Throttle: RED allows 5 requests per 10s → minimum 2s between requests
-        elapsed = time.time() - self._last_req
-        if elapsed < 2.1:
-            time.sleep(2.1 - elapsed)
-        r = self.session.get(f"{self.base_url}{path}", params=params, timeout=15)
-        self._last_req = time.time()
-        r.raise_for_status()
-        data = r.json()
-        if data.get('status') != 'success':
-            raise RuntimeError(f"RED API error: {data.get('error', data)}")
-        return data['response']
-
-    def search(self, artist='', album='', year=''):
-        """Return list of torrent groups matching artist+album."""
-        params = {'action': 'browse'}
-        if artist:
-            params['artistname'] = artist
-        if album:
-            params['groupname'] = album
-        return self._get('/ajax.php', params).get('results', [])
-
-    def get_torrent(self, torrent_id):
-        """Return full torrent details including file list."""
-        return self._get('/ajax.php', {'action': 'torrent', 'id': torrent_id})
-
-    def get_group(self, group_id):
-        """Return full torrent group with ALL torrents (search results may omit some)."""
-        return self._get('/ajax.php', {'action': 'torrentgroup', 'id': group_id})
-
-    def download_torrent(self, torrent_id, dest_path):
-        """
-        Download .torrent file to dest_path (Path object).
-
-        Tries Authorization header first (requires 'Torrents' API key permission).
-        Falls back to passkey in URL if RED_PASSKEY is set and the first attempt
-        returns 401 — useful when the API key lacks download permission.
-        """
-        elapsed = time.time() - self._last_req
-        if elapsed < 2.1:
-            time.sleep(2.1 - elapsed)
-
-        params = {'action': 'download', 'id': torrent_id}
-        r = self.session.get(
-            f"{self.base_url}/torrents.php", params=params, timeout=30
-        )
-        self._last_req = time.time()
-
-        if r.status_code == 401:
-            # Try auth as query param (RED alternative to Authorization header)
-            for extra in ({'auth': RED_API_KEY}, {'torrent_pass': RED_PASSKEY} if RED_PASSKEY else {}):
-                if not extra:
-                    continue
-                elapsed = time.time() - self._last_req
-                if elapsed < 2.1:
-                    time.sleep(2.1 - elapsed)
-                r = self.session.get(
-                    f"{self.base_url}/torrents.php",
-                    params={**params, **extra},
-                    timeout=30,
-                )
-                self._last_req = time.time()
-                if r.status_code != 401:
-                    break
-
-        r.raise_for_status()
-        dest_path.write_bytes(r.content)
-
-
-def parse_red_filelist(filelist_str):
-    """
-    Parse RED file list string into [(filename, size_bytes), ...].
-    RED format: "name1{{{size1}}}|||name2{{{size2}}}"
-    """
-    files = []
-    for entry in filelist_str.split('|||'):
-        entry = entry.strip()
-        if not entry:
-            continue
-        m = re.match(r'^(.+)\{\{\{(\d+)\}\}\}$', entry)
-        if m:
-            files.append((m.group(1).strip(), int(m.group(2))))
-    return files
+from lib.red_api import RedAPI, parse_red_filelist
 
 
 # ─── MATCHING ────────────────────────────────────────────────────────────────
@@ -1671,7 +1553,7 @@ def main():
         print(f"ERROR: Path not found: {root}")
         sys.exit(1)
 
-    api   = RedAPI(RED_API_KEY, RED_BASE_URL)
+    api   = RedAPI(RED_API_KEY, RED_BASE_URL, passkey=RED_PASSKEY)
 
     if not _check_access(api):
         sys.exit(1)
