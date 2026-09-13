@@ -99,7 +99,6 @@ const editInput: React.CSSProperties = {
 };
 
 function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
-  const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   const [sourceIds, setSourceIds] = useState<number[]>(tracks[0] ? [tracks[0].id] : []);
   const [similarTracks, setSimilarTracks] = useState<SimilarTrack[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -290,7 +289,7 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
             <div style={{ display: "flex", gap: 6 }}>
               {selected.size > 0 && <button onClick={addToQueue} disabled={importing} style={{ background: importing ? "#1f2937" : "#065f46", color: importing ? "#4b5563" : "#34d399", border: "none", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: importing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{importing ? "Adding…" : `Add ${selected.size} to queue`}</button>}
               <button onClick={savePlaylist} style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{selected.size > 0 ? `Download ${selected.size}` : "Download all"} as text playlist</button>
-              <button onClick={createYoutubePlaylist} disabled={creatingYoutube || isTauri} title={isTauri ? "Available in the web edition" : "Create a private YouTube playlist"} style={{ background: creatingYoutube || isTauri ? "#1f2937" : "#991b1b", color: creatingYoutube || isTauri ? "#4b5563" : "#fecaca", border: "1px solid #b91c1c", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: creatingYoutube || isTauri ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{creatingYoutube ? "Connecting…" : isTauri ? "YouTube playlist (web only)" : "Create YouTube playlist"}</button>
+              <button onClick={createYoutubePlaylist} disabled={creatingYoutube} title="Create a private YouTube playlist" style={{ background: creatingYoutube ? "#1f2937" : "#991b1b", color: creatingYoutube ? "#4b5563" : "#fecaca", border: "1px solid #b91c1c", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: creatingYoutube ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{creatingYoutube ? "Connecting…" : "Create YouTube playlist"}</button>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>

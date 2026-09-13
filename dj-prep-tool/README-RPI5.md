@@ -35,10 +35,11 @@ Configure credentials from the app's Settings screen. They are stored in the mou
 
 ## YouTube playlists
 
-Creating a playlist uses Google OAuth and is available in the web edition. In Google Cloud Console, enable YouTube Data API v3, create an OAuth web application, and add this redirect URI:
+Creating a playlist uses Google OAuth. In Google Cloud Console, enable YouTube Data API v3, create an OAuth web application, and add both redirect URIs:
 
 ```text
-http://<raspberry-pi-ip>:8080/api/youtube/callback
+http://localhost:8080/api/youtube/callback
+http://127.0.0.1:43827/oauth2callback
 ```
 
 Start the container with the OAuth values supplied as environment variables. Keep the client secret out of the repository:
@@ -46,11 +47,17 @@ Start the container with the OAuth values supplied as environment variables. Kee
 ```bash
 export YOUTUBE_CLIENT_ID='your-client-id'
 export YOUTUBE_CLIENT_SECRET='your-client-secret'
-export YOUTUBE_REDIRECT_URI='http://<raspberry-pi-ip>:8080/api/youtube/callback'
+export YOUTUBE_REDIRECT_URI='http://localhost:8080/api/youtube/callback'
 docker compose -f docker-compose.rpi5.yml up -d --build
 ```
 
 The first playlist creation opens Google authorization. Playlists are private by default, and OAuth tokens remain in the mounted database.
+
+For a browser on another computer, use an HTTPS hostname for the Pi instead of `localhost` and register that exact HTTPS callback URL.
+
+## Windows Tauri app
+
+Place the downloaded Google OAuth JSON at `dj-prep-tool/client_secret.json` and run `dev.ps1`. The script loads the client values into the process environment without committing the file. Register `http://127.0.0.1:43827/oauth2callback` as an additional redirect URI in the same Google OAuth client.
 
 ## Desktop-only actions
 

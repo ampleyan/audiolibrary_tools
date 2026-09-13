@@ -3,6 +3,7 @@ tools/sockseek/sockseek.conf
 data/dj_prep.sqlite
 *.local.py
 dj_prep_settings.json
+dj-prep-tool/client_secret.json
 .worktrees/
 
 # ── Rust / Tauri ──────────────────────────────────────────────────────────────
