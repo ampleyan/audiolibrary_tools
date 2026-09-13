@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { Candidate, QualityResult, RankedCandidate, TrackRow } from "../lib/types";
 
@@ -82,6 +82,7 @@ function TrackDrawer({
   const [error, setError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState(() => candidatesFor(track));
   const [quality, setQuality] = useState<QualityResult | null>(null);
+  const nextStepRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setArtist(track.artist);
@@ -91,6 +92,10 @@ function TrackDrawer({
     setQuality(null);
     setError(null);
   }, [track]);
+
+  useEffect(() => {
+    if (track.state === "requested") nextStepRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [track.state]);
 
   const update = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -152,7 +157,7 @@ function TrackDrawer({
 
         {error && <p style={{ color: "#f87171", fontSize: 12, background: "#1a0c0c", border: "1px solid #7f1d1d", padding: 8, borderRadius: 5 }}>{error}</p>}
 
-        {(track.state === "requested" || track.state === "needs_review") && <div style={sectionStyle}><h3 style={sectionHeading}>Find a file</h3><div style={{ display: "flex", gap: 8 }}><button onClick={() => search()} disabled={busy || !artist.trim() || !title.trim()} style={buttonStyle}>{busy ? "Searching…" : "Search"}</button>{track.search_job_id && <button onClick={() => search(true)} disabled={busy} style={secondaryButtonStyle}>Search loose</button>}</div></div>}
+        {(track.state === "requested" || track.state === "needs_review") && <div ref={nextStepRef} style={sectionStyle}><h3 style={sectionHeading}>Next step: find a file</h3><div style={{ display: "flex", gap: 8 }}><button onClick={() => search()} disabled={busy || !artist.trim() || !title.trim()} style={buttonStyle}>{busy ? "Searching…" : "Search"}</button>{track.search_job_id && <button onClick={() => search(true)} disabled={busy} style={secondaryButtonStyle}>Search loose</button>}</div></div>}
 
         {candidates.length > 0 && (track.state === "matched" || track.state === "requested" || track.state === "needs_review") && <div style={sectionStyle}><h3 style={sectionHeading}>Candidate files</h3><div style={{ display: "grid", gap: 6 }}>{candidates.slice(0, 5).map((ranked) => <div key={`${ranked.candidate.username}-${ranked.candidate.filename}`} style={{ background: "#1f2937", borderRadius: 5, padding: 9 }}><p style={{ color: "#d1d5db", fontSize: 12, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ranked.candidate.filename}>{ranked.candidate.filename}</p><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}><span style={{ color: "#6b7280", fontSize: 11 }}>Score {ranked.score}</span><button onClick={() => approve(ranked.candidate)} disabled={busy} style={buttonStyle}>Approve</button></div></div>)}</div></div>}
 
