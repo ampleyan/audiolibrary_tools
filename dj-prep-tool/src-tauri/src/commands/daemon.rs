@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::io::Stdio;
+use std::process::Stdio;
 use std::sync::{Mutex, OnceLock};
 use serde::Serialize;
 use tauri::AppHandle;
