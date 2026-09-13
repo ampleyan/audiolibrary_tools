@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 import type { PublicSettings } from "./lib/types";
 import DownloadView from "./views/DownloadView";
@@ -10,24 +10,16 @@ import SetupView from "./views/SetupView";
 type Tab = "import" | "review" | "downloads" | "pipeline" | "setup";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "import", label: "Import" },
+  { id: "pipeline", label: "Pipeline" },
+  { id: "import", label: "Add tracks" },
   { id: "review", label: "Review" },
   { id: "downloads", label: "Download & check" },
-  { id: "pipeline", label: "Overview" },
 ];
 
 export default function App() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
-  const [tab, setTab] = useState<Tab>("import");
+  const [tab, setTab] = useState<Tab>("pipeline");
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [trackCounts, setTrackCounts] = useState({ total: 0, review: 0, downloads: 0, ready: 0 });
-
-  const loadCounts = () => api.listTracks().then((tracks) => setTrackCounts({
-    total: tracks.length,
-    review: tracks.filter((t) => t.state === "requested" || t.state === "needs_review" || t.state === "matched").length,
-    downloads: tracks.filter((t) => !["requested", "needs_review", "matched", "dj_ready"].includes(t.state)).length,
-    ready: tracks.filter((t) => t.state === "dj_ready").length,
-  })).catch(() => {});
 
   const loadSettings = () =>
     api
@@ -37,9 +29,6 @@ export default function App() {
 
   useEffect(() => {
     loadSettings();
-    loadCounts();
-    const refreshTimer = window.setInterval(loadCounts, 5000);
-    return () => window.clearInterval(refreshTimer);
   }, []);
 
   if (loadError) {
@@ -111,16 +100,6 @@ export default function App() {
           </button>
         </div>
         </div>
-        <div className="workflow-strip" aria-label="Preparation workflow">
-          {[{ id: "import" as Tab, n: "1", label: "Import", count: trackCounts.total }, { id: "review" as Tab, n: "2", label: "Review matches", count: trackCounts.review }, { id: "downloads" as Tab, n: "3", label: "Download & check", count: trackCounts.downloads }, { id: "pipeline" as Tab, n: "4", label: "Ready", count: trackCounts.ready }].map((step, index, steps) => (
-            <Fragment key={step.id}>
-              <button className={`workflow-step ${tab === step.id ? "active" : ""} ${index < ["import", "review", "downloads", "pipeline"].indexOf(tab) ? "done" : ""}`} onClick={() => setTab(step.id)}>
-                <span className="workflow-dot">{step.n}</span><strong>{step.label}</strong><span>{step.count}</span>
-              </button>
-              {index < steps.length - 1 && <span className="workflow-line" />}
-            </Fragment>
-          ))}
-        </div>
       </header>
 
       <main>
@@ -133,7 +112,7 @@ export default function App() {
             settings={settings}
             onSaved={() => {
               loadSettings();
-              setTab("import");
+              setTab("pipeline");
             }}
           />
         )}
