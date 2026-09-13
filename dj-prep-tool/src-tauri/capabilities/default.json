@@ -1,0 +1,11 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for DJ Prep Tool",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "shell:allow-open",
+    "shell:allow-execute"
+  ]
+}

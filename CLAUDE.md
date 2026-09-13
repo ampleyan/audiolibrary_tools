@@ -24,12 +24,12 @@ audiolibrary_tools/
 │   ├── red_match.py           ← Match local albums to RED torrents, cross-seed via qBT
 │   ├── yt_slsk.py             ← YouTube playlist → Soulseek batch downloader
 │   └── navidrome_export.py    ← Export Navidrome playlist to M3U
-├── data/                      ← Runtime data files (gitignored)
-│   ├── yt_slsk_queue.csv
-│   ├── yt_slsk_not_found.csv
-│   ├── yt_slsk_failed.csv
-│   └── yt_slsk_summary.txt
-├── tools/sldl/                ← sldl binary + sldl.conf
+├── data/                      ← Input files and generated runtime output
+│   ├── input/                 ← CSV/TXT source lists
+│   └── output/                ← Generated queues, reports, and summaries
+├── tools/
+│   ├── sldl/                  ← sldl binary + sldl.conf
+│   └── sockseek/              ← Sockseek binary, config, and MP3 conversion hook
 ├── tests/
 │   └── test_yt_slsk.py
 └── run_organizer.bat          ← Quick launcher for organize_music.py

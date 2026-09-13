@@ -1,0 +1,10 @@
+.git
+.venv
+**/node_modules
+**/target
+**/dist
+data
+music-inbox
+music-archive
+__pycache__
+*.pyc

@@ -32,5 +32,9 @@
       "Bash(python -c \":*)",
       "Bash(python -c \"import config; from lib.musiclib import build_folder_name; print\\(''all imports OK''\\)\")"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "fetch"
+  ],
+  "enableAllProjectMcpServers": true
 }

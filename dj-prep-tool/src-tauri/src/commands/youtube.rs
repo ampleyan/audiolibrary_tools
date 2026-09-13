@@ -101,8 +101,15 @@ pub async fn create_youtube_playlist(app: AppHandle, video_ids: Vec<String>, tit
     if ids.is_empty() { return Err("No valid YouTube tracks selected".into()); }
     let client = reqwest::Client::new();
     let playlist: serde_json::Value = client.post("https://youtube.googleapis.com/youtube/v3/playlists?part=snippet,status").bearer_auth(&token).json(&serde_json::json!({"snippet": {"title": title.chars().take(150).collect::<String>(), "description": "Created by DJ Prep Tool"}, "status": {"privacyStatus": "private"}})).send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|_| "Could not create YouTube playlist".to_string())?.json().await.map_err(|e| e.to_string())?;
+    let mut added = 0;
+    let mut skipped_ids = skipped;
     for id in &ids {
-        client.post("https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet").bearer_auth(&token).json(&serde_json::json!({"snippet": {"playlistId": playlist["id"], "resourceId": {"kind": "youtube#video", "videoId": id}}})).send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|_| format!("Could not add video to playlist: {id}"))?;
+        let response = client.post("https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet").bearer_auth(&token).json(&serde_json::json!({"snippet": {"playlistId": playlist["id"], "resourceId": {"kind": "youtube#video", "videoId": id}}})).send().await.map_err(|e| e.to_string())?;
+        if response.status().is_success() {
+            added += 1;
+        } else {
+            skipped_ids.push(id.clone());
+        }
     }
-    Ok(PlaylistResult { playlist_url: format!("https://www.youtube.com/playlist?list={}", playlist["id"].as_str().unwrap_or_default()), added: ids.len(), skipped })
+    Ok(PlaylistResult { playlist_url: format!("https://www.youtube.com/playlist?list={}", playlist["id"].as_str().unwrap_or_default()), added, skipped: skipped_ids })
 }

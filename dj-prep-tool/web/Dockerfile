@@ -1,18 +1,20 @@
 FROM node:20-slim AS frontend
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY dj-prep-tool/package.json dj-prep-tool/package-lock.json ./
 RUN npm ci
-COPY index.html vite.config.ts tsconfig.json ./
-COPY src ./src
+COPY dj-prep-tool/index.html dj-prep-tool/vite.config.ts dj-prep-tool/tsconfig.json ./
+COPY dj-prep-tool/src ./src
 RUN npx tsc --noEmit && npx vite build
 
 FROM python:3.11-slim
 
 WORKDIR /app
-COPY py ./py
-COPY web ./web
+COPY dj-prep-tool/py ./py
+COPY lib ./lib
+COPY dj-prep-tool/web ./web
 COPY --from=frontend /app/dist ./dist
-RUN pip install --no-cache-dir requests yt-dlp
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir requests yt-dlp numpy scipy
 
 ENV DJ_PREP_DATA_DIR=/data
 ENV DJ_PREP_INBOX_DIR=/music/inbox

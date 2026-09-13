@@ -1,0 +1,86 @@
+export type TrackState =
+  | "requested"
+  | "needs_review"
+  | "matched"
+  | "approved"
+  | "downloading"
+  | "downloaded"
+  | "quality_failed"
+  | "picard_pending"
+  | "ready_for_conversion"
+  | "tagging_review"
+  | "ready_for_rekordbox"
+  | "dj_ready"
+  | "rekordbox_pending"
+  | "failed";
+
+export interface TrackRow {
+  id: number;
+  artist: string;
+  title: string;
+  mix_version: string | null;
+  source_url: string | null;
+  state: TrackState;
+  candidate_json: string | null;
+  selected_username: string | null;
+  selected_filename: string | null;
+  downloaded_path: string | null;
+  quality_result: string | null;
+  quality_notes: string | null;
+  archive_path: string | null;
+  dj_path: string | null;
+  search_job_id: string | null;
+  download_job_id: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublicSettings {
+  sockseekPath: string;
+  sockseekDaemonUrl: string;
+  prepInboxDir: string;
+  picardPath: string;
+  ffmpegPath: string;
+  rekordboxImportDir: string;
+  pythonPath: string;
+  ytCookiesFile: string;
+  setupComplete: boolean;
+  hasSockseekCredentials: boolean;
+  hasSpotifyCredentials: boolean;
+  hasCosineCredentials: boolean;
+}
+
+export interface SimilarTrack {
+  artist: string;
+  title: string;
+  mixVersion: string | null;
+  videoUrl: string | null;
+  cosineId: string;
+  score: number;
+}
+
+export interface Candidate {
+  username: string;
+  filename: string;
+  bitRate: number | null;
+  sampleRate: number | null;
+  length: number | null;
+  extension: string;
+  size: number | null;
+}
+
+export interface RankedCandidate {
+  candidate: Candidate;
+  score: number;
+}
+
+export interface QualityResult {
+  isRealFlac: boolean | null;
+  sampleRate: number | null;
+  bitDepth: number | null;
+  channels: number | null;
+  durationSecs: number | null;
+  spectralCutoffHz: number | null;
+  notes: string;
+}

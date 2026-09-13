@@ -276,9 +276,15 @@ def command(name, payload):
         if not video_ids: raise ValueError("No valid YouTube tracks selected")
         title = (payload.get("title") or "DJ Prep playlist").strip()[:150]
         playlist = youtube_request("https://youtube.googleapis.com/youtube/v3/playlists?part=snippet,status", token, {"snippet": {"title": title, "description": "Created by DJ Prep Tool"}, "status": {"privacyStatus": "private"}})
+        skipped = list(payload.get("skipped", []))
+        added = 0
         for video_id in video_ids:
-            youtube_request("https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet", token, {"snippet": {"playlistId": playlist["id"], "resourceId": {"kind": "youtube#video", "videoId": video_id}}})
-        return {"playlistUrl": f"https://www.youtube.com/playlist?list={playlist['id']}", "added": len(video_ids), "skipped": payload.get("skipped", [])}
+            try:
+                youtube_request("https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet", token, {"snippet": {"playlistId": playlist["id"], "resourceId": {"kind": "youtube#video", "videoId": video_id}}})
+                added += 1
+            except urllib.error.HTTPError:
+                skipped.append(video_id)
+        return {"playlistUrl": f"https://www.youtube.com/playlist?list={playlist['id']}", "added": added, "skipped": skipped}
     if name == "poll_download":
         track = get_track(int(payload["trackId"]))
         expected = Path(track.get("selected_filename") or "").name

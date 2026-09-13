@@ -30,10 +30,10 @@ from lib.queue import (
 
 # ── Derived paths from config ─────────────────────────────────────────────────
 
-QUEUE_FILE    = config.DATA_DIR / "yt_slsk_queue.csv"
-NOT_FOUND_FILE = config.DATA_DIR / "yt_slsk_not_found.csv"
-FAILED_FILE   = config.DATA_DIR / "yt_slsk_failed.csv"
-SUMMARY_FILE  = config.DATA_DIR / "yt_slsk_summary.txt"
+QUEUE_FILE    = config.DATA_OUTPUT_DIR / "yt_slsk_queue.csv"
+NOT_FOUND_FILE = config.DATA_OUTPUT_DIR / "yt_slsk_not_found.csv"
+FAILED_FILE   = config.DATA_OUTPUT_DIR / "yt_slsk_failed.csv"
+SUMMARY_FILE  = config.DATA_OUTPUT_DIR / "yt_slsk_summary.txt"
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────

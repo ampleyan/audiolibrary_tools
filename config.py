@@ -9,6 +9,8 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent
 DATA_DIR = ROOT_DIR / "data"
+DATA_INPUT_DIR = DATA_DIR / "input"
+DATA_OUTPUT_DIR = DATA_DIR / "output"
 
 # ── ORGANIZER ─────────────────────────────────────────────────────────────────
 

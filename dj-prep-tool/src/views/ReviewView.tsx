@@ -280,7 +280,7 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
       {error && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{error}</p>}
       {importError && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{importError}</p>}
       {youtubeError && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{youtubeError}</p>}
-      {youtubeResult && <p style={{ color: "#34d399", fontSize: 12, margin: "0 0 8px" }}>Created playlist with {youtubeResult.added} tracks. <a href={youtubeResult.playlistUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa" }}>Open YouTube playlist</a>{youtubeResult.skipped.length > 0 && ` · Skipped ${youtubeResult.skipped.length} without videos`}</p>}
+      {youtubeResult && <p style={{ color: "#34d399", fontSize: 12, margin: "0 0 8px" }}>Created playlist with {youtubeResult.added} tracks. <a href={youtubeResult.playlistUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa" }}>Open YouTube playlist</a>{youtubeResult.skipped.length > 0 && ` · Skipped ${youtubeResult.skipped.length} unavailable or rejected`}</p>}
       {similarTracks === null && !loading && !error && <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>Choose a track and find related music.</p>}
       {similarTracks !== null && (
         <>
