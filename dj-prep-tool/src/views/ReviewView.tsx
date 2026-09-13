@@ -107,14 +107,24 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [maxResults, setMaxResults] = useState(25);
+  const [minimumScore, setMinimumScore] = useState(0);
 
   const selectedTrack = tracks.find((track) => track.id === trackId) ?? tracks[0];
+  const visibleTracks = similarTracks
+    ?.filter((track) => track.score >= minimumScore)
+    .slice(0, maxResults);
 
   useEffect(() => {
     if (!tracks.some((track) => track.id === trackId)) {
       setTrackId(tracks[0]?.id ?? 0);
     }
   }, [tracks, trackId]);
+
+  useEffect(() => {
+    setSelected(new Set());
+    setPlayingIndex(null);
+  }, [maxResults, minimumScore]);
 
   const load = async () => {
     if (!selectedTrack) return;
@@ -148,9 +158,10 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
       const text = [...selected]
         .sort((a, b) => a - b)
         .map((index) => {
-          const track = similarTracks[index];
-          return track.mixVersion ? `${track.artist} - ${track.title} (${track.mixVersion})` : `${track.artist} - ${track.title}`;
+          const track = visibleTracks?.[index];
+          return track ? (track.mixVersion ? `${track.artist} - ${track.title} (${track.mixVersion})` : `${track.artist} - ${track.title}`) : null;
         })
+        .filter((line): line is string => line !== null)
         .join("\n");
       await api.importText(text);
       setSelected(new Set());
@@ -164,8 +175,8 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
   const savePlaylist = () => {
     if (!similarTracks) return;
     const targets = selected.size > 0
-      ? [...selected].sort((a, b) => a - b).map((index) => similarTracks[index])
-      : similarTracks;
+      ? [...selected].sort((a, b) => a - b).map((index) => visibleTracks?.[index]).filter((track): track is SimilarTrack => !!track)
+      : visibleTracks ?? [];
     const lines = targets.map((track) =>
       track.mixVersion ? `${track.artist} - ${track.title} (${track.mixVersion})` : `${track.artist} - ${track.title}`
     );
@@ -213,14 +224,27 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
       {similarTracks !== null && (
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ color: "#6b7280", fontSize: 11 }}>{similarTracks.length} similar tracks{selected.size > 0 && <span style={{ color: "#a78bfa" }}> · {selected.size} selected</span>}</span>
+            <span style={{ color: "#6b7280", fontSize: 11 }}>{visibleTracks?.length ?? 0} of {similarTracks.length} similar tracks{selected.size > 0 && <span style={{ color: "#a78bfa" }}> · {selected.size} selected</span>}</span>
             <div style={{ display: "flex", gap: 6 }}>
               {selected.size > 0 && <button onClick={addToQueue} disabled={importing} style={{ background: importing ? "#1f2937" : "#065f46", color: importing ? "#4b5563" : "#34d399", border: "none", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: importing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{importing ? "Adding…" : `Add ${selected.size} to queue`}</button>}
               <button onClick={savePlaylist} style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{selected.size > 0 ? `Save ${selected.size}` : "Save all"} as playlist</button>
             </div>
           </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+            <label style={{ color: "#6b7280", fontSize: 11 }}>
+              Show
+              <select value={maxResults} onChange={(event) => setMaxResults(Number(event.target.value))} style={{ ...editInput, width: 72, marginLeft: 6 }} aria-label="Maximum similar tracks">
+                {[10, 25, 50, 100].map((count) => <option key={count} value={count}>{count}</option>)}
+              </select>
+            </label>
+            <label style={{ color: "#6b7280", fontSize: 11 }}>
+              Minimum score
+              <input type="number" min="0" max="1" step="0.05" value={minimumScore} onChange={(event) => setMinimumScore(Math.min(1, Math.max(0, Number(event.target.value) || 0)))} style={{ ...editInput, width: 64, marginLeft: 6 }} aria-label="Minimum similarity score" />
+            </label>
+            {visibleTracks?.length === 0 && <span style={{ color: "#f59e0b", fontSize: 11 }}>No tracks match these filters.</span>}
+          </div>
           <div style={{ maxHeight: 320, overflowY: "auto" }}>
-            {similarTracks.map((track, index) => {
+            {visibleTracks?.map((track, index) => {
               const videoId = track.videoUrl ? getVideoId(track.videoUrl) : null;
               const isPlaying = playingIndex === index;
               return <div key={`${track.cosineId}-${index}`} style={{ borderTop: index > 0 ? "1px solid #1f2937" : "none" }}>
