@@ -99,7 +99,7 @@ const editInput: React.CSSProperties = {
 };
 
 function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
-  const [trackId, setTrackId] = useState<number>(tracks[0]?.id ?? 0);
+  const [sourceIds, setSourceIds] = useState<number[]>(tracks[0] ? [tracks[0].id] : []);
   const [similarTracks, setSimilarTracks] = useState<SimilarTrack[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,17 +109,21 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
   const [importError, setImportError] = useState<string | null>(null);
   const [maxResults, setMaxResults] = useState(25);
   const [minimumScore, setMinimumScore] = useState(0);
+  const [sourceProgress, setSourceProgress] = useState<string | null>(null);
+  const [sourceLabels, setSourceLabels] = useState<Record<string, string[]>>({});
 
-  const selectedTrack = tracks.find((track) => track.id === trackId) ?? tracks[0];
+  const selectedSources = tracks.filter((track) => sourceIds.includes(track.id));
+  const selectedTrack = selectedSources[0] ?? tracks[0];
   const visibleTracks = similarTracks
     ?.filter((track) => track.score >= minimumScore)
     .slice(0, maxResults);
 
   useEffect(() => {
-    if (!tracks.some((track) => track.id === trackId)) {
-      setTrackId(tracks[0]?.id ?? 0);
+    const validIds = sourceIds.filter((id) => tracks.some((track) => track.id === id));
+    if (validIds.length !== sourceIds.length) {
+      setSourceIds(validIds.length > 0 ? validIds : tracks[0] ? [tracks[0].id] : []);
     }
-  }, [tracks, trackId]);
+  }, [tracks, sourceIds]);
 
   useEffect(() => {
     setSelected(new Set());
@@ -127,18 +131,38 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
   }, [maxResults, minimumScore]);
 
   const load = async () => {
-    if (!selectedTrack) return;
+    if (selectedSources.length === 0) return;
     setLoading(true);
     setError(null);
     setSimilarTracks(null);
+    setSourceLabels({});
     setSelected(new Set());
     setPlayingIndex(null);
     try {
-      setSimilarTracks(await api.getSimilarTracks(selectedTrack.id));
+      const combined = new Map<string, SimilarTrack>();
+      const labels: Record<string, string[]> = {};
+      const failures: string[] = [];
+      for (const [index, source] of selectedSources.entries()) {
+        setSourceProgress(`${index + 1}/${selectedSources.length}`);
+        try {
+          const results = await api.getSimilarTracks(source.id);
+          for (const result of results) {
+            const key = result.cosineId || `${result.artist}\u0000${result.title}`;
+            combined.set(key, combined.get(key) ?? result);
+            labels[key] = [...(labels[key] ?? []), source.artist ? `${source.artist} – ${source.title}` : source.title];
+          }
+        } catch {
+          failures.push(source.artist ? `${source.artist} – ${source.title}` : source.title);
+        }
+      }
+      setSourceLabels(labels);
+      setSimilarTracks([...combined.values()]);
+      if (failures.length > 0) setError(`Could not load: ${failures.join(", ")}`);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
+      setSourceProgress(null);
     }
   };
 
@@ -196,25 +220,30 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
         <div>
           <h3 style={{ margin: 0, color: "#e5e7eb", fontSize: 15 }}>Similar tracks</h3>
-          <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 12 }}>Discover tracks related to a selected review item.</p>
+          <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 12 }}>Discover tracks related to one or more review items.</p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <select
-            value={selectedTrack?.id ?? ""}
+            multiple
+            size={3}
+            value={sourceIds.map(String)}
             onChange={(event) => {
-              setTrackId(Number(event.target.value));
+              const ids = Array.from(event.target.selectedOptions, (option) => Number(option.value));
+              setSourceIds(ids);
               setSimilarTracks(null);
+              setSourceLabels({});
               setSelected(new Set());
               setPlayingIndex(null);
               setError(null);
             }}
-            style={{ ...editInput, width: 240 }}
-            aria-label="Track for similar search"
+            style={{ ...editInput, width: 280, height: 72 }}
+            aria-label="Tracks for similar search"
           >
             {tracks.map((track) => <option key={track.id} value={track.id}>{track.artist ? `${track.artist} – ${track.title}` : track.title}</option>)}
           </select>
-          <button onClick={load} disabled={!selectedTrack || loading} style={{ background: loading ? "#1f2937" : "#4c1d95", color: loading ? "#4b5563" : "#ddd6fe", border: "1px solid #6d28d9", borderRadius: 5, padding: "6px 12px", fontSize: 12, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-            {loading ? "Finding…" : similarTracks ? "Refresh" : "Find similar"}
+          <span style={{ color: "#4b5563", fontSize: 10 }}>Ctrl/Cmd-click to select multiple</span>
+          <button onClick={load} disabled={selectedSources.length === 0 || loading} style={{ background: loading ? "#1f2937" : "#4c1d95", color: loading ? "#4b5563" : "#ddd6fe", border: "1px solid #6d28d9", borderRadius: 5, padding: "6px 12px", fontSize: 12, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+            {loading ? `Finding ${sourceProgress ?? "…"}` : similarTracks ? "Refresh" : "Find similar"}
           </button>
         </div>
       </div>
@@ -247,6 +276,7 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
             {visibleTracks?.map((track, index) => {
               const videoId = track.videoUrl ? getVideoId(track.videoUrl) : null;
               const isPlaying = playingIndex === index;
+              const key = track.cosineId || `${track.artist}\u0000${track.title}`;
               return <div key={`${track.cosineId}-${index}`} style={{ borderTop: index > 0 ? "1px solid #1f2937" : "none" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 12 }}>
                   <input type="checkbox" checked={selected.has(index)} onChange={() => toggleSelect(index)} aria-label={`Select ${track.artist} ${track.title}`} style={{ flexShrink: 0, accentColor: "#a78bfa", cursor: "pointer" }} />
@@ -254,6 +284,7 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
                   <span style={{ flex: "0 1 auto", minWidth: 0, maxWidth: "calc(100% - 96px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#d1d5db" }}>{track.artist} – {track.title}{track.mixVersion && <span style={{ color: "#6b7280", marginLeft: 6 }}>{track.mixVersion}</span>}</span>
                   {videoId && <button onClick={() => setPlayingIndex(isPlaying ? null : index)} aria-label={isPlaying ? "Stop preview" : "Play preview"} style={{ flexShrink: 0, background: isPlaying ? "#1e3a5f" : "transparent", color: isPlaying ? "#60a5fa" : "#4b5563", border: isPlaying ? "1px solid #1e40af" : "none", borderRadius: 4, padding: "2px 7px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{isPlaying ? "⏹" : "▶"}</button>}
                 </div>
+                <div style={{ color: "#4b5563", fontSize: 10, padding: "0 0 5px 78px" }}>From {sourceLabels[key]?.join(", ")}</div>
                 {isPlaying && videoId && <iframe title={`Preview ${track.artist} ${track.title}`} src={`https://www.youtube.com/embed/${videoId}?autoplay=1`} width="100%" height="160" allow="autoplay; encrypted-media" style={{ display: "block", border: "none", borderRadius: 4, marginBottom: 6 }} />}
               </div>;
             })}
