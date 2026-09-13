@@ -1,0 +1,19 @@
+services:
+  dj-prep:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DJ_PREP_DATA_DIR: /data
+      DJ_PREP_INBOX_DIR: /music/inbox
+      DJ_PREP_ARCHIVE_DIR: /music/archive
+      SOCKSEEK_URL: ${SOCKSEEK_URL:-http://host.docker.internal:5030}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/data
+      - ./music-inbox:/music/inbox
+      - ./music-archive:/music/archive
+    restart: unless-stopped
