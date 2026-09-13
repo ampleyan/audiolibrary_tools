@@ -98,6 +98,148 @@ const editInput: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
+function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
+  const [trackId, setTrackId] = useState<number>(tracks[0]?.id ?? 0);
+  const [similarTracks, setSimilarTracks] = useState<SimilarTrack[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const selectedTrack = tracks.find((track) => track.id === trackId) ?? tracks[0];
+
+  useEffect(() => {
+    if (!tracks.some((track) => track.id === trackId)) {
+      setTrackId(tracks[0]?.id ?? 0);
+    }
+  }, [tracks, trackId]);
+
+  const load = async () => {
+    if (!selectedTrack) return;
+    setLoading(true);
+    setError(null);
+    setSimilarTracks(null);
+    setSelected(new Set());
+    setPlayingIndex(null);
+    try {
+      setSimilarTracks(await api.getSimilarTracks(selectedTrack.id));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleSelect = (index: number) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index); else next.add(index);
+      return next;
+    });
+  };
+
+  const addToQueue = async () => {
+    if (!similarTracks || selected.size === 0) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      const text = [...selected]
+        .sort((a, b) => a - b)
+        .map((index) => {
+          const track = similarTracks[index];
+          return track.mixVersion ? `${track.artist} - ${track.title} (${track.mixVersion})` : `${track.artist} - ${track.title}`;
+        })
+        .join("\n");
+      await api.importText(text);
+      setSelected(new Set());
+    } catch (e) {
+      setImportError(String(e));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const savePlaylist = () => {
+    if (!similarTracks) return;
+    const targets = selected.size > 0
+      ? [...selected].sort((a, b) => a - b).map((index) => similarTracks[index])
+      : similarTracks;
+    const lines = targets.map((track) =>
+      track.mixVersion ? `${track.artist} - ${track.title} (${track.mixVersion})` : `${track.artist} - ${track.title}`
+    );
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `similar-${selectedTrack?.artist ?? "tracks"}.txt`.replace(/[\\/:*?"<>|]/g, "_");
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const getVideoId = (url: string) => url.match(/[?&]v=([^&]+)/)?.[1] ?? null;
+
+  return (
+    <section style={{ background: "#111827", border: "1px solid #293548", borderRadius: 8, marginBottom: 18, padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+        <div>
+          <h3 style={{ margin: 0, color: "#e5e7eb", fontSize: 15 }}>Similar tracks</h3>
+          <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 12 }}>Discover tracks related to a selected review item.</p>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <select
+            value={selectedTrack?.id ?? ""}
+            onChange={(event) => {
+              setTrackId(Number(event.target.value));
+              setSimilarTracks(null);
+              setSelected(new Set());
+              setPlayingIndex(null);
+              setError(null);
+            }}
+            style={{ ...editInput, width: 240 }}
+            aria-label="Track for similar search"
+          >
+            {tracks.map((track) => <option key={track.id} value={track.id}>{track.artist ? `${track.artist} – ${track.title}` : track.title}</option>)}
+          </select>
+          <button onClick={load} disabled={!selectedTrack || loading} style={{ background: loading ? "#1f2937" : "#4c1d95", color: loading ? "#4b5563" : "#ddd6fe", border: "1px solid #6d28d9", borderRadius: 5, padding: "6px 12px", fontSize: 12, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+            {loading ? "Finding…" : similarTracks ? "Refresh" : "Find similar"}
+          </button>
+        </div>
+      </div>
+      {error && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{error}</p>}
+      {importError && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{importError}</p>}
+      {similarTracks === null && !loading && !error && <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>Choose a track and find related music.</p>}
+      {similarTracks !== null && (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ color: "#6b7280", fontSize: 11 }}>{similarTracks.length} similar tracks{selected.size > 0 && <span style={{ color: "#a78bfa" }}> · {selected.size} selected</span>}</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              {selected.size > 0 && <button onClick={addToQueue} disabled={importing} style={{ background: importing ? "#1f2937" : "#065f46", color: importing ? "#4b5563" : "#34d399", border: "none", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: importing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{importing ? "Adding…" : `Add ${selected.size} to queue`}</button>}
+              <button onClick={savePlaylist} style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{selected.size > 0 ? `Save ${selected.size}` : "Save all"} as playlist</button>
+            </div>
+          </div>
+          <div style={{ maxHeight: 320, overflowY: "auto" }}>
+            {similarTracks.map((track, index) => {
+              const videoId = track.videoUrl ? getVideoId(track.videoUrl) : null;
+              const isPlaying = playingIndex === index;
+              return <div key={`${track.cosineId}-${index}`} style={{ borderTop: index > 0 ? "1px solid #1f2937" : "none" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 12 }}>
+                  <input type="checkbox" checked={selected.has(index)} onChange={() => toggleSelect(index)} aria-label={`Select ${track.artist} ${track.title}`} style={{ flexShrink: 0, accentColor: "#a78bfa", cursor: "pointer" }} />
+                  <span style={{ color: "#6b7280", width: 34, textAlign: "right", flexShrink: 0 }}>{track.score.toFixed(3)}</span>
+                  <span style={{ flex: 1, color: "#d1d5db" }}>{track.artist} – {track.title}{track.mixVersion && <span style={{ color: "#6b7280", marginLeft: 6 }}>{track.mixVersion}</span>}</span>
+                  {videoId && <button onClick={() => setPlayingIndex(isPlaying ? null : index)} aria-label={isPlaying ? "Stop preview" : "Play preview"} style={{ background: isPlaying ? "#1e3a5f" : "transparent", color: isPlaying ? "#60a5fa" : "#4b5563", border: isPlaying ? "1px solid #1e40af" : "none", borderRadius: 4, padding: "2px 7px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{isPlaying ? "⏹" : "▶"}</button>}
+                </div>
+                {isPlaying && videoId && <iframe title={`Preview ${track.artist} ${track.title}`} src={`https://www.youtube.com/embed/${videoId}?autoplay=1`} width="100%" height="160" allow="autoplay; encrypted-media" style={{ display: "block", border: "none", borderRadius: 4, marginBottom: 6 }} />}
+              </div>;
+            })}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function TrackCard({
   track,
   onRefresh,
@@ -117,14 +259,6 @@ function TrackCard({
   const [editMix, setEditMix] = useState(track.mix_version ?? "");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [similarTracks, setSimilarTracks] = useState<SimilarTrack[] | null>(null);
-  const [loadingSimilar, setLoadingSimilar] = useState(false);
-  const [similarErr, setSimilarErr] = useState<string | null>(null);
-  const [similarExpanded, setSimilarExpanded] = useState(false);
-  const [selectedSimilar, setSelectedSimilar] = useState<Set<number>>(new Set());
-  const [playingIndex, setPlayingIndex] = useState<number | null>(null);
-  const [importingSelected, setImportingSelected] = useState(false);
-  const [importErr, setImportErr] = useState<string | null>(null);
 
   const candidates: RankedCandidate[] = (() => {
     if (!track.candidate_json) return [];
@@ -200,77 +334,6 @@ function TrackCard({
       setDeleting(false);
     }
   };
-
-  const loadSimilar = async () => {
-    if (similarTracks !== null) {
-      setSimilarExpanded((v) => !v);
-      if (similarExpanded) {
-        setSelectedSimilar(new Set());
-        setPlayingIndex(null);
-      }
-      return;
-    }
-    setLoadingSimilar(true);
-    setSimilarErr(null);
-    try {
-      const result = await api.getSimilarTracks(track.id);
-      setSimilarTracks(result);
-      setSimilarExpanded(true);
-    } catch (e) {
-      setSimilarErr(String(e));
-    } finally {
-      setLoadingSimilar(false);
-    }
-  };
-
-  const toggleSimilarSelect = (i: number) => {
-    setSelectedSimilar((prev) => {
-      const next = new Set(prev);
-      if (next.has(i)) next.delete(i); else next.add(i);
-      return next;
-    });
-  };
-
-  const addSimilarToQueue = async () => {
-    if (!similarTracks || selectedSimilar.size === 0) return;
-    setImportingSelected(true);
-    setImportErr(null);
-    try {
-      const text = [...selectedSimilar]
-        .sort((a, b) => a - b)
-        .map((i) => {
-          const t = similarTracks[i];
-          return t.mixVersion ? `${t.artist} - ${t.title} (${t.mixVersion})` : `${t.artist} - ${t.title}`;
-        })
-        .join("\n");
-      await api.importText(text);
-      onRefresh();
-      setSelectedSimilar(new Set());
-    } catch (e) {
-      setImportErr(String(e));
-    } finally {
-      setImportingSelected(false);
-    }
-  };
-
-  const saveSimilarPlaylist = () => {
-    if (!similarTracks) return;
-    const targets = selectedSimilar.size > 0
-      ? [...selectedSimilar].sort((a, b) => a - b).map((i) => similarTracks[i])
-      : similarTracks;
-    const lines = targets.map((t) =>
-      t.mixVersion ? `${t.artist} - ${t.title} (${t.mixVersion})` : `${t.artist} - ${t.title}`
-    );
-    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `similar-${track.artist}-${track.title}.txt`.replace(/[\\/:*?"<>|]/g, "_");
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const getVideoId = (url: string) => url.match(/[?&]v=([^&]+)/)?.[1] ?? null;
 
   const noResults = track.state === "requested" && !!track.search_job_id;
   const canSearch = track.state === "requested" || track.state === "needs_review";
@@ -466,30 +529,6 @@ function TrackCard({
               </button>
             )}
             <button
-              onClick={loadSimilar}
-              disabled={loadingSimilar}
-              style={{
-                background: "transparent",
-                color: loadingSimilar ? "#4b5563" : "#a78bfa",
-                border: "1px solid #4c1d95",
-                borderRadius: 4,
-                padding: "4px 10px",
-                fontSize: 12,
-                cursor: loadingSimilar ? "not-allowed" : "pointer",
-                fontFamily: "inherit",
-                flexShrink: 0,
-              }}
-              title="Find similar tracks via cosine.club"
-            >
-              {loadingSimilar
-                ? "…"
-                : similarTracks !== null
-                ? similarExpanded
-                  ? "▲ Similar"
-                  : `▼ Similar (${similarTracks.length})`
-                : "Similar"}
-            </button>
-            <button
               onClick={deleteTrack}
               disabled={deleting}
               style={{
@@ -531,132 +570,6 @@ function TrackCard({
         <p style={{ color: "#f87171", fontSize: 12, padding: "0 14px 10px" }}>
           {err}
         </p>
-      )}
-
-      {similarErr && (
-        <p style={{ color: "#f87171", fontSize: 12, padding: "0 14px 10px" }}>
-          Similar: {similarErr}
-        </p>
-      )}
-
-      {similarExpanded && similarTracks !== null && (
-        <div style={{ borderTop: "1px solid #111827", padding: "8px 14px 10px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: "#6b7280" }}>
-              cosine.club — {similarTracks.length} similar
-              {selectedSimilar.size > 0 && <span style={{ color: "#a78bfa" }}> · {selectedSimilar.size} selected</span>}
-            </span>
-            <div style={{ display: "flex", gap: 6 }}>
-              {selectedSimilar.size > 0 && (
-                <button
-                  onClick={addSimilarToQueue}
-                  disabled={importingSelected}
-                  style={{
-                    background: importingSelected ? "#111827" : "#065f46",
-                    color: importingSelected ? "#4b5563" : "#34d399",
-                    border: "none",
-                    borderRadius: 4,
-                    padding: "3px 10px",
-                    fontSize: 11,
-                    cursor: importingSelected ? "not-allowed" : "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  {importingSelected ? "Adding…" : `Add ${selectedSimilar.size} to queue`}
-                </button>
-              )}
-              <button
-                onClick={saveSimilarPlaylist}
-                style={{
-                  background: "transparent",
-                  color: "#6b7280",
-                  border: "1px solid #374151",
-                  borderRadius: 4,
-                  padding: "3px 10px",
-                  fontSize: 11,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                {selectedSimilar.size > 0 ? `Save ${selectedSimilar.size}` : "Save all"} as playlist
-              </button>
-            </div>
-          </div>
-          {importErr && (
-            <p style={{ fontSize: 11, color: "#f87171", margin: "0 0 6px" }}>{importErr}</p>
-          )}
-          <div style={{ maxHeight: 320, overflowY: "auto" }}>
-            {similarTracks.map((t, i) => {
-              const videoId = t.videoUrl ? getVideoId(t.videoUrl) : null;
-              const isPlaying = playingIndex === i;
-              return (
-                <div key={i} style={{ borderTop: i > 0 ? "1px solid #111827" : "none" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "5px 0",
-                      fontSize: 12,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedSimilar.has(i)}
-                      onChange={() => toggleSimilarSelect(i)}
-                      style={{ flexShrink: 0, accentColor: "#a78bfa", cursor: "pointer" }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 10,
-                        color: "#6b7280",
-                        width: 34,
-                        textAlign: "right",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {t.score.toFixed(3)}
-                    </span>
-                    <span style={{ flex: 1, color: "#d1d5db" }}>
-                      {t.artist} – {t.title}
-                      {t.mixVersion && (
-                        <span style={{ color: "#6b7280", marginLeft: 6 }}>{t.mixVersion}</span>
-                      )}
-                    </span>
-                    {videoId && (
-                      <button
-                        onClick={() => setPlayingIndex(isPlaying ? null : i)}
-                        style={{
-                          background: isPlaying ? "#1e3a5f" : "transparent",
-                          color: isPlaying ? "#60a5fa" : "#4b5563",
-                          border: isPlaying ? "1px solid #1e40af" : "none",
-                          borderRadius: 4,
-                          padding: "2px 7px",
-                          fontSize: 11,
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                          flexShrink: 0,
-                        }}
-                        title={isPlaying ? "Stop" : "Play inline"}
-                      >
-                        {isPlaying ? "⏹" : "▶"}
-                      </button>
-                    )}
-                  </div>
-                  {isPlaying && videoId && (
-                    <iframe
-                      src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
-                      width="100%"
-                      height="160"
-                      allow="autoplay; encrypted-media"
-                      style={{ display: "block", border: "none", borderRadius: 4, marginBottom: 6 }}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
       )}
 
       {isMatched && expanded && candidates.length > 0 && (
@@ -791,6 +704,8 @@ export default function ReviewView() {
           </button>
         </div>
       </div>
+
+      {tracks.length > 0 && <SimilarPanel tracks={tracks} />}
 
       {loading ? (
         <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p>

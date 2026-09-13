@@ -252,8 +252,16 @@ def command(name, payload):
         env = os.environ.copy(); env["COSINE_API_KEY"] = key
         result = subprocess.run([PYTHON, str(ROOT / "py" / "cosine_fetch.py"), track["artist"], track["title"]], capture_output=True, text=True, env=env, check=False)
         if result.returncode: raise ValueError(result.stderr.strip() or "Similarity lookup failed")
-        return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-    if name in ("tag_track", "open_folder", "launch_sockseek"):
+        return [{"artist": item.get("artist", ""), "title": item.get("title", ""), "mixVersion": item.get("mix_version"), "videoUrl": item.get("video_url"), "cosineId": item.get("cosine_id", ""), "score": item.get("score", 0)} for item in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
+    if name == "tag_track":
+        track = get_track(int(payload["trackId"]))
+        source = track.get("downloaded_path")
+        if not source: raise ValueError("No downloaded file — run poll_download first")
+        output = str(Path(source).with_suffix(".mp3"))
+        result = subprocess.run(["ffmpeg", "-i", source, "-b:a", "320k", "-y", output], capture_output=True, text=True, check=False)
+        if result.returncode: raise ValueError(result.stderr.strip() or "Conversion failed")
+        return update(track["id"], "UPDATE tracks SET archive_path=?,state='ready_for_rekordbox',error=NULL WHERE id=?", (output,))
+    if name in ("open_folder", "launch_sockseek"):
         raise ValueError("This action is only available in the desktop Tauri app")
     if name == "check_daemon":
         try: request("GET", ""); return True
@@ -269,7 +277,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/health": self.send_json(200, {"ok": True}); return
         requested = self.path.split("?", 1)[0].lstrip("/") or "index.html"
-        file_path = ROOT / "dist" / requested
+        dist_root = (ROOT / "dist").resolve()
+        file_path = (dist_root / requested).resolve()
+        if dist_root not in file_path.parents and file_path != dist_root:
+            file_path = dist_root / "index.html"
         if not file_path.is_file(): file_path = ROOT / "dist" / "index.html"
         if not file_path.is_file(): self.send_json(404, {"error": "frontend not built"}); return
         body = file_path.read_bytes()
