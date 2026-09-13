@@ -77,7 +77,7 @@ def parse_text(text):
             continue
         artist, title = split_line(line)
         artist, title, mix = clean_pair(artist, title)
-        drafts.append((artist, title, mix, "requested" if artist and title else "needs_review", None))
+        drafts.append((artist, title, mix, None, "requested" if artist and title else "needs_review", None))
     return drafts
 
 def parse_csv(content):
@@ -101,7 +101,7 @@ def parse_csv(content):
         if not title:
             continue
         url = (row.get(key("url"), "") if key("url") else "").strip() or None
-        drafts.append((artist, title, supplied, "requested" if artist else "needs_review", url))
+        drafts.append((artist, title, supplied, url, "requested" if artist else "needs_review", None))
     return drafts
 
 def insert(draft):
@@ -178,7 +178,7 @@ def command(name, payload):
             if value: env["SPOTIFY_CLIENT_ID" if key.endswith("id") else "SPOTIFY_CLIENT_SECRET"] = value
         result = subprocess.run(args, capture_output=True, text=True, env=env, check=False)
         if result.returncode: raise ValueError(result.stderr.strip() or "Playlist import failed")
-        return [insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), draft.get("state", "needs_review"), draft.get("source_url"))) for draft in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
+        return [insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), draft.get("source_url"), draft.get("state", "needs_review"), draft.get("notes"))) for draft in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
     if name == "list_tracks": return tracks(payload.get("state"))
     if name == "update_track_state": return update(int(payload["id"]), "UPDATE tracks SET state=? WHERE id=?", (payload["state"],))
     if name == "delete_track":
