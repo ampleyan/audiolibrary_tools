@@ -98,7 +98,7 @@ const editInput: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
+export function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
   const [sourceIds, setSourceIds] = useState<number[]>(tracks[0] ? [tracks[0].id] : []);
   const [similarTracks, setSimilarTracks] = useState<SimilarTrack[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -792,8 +792,6 @@ export default function ReviewView() {
           </button>
         </div>
       </div>
-
-      {tracks.length > 0 && <SimilarPanel tracks={tracks} />}
 
       {loading ? (
         <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p>

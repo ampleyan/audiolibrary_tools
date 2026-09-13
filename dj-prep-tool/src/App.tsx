@@ -2,15 +2,17 @@ import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 import type { PublicSettings } from "./lib/types";
 import DownloadView from "./views/DownloadView";
+import DiscoveryView from "./views/DiscoveryView";
 import ImportView from "./views/ImportView";
 import PipelineView from "./views/PipelineView";
 import ReviewView from "./views/ReviewView";
 import SetupView from "./views/SetupView";
 
-type Tab = "import" | "review" | "downloads" | "pipeline" | "setup";
+type Tab = "import" | "review" | "downloads" | "pipeline" | "discover" | "setup";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "pipeline", label: "Pipeline" },
+  { id: "discover", label: "Discover" },
   { id: "import", label: "Add tracks" },
   { id: "review", label: "Review" },
   { id: "downloads", label: "Download & check" },
@@ -107,6 +109,7 @@ export default function App() {
         {tab === "review" && <ReviewView />}
         {tab === "downloads" && <DownloadView />}
         {tab === "pipeline" && <PipelineView />}
+        {tab === "discover" && <DiscoveryView />}
         {tab === "setup" && (
           <SetupView
             settings={settings}
