@@ -156,7 +156,7 @@ pub fn update_track(
     use rusqlite::params;
     let conn = db::open(&app).map_err(|e| e.to_string())?;
     conn.execute(
-        "UPDATE tracks SET artist = ?1, title = ?2, mix_version = ?3, updated_at = datetime('now') WHERE id = ?4",
+        "UPDATE tracks SET artist = ?1, title = ?2, mix_version = ?3, state = CASE WHEN state = 'needs_review' AND ?1 <> '' AND ?2 <> '' THEN 'requested' ELSE state END, updated_at = datetime('now') WHERE id = ?4",
         params![artist, title, mix_version, id],
     )
     .map_err(|e| e.to_string())?;

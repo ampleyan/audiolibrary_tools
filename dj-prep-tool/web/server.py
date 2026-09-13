@@ -222,7 +222,7 @@ def command(name, payload):
     if name == "clear_tracks":
         conn = db(); conn.execute("DELETE FROM tracks"); conn.commit(); conn.close(); return None
     if name == "update_track":
-        return update(int(payload["id"]), "UPDATE tracks SET artist=?,title=?,mix_version=? WHERE id=?", (payload["artist"], payload["title"], payload.get("mixVersion")))
+        return update(int(payload["id"]), "UPDATE tracks SET artist=?,title=?,mix_version=?,state=CASE WHEN state='needs_review' AND ?<>'' AND ?<>'' THEN 'requested' ELSE state END WHERE id=?", (payload["artist"], payload["title"], payload.get("mixVersion"), payload["artist"], payload["title"]))
     if name in ("search_track", "search_track_loose"):
         track = get_track(int(payload["trackId"]))
         query = track["title"] if name == "search_track" else f'{track["artist"]} {track["title"]}'
