@@ -1,4 +1,4 @@
-FROM node:20-slim AS frontend
+FROM --platform=$BUILDPLATFORM node:20-slim AS frontend
 WORKDIR /app
 COPY dj-prep-tool/package.json dj-prep-tool/package-lock.json ./
 RUN npm ci
