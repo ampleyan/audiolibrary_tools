@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { TrackRow } from "../lib/types";
+import type { Candidate, QualityResult, RankedCandidate, TrackRow } from "../lib/types";
 
 type PipelineGroupId = "inbox" | "attention" | "progress" | "ready";
 
@@ -23,52 +23,162 @@ function emptyGroups(): Record<PipelineGroupId, TrackRow[]> {
   return { inbox: [], attention: [], progress: [], ready: [] };
 }
 
+function candidatesFor(track: TrackRow): RankedCandidate[] {
+  if (!track.candidate_json) return [];
+  try {
+    return JSON.parse(track.candidate_json);
+  } catch {
+    return [];
+  }
+}
+
 function GroupColumn({
   group,
   tracks,
+  onOpen,
 }: {
   group: (typeof PIPELINE_GROUPS)[number];
   tracks: TrackRow[];
+  onOpen: (track: TrackRow) => void;
 }) {
   return (
     <section style={{ minWidth: 260, flex: "1 1 0", background: "#111827", border: "1px solid #293548", borderRadius: 8, padding: 14 }} aria-labelledby={`${group.id}-heading`}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: group.color, display: "inline-block", flexShrink: 0 }} />
-        <h3 id={`${group.id}-heading`} style={{ fontSize: 13, color: "#e5e7eb", fontWeight: 600, margin: 0 }}>
-          {group.label}
-        </h3>
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "#d1d5db", background: "#1f2937", borderRadius: 999, padding: "1px 7px" }}>
-          {tracks.length}
-        </span>
+        <h3 id={`${group.id}-heading`} style={{ fontSize: 13, color: "#e5e7eb", fontWeight: 600, margin: 0 }}>{group.label}</h3>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "#d1d5db", background: "#1f2937", borderRadius: 999, padding: "1px 7px" }}>{tracks.length}</span>
       </div>
       <p style={{ color: "#6b7280", fontSize: 11, margin: "0 0 12px", minHeight: 28 }}>{group.description}</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {tracks.length === 0 ? (
           <p style={{ color: "#4b5563", fontSize: 12, margin: 0 }}>Nothing here yet.</p>
         ) : tracks.map((track) => (
-          <div key={track.id} style={{ background: "#1f2937", borderRadius: 5, padding: "8px 10px", borderLeft: `3px solid ${group.color}66` }}>
-            <p style={{ fontSize: 12, color: "#e5e7eb", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${track.artist} – ${track.title}`}>
+          <button key={track.id} onClick={() => onOpen(track)} style={{ background: "#1f2937", border: "none", borderLeft: `3px solid ${group.color}66`, borderRadius: 5, padding: "8px 10px", color: "inherit", textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>
+            <span style={{ display: "block", fontSize: 12, color: "#e5e7eb", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${track.artist} – ${track.title}`}>
               {track.artist ? `${track.artist} – ${track.title}` : track.title}
-            </p>
-            {track.mix_version && <p style={{ fontSize: 10, color: "#6b7280", margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.mix_version}</p>}
-            {track.error && <p style={{ fontSize: 10, color: "#f87171", margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={track.error}>⚠ {track.error}</p>}
-          </div>
+            </span>
+            {track.mix_version && <span style={{ display: "block", fontSize: 10, color: "#6b7280", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.mix_version}</span>}
+            {track.error && <span style={{ display: "block", fontSize: 10, color: "#f87171", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={track.error}>⚠ {track.error}</span>}
+          </button>
         ))}
       </div>
     </section>
   );
 }
 
+function TrackDrawer({
+  track,
+  onClose,
+  onUpdated,
+}: {
+  track: TrackRow;
+  onClose: () => void;
+  onUpdated: (track: TrackRow) => void;
+}) {
+  const [artist, setArtist] = useState(track.artist);
+  const [title, setTitle] = useState(track.title);
+  const [mixVersion, setMixVersion] = useState(track.mix_version ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState(() => candidatesFor(track));
+  const [quality, setQuality] = useState<QualityResult | null>(null);
+
+  useEffect(() => {
+    setArtist(track.artist);
+    setTitle(track.title);
+    setMixVersion(track.mix_version ?? "");
+    setCandidates(candidatesFor(track));
+    setQuality(null);
+    setError(null);
+  }, [track]);
+
+  const update = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = () => update(async () => {
+    const updated = await api.updateTrack(track.id, artist.trim(), title.trim(), mixVersion.trim() || null);
+    onUpdated(updated);
+  });
+
+  const search = (loose = false) => update(async () => {
+    const results = loose ? await api.searchTrackLoose(track.id) : await api.searchTrack(track.id);
+    setCandidates(results);
+    onUpdated({ ...track, artist: artist.trim(), title: title.trim(), mix_version: mixVersion.trim() || null, state: "matched", candidate_json: JSON.stringify(results), search_job_id: track.search_job_id });
+  });
+
+  const approve = (candidate: Candidate) => update(async () => {
+    await api.approveCandidate(track.id, candidate.username, candidate.filename);
+    onUpdated({ ...track, state: "approved", selected_username: candidate.username, selected_filename: candidate.filename });
+  });
+
+  const startDownload = () => update(async () => {
+    await api.startDownload(track.id);
+    onUpdated({ ...track, state: "downloading" });
+  });
+
+  const qualityCheck = () => update(async () => {
+    const result = await api.runQualityCheck(track.id);
+    setQuality(result);
+    onUpdated({ ...track, state: result.isRealFlac === false ? "quality_failed" : "ready_for_conversion", quality_result: result.isRealFlac === false ? "fake_flac" : "ok", quality_notes: result.notes });
+  });
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#0008", zIndex: 10 }} />
+      <aside role="dialog" aria-modal="true" aria-labelledby="track-drawer-title" style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: "min(440px, 100vw)", overflowY: "auto", background: "#111827", borderLeft: "1px solid #374151", padding: 22, zIndex: 11, color: "#f9fafb", boxSizing: "border-box" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 20 }}>
+          <div>
+            <p style={{ color: "#6b7280", fontSize: 11, margin: "0 0 5px" }}>Track details</p>
+            <h2 id="track-drawer-title" style={{ color: "#f9fafb", fontSize: 18, margin: 0 }}>{track.artist ? `${track.artist} – ${track.title}` : track.title}</h2>
+          </div>
+          <button onClick={onClose} aria-label="Close track details" style={{ background: "transparent", border: "1px solid #374151", borderRadius: 5, color: "#9ca3af", cursor: "pointer", padding: "4px 8px", fontSize: 16 }}>×</button>
+        </div>
+
+        <div style={{ display: "grid", gap: 10, marginBottom: 22 }}>
+          <label style={{ color: "#9ca3af", fontSize: 12 }}>Artist<input value={artist} onChange={(e) => setArtist(e.target.value)} style={inputStyle} /></label>
+          <label style={{ color: "#9ca3af", fontSize: 12 }}>Title<input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} /></label>
+          <label style={{ color: "#9ca3af", fontSize: 12 }}>Mix version<input value={mixVersion} onChange={(e) => setMixVersion(e.target.value)} style={inputStyle} /></label>
+          <button onClick={save} disabled={busy || !artist.trim() || !title.trim()} style={buttonStyle}>{busy ? "Working…" : "Save track details"}</button>
+        </div>
+
+        {error && <p style={{ color: "#f87171", fontSize: 12, background: "#1a0c0c", border: "1px solid #7f1d1d", padding: 8, borderRadius: 5 }}>{error}</p>}
+
+        {(track.state === "requested" || track.state === "needs_review") && <div style={sectionStyle}><h3 style={sectionHeading}>Find a file</h3><div style={{ display: "flex", gap: 8 }}><button onClick={() => search()} disabled={busy || !artist.trim() || !title.trim()} style={buttonStyle}>{busy ? "Searching…" : "Search"}</button>{track.search_job_id && <button onClick={() => search(true)} disabled={busy} style={secondaryButtonStyle}>Search loose</button>}</div></div>}
+
+        {candidates.length > 0 && (track.state === "matched" || track.state === "requested" || track.state === "needs_review") && <div style={sectionStyle}><h3 style={sectionHeading}>Candidate files</h3><div style={{ display: "grid", gap: 6 }}>{candidates.slice(0, 5).map((ranked) => <div key={`${ranked.candidate.username}-${ranked.candidate.filename}`} style={{ background: "#1f2937", borderRadius: 5, padding: 9 }}><p style={{ color: "#d1d5db", fontSize: 12, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ranked.candidate.filename}>{ranked.candidate.filename}</p><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}><span style={{ color: "#6b7280", fontSize: 11 }}>Score {ranked.score}</span><button onClick={() => approve(ranked.candidate)} disabled={busy} style={buttonStyle}>Approve</button></div></div>)}</div></div>}
+
+        {track.state === "approved" && <div style={sectionStyle}><h3 style={sectionHeading}>Download</h3><button onClick={startDownload} disabled={busy} style={buttonStyle}>{busy ? "Starting…" : "Start download"}</button></div>}
+        {track.state === "downloading" && <div style={sectionStyle}><h3 style={sectionHeading}>Download</h3><p style={{ color: "#facc15", fontSize: 13, margin: 0 }}>Download in progress. Check the Download & check view for live progress.</p></div>}
+        {(track.state === "downloaded" || track.state === "quality_failed") && <div style={sectionStyle}><h3 style={sectionHeading}>Quality</h3><button onClick={qualityCheck} disabled={busy} style={buttonStyle}>{busy ? "Checking…" : "Run quality check"}</button>{quality && <p style={{ color: quality.isRealFlac ? "#4ade80" : "#f87171", fontSize: 12 }}>{quality.isRealFlac ? "Real FLAC" : "Quality issue"}{quality.notes ? ` — ${quality.notes}` : ""}</p>}</div>}
+        {track.downloaded_path && <p style={{ color: "#6b7280", fontSize: 11, wordBreak: "break-all" }}>File: {track.downloaded_path}</p>}
+      </aside>
+    </>
+  );
+}
+
+const inputStyle = { display: "block", width: "100%", boxSizing: "border-box" as const, marginTop: 5, background: "#0f172a", border: "1px solid #374151", borderRadius: 5, color: "#f9fafb", padding: "8px 10px", fontFamily: "inherit", fontSize: 13 };
+const buttonStyle = { background: "#1e3a5f", color: "#93c5fd", border: "1px solid #1e40af", borderRadius: 5, padding: "7px 12px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" };
+const secondaryButtonStyle = { ...buttonStyle, background: "transparent", color: "#9ca3af", borderColor: "#374151" };
+const sectionStyle = { borderTop: "1px solid #293548", paddingTop: 16, marginTop: 18 };
+const sectionHeading = { color: "#e5e7eb", fontSize: 13, margin: "0 0 10px" };
+
 export default function PipelineView() {
   const [tracks, setTracks] = useState<TrackRow[]>([]);
+  const [selectedTrack, setSelectedTrack] = useState<TrackRow | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = () => {
     setLoading(true);
-    api.listTracks()
-      .then(setTracks)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    api.listTracks().then(setTracks).catch(() => {}).finally(() => setLoading(false));
   };
 
   useEffect(load, []);
@@ -78,27 +188,25 @@ export default function PipelineView() {
     return groups;
   }, emptyGroups());
 
+  const updateTrack = (updated: TrackRow) => {
+    setTracks((current) => current.map((track) => track.id === updated.id ? updated : track));
+    setSelectedTrack(updated);
+  };
+
+  const attentionTrack = tracks.find((track) => groupForTrack(track) === "attention");
+
   return (
     <div className="view pipeline-view" style={{ padding: 24, color: "#f9fafb" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <div className="view-heading">
-          <h2>Pipeline</h2>
-          <p>{tracks.length} track{tracks.length !== 1 ? "s" : ""} moving from import to DJ-ready.</p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
+        <div className="view-heading"><h2>Pipeline</h2><p>{tracks.length} track{tracks.length !== 1 ? "s" : ""} moving from import to DJ-ready.</p></div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {attentionTrack && <button onClick={() => setSelectedTrack(attentionTrack)} style={buttonStyle}>Continue</button>}
+          <button onClick={load} style={secondaryButtonStyle}>Refresh</button>
         </div>
-        <button onClick={load} style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 5, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-          Refresh
-        </button>
       </div>
 
-      {loading ? (
-        <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p>
-      ) : tracks.length === 0 ? (
-        <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in the Pipeline yet. Add tracks to get started.</p>
-      ) : (
-        <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>
-          {PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} />)}
-        </div>
-      )}
+      {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in the Pipeline yet. Add tracks to get started.</p> : <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>{PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} onOpen={setSelectedTrack} />)}</div>}
+      {selectedTrack && <TrackDrawer track={selectedTrack} onClose={() => setSelectedTrack(null)} onUpdated={updateTrack} />}
     </div>
   );
 }
