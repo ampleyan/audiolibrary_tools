@@ -48,6 +48,7 @@ pub fn run() {
             commands::youtube::create_youtube_playlist,
             commands::daemon::launch_sockseek,
             commands::daemon::check_daemon,
+            commands::daemon::get_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running dj-prep application");

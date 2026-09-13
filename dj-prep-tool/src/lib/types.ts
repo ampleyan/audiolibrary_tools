@@ -84,3 +84,8 @@ export interface QualityResult {
   spectralCutoffHz: number | null;
   notes: string;
 }
+
+export interface LogEntry {
+  timestamp: string;
+  message: string;
+}

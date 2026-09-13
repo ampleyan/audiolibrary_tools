@@ -5,6 +5,7 @@ import type {
   RankedCandidate,
   SimilarTrack,
   TrackRow,
+  LogEntry,
 } from "./types";
 
 export interface SaveSettingsPayload {
@@ -104,4 +105,5 @@ export const api = {
 
   launchSockseek: () => call<void>("launch_sockseek"),
   checkDaemon: () => call<boolean>("check_daemon"),
+  getLogs: () => call<LogEntry[]>("get_logs"),
 };

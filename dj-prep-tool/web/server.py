@@ -20,12 +20,14 @@ DB_PATH = DATA_DIR / "dj_prep.sqlite"
 INBOX_DIR = Path(os.environ.get("DJ_PREP_INBOX_DIR", "/music/inbox"))
 ARCHIVE_DIR = Path(os.environ.get("DJ_PREP_ARCHIVE_DIR", "/music/archive"))
 SOCKSEEK_URL = os.environ.get("SOCKSEEK_URL", "http://sockseek:5030").rstrip("/")
+SOCKSEEK_LOG_FILE = os.environ.get("SOCKSEEK_LOG_FILE", "")
 PYTHON = os.environ.get("PYTHON", "python3")
 YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET", "")
 YOUTUBE_REDIRECT_URI = os.environ.get("YOUTUBE_REDIRECT_URI", "")
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube"
 YOUTUBE_STATES = {}
+LOGS = []
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tracks (
@@ -54,6 +56,18 @@ def db():
 
 def row_json(row):
     return dict(row)
+
+def append_log(message):
+    LOGS.append(message)
+    del LOGS[:-300]
+
+def get_logs():
+    if SOCKSEEK_LOG_FILE:
+        try:
+            return [{"timestamp": "", "message": line} for line in Path(SOCKSEEK_LOG_FILE).read_text(encoding="utf-8", errors="replace").splitlines()[-300:]]
+        except OSError:
+            pass
+    return [{"timestamp": "", "message": line} for line in LOGS]
 
 def clean_pair(artist, title):
     artist = re.sub(r"\s{2,}", " ", artist.strip())
@@ -186,6 +200,8 @@ def youtube_video_id(url):
     return match.group(1) if match else None
 
 def command(name, payload):
+    if name != "get_logs": append_log(f"[app] {name}")
+    if name == "get_logs": return get_logs()
     if name == "get_settings":
         conn = db()
         values = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM settings")}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
-import type { PublicSettings } from "./lib/types";
+import type { LogEntry, PublicSettings } from "./lib/types";
 import DownloadView from "./views/DownloadView";
 import DiscoveryView from "./views/DiscoveryView";
 import ImportView from "./views/ImportView";
@@ -22,6 +22,17 @@ export default function App() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [tab, setTab] = useState<Tab>("pipeline");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showLogs, setShowLogs] = useState(false);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+
+  useEffect(() => {
+    if (!showLogs) return;
+    let active = true;
+    const loadLogs = () => api.getLogs().then((next) => { if (active) setLogs(next); }).catch(() => {});
+    loadLogs();
+    const timer = window.setInterval(loadLogs, 1500);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [showLogs]);
 
   const loadSettings = () =>
     api
@@ -92,6 +103,9 @@ export default function App() {
         ))}
         </nav>
         <div>
+          <label style={{ color: "#8190a0", fontSize: 12, marginRight: 12, userSelect: "none" }}>
+            <input type="checkbox" checked={showLogs} onChange={(event) => setShowLogs(event.target.checked)} /> Show logs
+          </label>
           <button
             className="settings-button"
             onClick={() => setTab("setup")}
@@ -120,6 +134,10 @@ export default function App() {
           />
         )}
       </main>
+      {showLogs && <section aria-label="Application logs" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 20, background: "#0d131a", borderTop: "1px solid #344454", padding: "10px 18px", boxShadow: "0 -8px 24px #0008" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><strong style={{ color: "#d5e6ef", fontSize: 12 }}>Logs</strong><span style={{ color: "#6f8293", fontSize: 11 }}>{logs.length} recent entries</span></div>
+        <pre style={{ maxHeight: 180, overflow: "auto", margin: 0, color: "#9fb2bf", font: "11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace", whiteSpace: "pre-wrap" }}>{logs.length ? logs.map((entry, index) => <div key={`${index}-${entry.message}`}>{entry.timestamp && `${entry.timestamp} `}{entry.message}</div>) : "No logs yet."}</pre>
+      </section>}
     </div>
   );
 }
