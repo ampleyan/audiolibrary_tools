@@ -99,6 +99,7 @@ const editInput: React.CSSProperties = {
 };
 
 function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
+  const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   const [sourceIds, setSourceIds] = useState<number[]>(tracks[0] ? [tracks[0].id] : []);
   const [similarTracks, setSimilarTracks] = useState<SimilarTrack[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -111,6 +112,9 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
   const [minimumScore, setMinimumScore] = useState(0);
   const [sourceProgress, setSourceProgress] = useState<string | null>(null);
   const [sourceLabels, setSourceLabels] = useState<Record<string, string[]>>({});
+  const [youtubeResult, setYoutubeResult] = useState<{ playlistUrl: string; added: number; skipped: string[] } | null>(null);
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  const [creatingYoutube, setCreatingYoutube] = useState(false);
 
   const selectedSources = tracks.filter((track) => sourceIds.includes(track.id));
   const selectedTrack = selectedSources[0] ?? tracks[0];
@@ -215,6 +219,33 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
 
   const getVideoId = (url: string) => url.match(/[?&]v=([^&]+)/)?.[1] ?? null;
 
+  const createYoutubePlaylist = async () => {
+    if (!visibleTracks) return;
+    const targets = selected.size > 0
+      ? [...selected].sort((a, b) => a - b).map((index) => visibleTracks[index]).filter((track): track is SimilarTrack => !!track)
+      : visibleTracks;
+    const skipped = targets.filter((track) => !track.videoUrl).map((track) => `${track.artist} – ${track.title}`);
+    const videoIds = targets.map((track) => track.videoUrl ? getVideoId(track.videoUrl) : null).filter((id): id is string => !!id);
+    if (videoIds.length === 0) {
+      setYoutubeError("No selected tracks have YouTube videos");
+      return;
+    }
+    setCreatingYoutube(true);
+    setYoutubeError(null);
+    try {
+      const auth = await api.getYoutubeAuthUrl();
+      if (!auth.authorized && auth.url) {
+        window.location.assign(auth.url);
+        return;
+      }
+      setYoutubeResult(await api.createYoutubePlaylist(videoIds, `DJ Prep – ${selectedTrack?.title ?? "Similar tracks"}`, skipped));
+    } catch (e) {
+      setYoutubeError(String(e));
+    } finally {
+      setCreatingYoutube(false);
+    }
+  };
+
   return (
     <section style={{ background: "#111827", border: "1px solid #293548", borderRadius: 8, marginBottom: 18, padding: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
@@ -249,6 +280,8 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
       </div>
       {error && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{error}</p>}
       {importError && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{importError}</p>}
+      {youtubeError && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{youtubeError}</p>}
+      {youtubeResult && <p style={{ color: "#34d399", fontSize: 12, margin: "0 0 8px" }}>Created playlist with {youtubeResult.added} tracks. <a href={youtubeResult.playlistUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa" }}>Open YouTube playlist</a>{youtubeResult.skipped.length > 0 && ` · Skipped ${youtubeResult.skipped.length} without videos`}</p>}
       {similarTracks === null && !loading && !error && <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>Choose a track and find related music.</p>}
       {similarTracks !== null && (
         <>
@@ -256,7 +289,8 @@ function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
             <span style={{ color: "#6b7280", fontSize: 11 }}>{visibleTracks?.length ?? 0} of {similarTracks.length} similar tracks{selected.size > 0 && <span style={{ color: "#a78bfa" }}> · {selected.size} selected</span>}</span>
             <div style={{ display: "flex", gap: 6 }}>
               {selected.size > 0 && <button onClick={addToQueue} disabled={importing} style={{ background: importing ? "#1f2937" : "#065f46", color: importing ? "#4b5563" : "#34d399", border: "none", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: importing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{importing ? "Adding…" : `Add ${selected.size} to queue`}</button>}
-              <button onClick={savePlaylist} style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{selected.size > 0 ? `Save ${selected.size}` : "Save all"} as playlist</button>
+              <button onClick={savePlaylist} style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{selected.size > 0 ? `Download ${selected.size}` : "Download all"} as text playlist</button>
+              <button onClick={createYoutubePlaylist} disabled={creatingYoutube || isTauri} title={isTauri ? "Available in the web edition" : "Create a private YouTube playlist"} style={{ background: creatingYoutube || isTauri ? "#1f2937" : "#991b1b", color: creatingYoutube || isTauri ? "#4b5563" : "#fecaca", border: "1px solid #b91c1c", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: creatingYoutube || isTauri ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{creatingYoutube ? "Connecting…" : isTauri ? "YouTube playlist (web only)" : "Create YouTube playlist"}</button>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>

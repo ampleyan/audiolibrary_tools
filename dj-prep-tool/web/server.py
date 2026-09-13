@@ -3,12 +3,14 @@ import io
 import json
 import os
 import re
+import secrets
 import sqlite3
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -19,6 +21,11 @@ INBOX_DIR = Path(os.environ.get("DJ_PREP_INBOX_DIR", "/music/inbox"))
 ARCHIVE_DIR = Path(os.environ.get("DJ_PREP_ARCHIVE_DIR", "/music/archive"))
 SOCKSEEK_URL = os.environ.get("SOCKSEEK_URL", "http://sockseek:5030").rstrip("/")
 PYTHON = os.environ.get("PYTHON", "python3")
+YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "")
+YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET", "")
+YOUTUBE_REDIRECT_URI = os.environ.get("YOUTUBE_REDIRECT_URI", "")
+YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube"
+YOUTUBE_STATES = {}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tracks (
@@ -149,6 +156,35 @@ def request(method, path, payload=None):
     with urllib.request.urlopen(req, timeout=30) as response:
         return json.loads(response.read().decode())
 
+def youtube_token():
+    access_token = setting("youtube_access_token")
+    expires_at = float(setting("youtube_token_expires_at", "0") or 0)
+    if access_token and expires_at > time.time() + 60:
+        return access_token
+    refresh_token = setting("youtube_refresh_token")
+    if not refresh_token or not YOUTUBE_CLIENT_ID or not YOUTUBE_CLIENT_SECRET:
+        return None
+    body = urllib.parse.urlencode({"client_id": YOUTUBE_CLIENT_ID, "client_secret": YOUTUBE_CLIENT_SECRET, "refresh_token": refresh_token, "grant_type": "refresh_token"}).encode()
+    req = urllib.request.Request("https://oauth2.googleapis.com/token", data=body, method="POST", headers={"Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(req, timeout=20) as response:
+        token = json.loads(response.read().decode())
+    conn = db()
+    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", ("youtube_access_token", token["access_token"]))
+    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", ("youtube_token_expires_at", str(time.time() + token.get("expires_in", 3600))))
+    conn.commit(); conn.close()
+    return token["access_token"]
+
+def youtube_request(url, token, payload):
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=body, method="POST", headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return json.loads(response.read().decode())
+
+def youtube_video_id(url):
+    if not url: return None
+    match = re.search(r"(?:[?&]v=|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{6,})", url)
+    return match.group(1) if match else None
+
 def command(name, payload):
     if name == "get_settings":
         conn = db()
@@ -226,6 +262,23 @@ def command(name, payload):
         found = next((path for path in (INBOX_DIR / name_part, INBOX_DIR / (name_part + ".part"), INBOX_DIR / (name_part + ".incomplete"), INBOX_DIR / (name_part + ".tmp")) if path.exists()), None)
         total = next((item["candidate"].get("size") for item in json.loads(track.get("candidate_json") or "[]") if Path(item["candidate"].get("filename", "")).name.lower() == name_part.lower()), None)
         return {"bytesOnDisk": found.stat().st_size if found else None, "bytesTotal": total}
+    if name == "get_youtube_auth_url":
+        if not YOUTUBE_CLIENT_ID or not YOUTUBE_CLIENT_SECRET or not YOUTUBE_REDIRECT_URI: raise ValueError("YouTube OAuth is not configured on the server")
+        if youtube_token(): return {"authorized": True, "url": None}
+        state = secrets.token_urlsafe(24)
+        YOUTUBE_STATES[state] = time.time()
+        query = urllib.parse.urlencode({"client_id": YOUTUBE_CLIENT_ID, "redirect_uri": YOUTUBE_REDIRECT_URI, "response_type": "code", "scope": YOUTUBE_SCOPE, "access_type": "offline", "prompt": "consent", "state": state})
+        return {"authorized": False, "url": f"https://accounts.google.com/o/oauth2/v2/auth?{query}"}
+    if name == "create_youtube_playlist":
+        token = youtube_token()
+        if not token: raise ValueError("Authorize YouTube before creating a playlist")
+        video_ids = list(dict.fromkeys(item for item in payload.get("videoIds", []) if re.fullmatch(r"[A-Za-z0-9_-]{6,}", item or "")))
+        if not video_ids: raise ValueError("No valid YouTube tracks selected")
+        title = (payload.get("title") or "DJ Prep playlist").strip()[:150]
+        playlist = youtube_request("https://youtube.googleapis.com/youtube/v3/playlists?part=snippet,status", token, {"snippet": {"title": title, "description": "Created by DJ Prep Tool"}, "status": {"privacyStatus": "private"}})
+        for video_id in video_ids:
+            youtube_request("https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet", token, {"snippet": {"playlistId": playlist["id"], "resourceId": {"kind": "youtube#video", "videoId": video_id}}})
+        return {"playlistUrl": f"https://www.youtube.com/playlist?list={playlist['id']}", "added": len(video_ids), "skipped": payload.get("skipped", [])}
     if name == "poll_download":
         track = get_track(int(payload["trackId"]))
         expected = Path(track.get("selected_filename") or "").name
@@ -268,6 +321,23 @@ def command(name, payload):
         except Exception: return False
     raise ValueError(f"Unsupported web command: {name}")
 
+def youtube_callback(query):
+    state = query.get("state", [""])[0]
+    issued = YOUTUBE_STATES.pop(state, 0)
+    if not issued or time.time() - issued > 600: return "youtube=error&message=Invalid+or+expired+authorization"
+    if query.get("error"): return "youtube=error&message=Authorization+cancelled"
+    code = query.get("code", [""])[0]
+    body = urllib.parse.urlencode({"code": code, "client_id": YOUTUBE_CLIENT_ID, "client_secret": YOUTUBE_CLIENT_SECRET, "redirect_uri": YOUTUBE_REDIRECT_URI, "grant_type": "authorization_code"}).encode()
+    req = urllib.request.Request("https://oauth2.googleapis.com/token", data=body, method="POST", headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response: token = json.loads(response.read().decode())
+        conn = db()
+        for key, value in (("youtube_access_token", token.get("access_token", "")), ("youtube_refresh_token", token.get("refresh_token", setting("youtube_refresh_token"))), ("youtube_token_expires_at", str(time.time() + token.get("expires_in", 3600)))):
+            if value: conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (key, value))
+        conn.commit(); conn.close()
+        return "youtube=connected"
+    except Exception: return "youtube=error&message=Authorization+failed"
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         return
@@ -276,6 +346,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
     def do_GET(self):
         if self.path == "/api/health": self.send_json(200, {"ok": True}); return
+        if self.path.startswith("/api/youtube/callback"):
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            self.send_response(302); self.send_header("Location", f"/?{youtube_callback(query)}"); self.end_headers(); return
         requested = self.path.split("?", 1)[0].lstrip("/") or "index.html"
         dist_root = (ROOT / "dist").resolve()
         file_path = (dist_root / requested).resolve()

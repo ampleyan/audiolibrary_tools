@@ -96,6 +96,12 @@ export const api = {
   getSimilarTracks: (trackId: number) =>
     call<SimilarTrack[]>("get_similar_tracks", { trackId }),
 
+  getYoutubeAuthUrl: () =>
+    call<{ authorized: boolean; url: string | null }>("get_youtube_auth_url"),
+
+  createYoutubePlaylist: (videoIds: string[], title: string, skipped: string[] = []) =>
+    call<{ playlistUrl: string; added: number; skipped: string[] }>("create_youtube_playlist", { videoIds, title, skipped }),
+
   launchSockseek: () => call<void>("launch_sockseek"),
   checkDaemon: () => call<boolean>("check_daemon"),
 };

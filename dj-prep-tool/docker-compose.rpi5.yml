@@ -1,8 +1,8 @@
 services:
   dj-prep:
     build:
-      context: .
-      dockerfile: web/Dockerfile
+      context: ..
+      dockerfile: dj-prep-tool/web/Dockerfile
     ports:
       - "8080:8080"
     environment:
@@ -10,6 +10,9 @@ services:
       DJ_PREP_INBOX_DIR: /music/inbox
       DJ_PREP_ARCHIVE_DIR: /music/archive
       SOCKSEEK_URL: ${SOCKSEEK_URL:-http://host.docker.internal:5030}
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
+      YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
