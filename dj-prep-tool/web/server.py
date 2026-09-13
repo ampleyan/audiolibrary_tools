@@ -5,6 +5,8 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -127,6 +129,12 @@ def get_track(track_id):
         raise ValueError("track not found")
     return row_json(row)
 
+def setting(key, default=""):
+    conn = db()
+    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    conn.close()
+    return row[0] if row else default
+
 def update(track_id, sql, values):
     conn = db()
     conn.execute(sql, (*values, track_id))
@@ -158,6 +166,19 @@ def command(name, payload):
     if name in ("import_text", "import_csv"):
         content = payload.get("text", "") if name == "import_text" else payload.get("content", "")
         return [insert(draft) for draft in (parse_text(content) if name == "import_text" else parse_csv(content))]
+    if name == "import_youtube":
+        url = payload.get("url", "")
+        script = ROOT / "py" / "yt_fetch.py"
+        args = [PYTHON, str(script), url]
+        cookies = setting("yt_cookies_file")
+        if cookies: args.append(cookies)
+        env = os.environ.copy()
+        for key in ("spotify_client_id", "spotify_client_secret"):
+            value = setting(key)
+            if value: env["SPOTIFY_CLIENT_ID" if key.endswith("id") else "SPOTIFY_CLIENT_SECRET"] = value
+        result = subprocess.run(args, capture_output=True, text=True, env=env, check=False)
+        if result.returncode: raise ValueError(result.stderr.strip() or "Playlist import failed")
+        return [insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), draft.get("state", "needs_review"), draft.get("source_url"))) for draft in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
     if name == "list_tracks": return tracks(payload.get("state"))
     if name == "update_track_state": return update(int(payload["id"]), "UPDATE tracks SET state=? WHERE id=?", (payload["state"],))
     if name == "delete_track":
@@ -172,9 +193,68 @@ def command(name, payload):
         body = {"songQuery": {"artist": track["artist"] if name == "search_track" else None, "title": query}}
         job = request("POST", "/api/jobs/search/tracks", body)["jobId"]
         update(track["id"], "UPDATE tracks SET search_job_id=?,state='matched',error=NULL WHERE id=?", (job,))
-        return []
+        results = []
+        for _ in range(15):
+            time.sleep(2)
+            try:
+                results = request("GET", f"/api/jobs/{job}/results/files").get("items", [])
+                if results: break
+            except Exception: pass
+        wanted = f'{track["artist"]} {track["title"]}'.lower()
+        ranked = []
+        for candidate in results:
+            filename = candidate.get("filename", "")
+            score = sum(1 for word in wanted.split() if word and word in filename.lower())
+            ranked.append({"candidate": candidate, "score": score})
+        ranked.sort(key=lambda item: item["score"], reverse=True)
+        if ranked:
+            update(track["id"], "UPDATE tracks SET candidate_json=? WHERE id=?", (json.dumps(ranked),))
+        else:
+            update(track["id"], "UPDATE tracks SET state='requested',error=? WHERE id=?", ("No results found — try editing the artist/title or search again later",))
+        return ranked
     if name == "approve_candidate":
         return update(int(payload["trackId"]), "UPDATE tracks SET selected_username=?,selected_filename=?,state='approved' WHERE id=?", (payload["username"], payload["filename"]))
+    if name == "start_download":
+        track = get_track(int(payload["trackId"]))
+        if not track.get("search_job_id") or not track.get("selected_username") or not track.get("selected_filename"): raise ValueError("Approve a candidate before downloading")
+        result = request("POST", f'/api/jobs/{track["search_job_id"]}/downloads/files', {"files": [{"username": track["selected_username"], "filename": track["selected_filename"]}]})
+        job = result[0].get("jobId", "") if isinstance(result, list) and result else ""
+        return update(track["id"], "UPDATE tracks SET download_job_id=?,state='downloading' WHERE id=?", (job,))
+    if name == "check_download_progress":
+        track = get_track(int(payload["trackId"]))
+        name_part = Path(track.get("selected_filename") or "").name
+        found = next((path for path in (INBOX_DIR / name_part, INBOX_DIR / (name_part + ".part"), INBOX_DIR / (name_part + ".incomplete"), INBOX_DIR / (name_part + ".tmp")) if path.exists()), None)
+        total = next((item["candidate"].get("size") for item in json.loads(track.get("candidate_json") or "[]") if Path(item["candidate"].get("filename", "")).name.lower() == name_part.lower()), None)
+        return {"bytesOnDisk": found.stat().st_size if found else None, "bytesTotal": total}
+    if name == "poll_download":
+        track = get_track(int(payload["trackId"]))
+        expected = Path(track.get("selected_filename") or "").name
+        for _ in range(120):
+            found = next((path for path in INBOX_DIR.iterdir() if path.name.lower() == expected.lower()), None) if INBOX_DIR.exists() else None
+            if found:
+                return update(track["id"], "UPDATE tracks SET downloaded_path=?,state='downloaded' WHERE id=?", (str(found),))["downloaded_path"]
+            time.sleep(5)
+        raise ValueError("download timed out after 10 minutes")
+    if name == "run_quality_check":
+        track = get_track(int(payload["trackId"]))
+        path = track.get("downloaded_path")
+        if not path: raise ValueError("track has no downloaded file")
+        result = subprocess.run([PYTHON, str(ROOT / "py" / "audio_check.py"), path], capture_output=True, text=True, check=False)
+        if result.returncode: raise ValueError(result.stderr.strip() or "Quality check failed")
+        quality = json.loads(result.stdout)
+        state = "quality_failed" if quality.get("is_real_flac") is False else "ready_for_conversion"
+        update(track["id"], "UPDATE tracks SET quality_result=?,quality_notes=?,state=? WHERE id=?", ("fake_flac" if state == "quality_failed" else "ok", quality.get("notes", ""), state))
+        return {"isRealFlac": quality.get("is_real_flac"), "sampleRate": None, "bitDepth": None, "channels": None, "durationSecs": None, "spectralCutoffHz": None, "notes": quality.get("notes", "")}
+    if name == "get_similar_tracks":
+        track = get_track(int(payload["trackId"]))
+        key = setting("cosine_api_key")
+        if not key: raise ValueError("cosine_api_key not configured — add it in Settings")
+        env = os.environ.copy(); env["COSINE_API_KEY"] = key
+        result = subprocess.run([PYTHON, str(ROOT / "py" / "cosine_fetch.py"), track["artist"], track["title"]], capture_output=True, text=True, env=env, check=False)
+        if result.returncode: raise ValueError(result.stderr.strip() or "Similarity lookup failed")
+        return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    if name in ("tag_track", "open_folder", "launch_sockseek"):
+        raise ValueError("This action is only available in the desktop Tauri app")
     if name == "check_daemon":
         try: request("GET", ""); return True
         except Exception: return False
