@@ -22,15 +22,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .topnav button { border: 0 !important; border-bottom: 2px solid transparent !important; color: #8190a0 !important; padding: 20px 13px 17px !important; background: transparent !important; }
 .topnav button[aria-current="page"] { color: #e9fbff !important; border-bottom-color: #67e8f9 !important; }
 .settings-button { background: transparent !important; border: 1px solid #344454 !important; border-radius: 6px; color: #8190a0 !important; cursor: pointer; font-size: 16px; padding: 8px 10px !important; }
-.workflow-strip { display: flex; align-items: center; gap: 8px; padding: 0 0 14px; overflow-x: auto; }
-.workflow-step { display: flex; align-items: center; gap: 8px; border: 0; background: transparent !important; color: #728191; cursor: pointer; padding: 0; white-space: nowrap; font-size: 12px; }
-.workflow-step strong { color: #dce8f0; font-weight: 600; }
-.workflow-step.active strong { color: #67e8f9; }
-.workflow-step.done strong { color: #86efac; }
-.workflow-dot { display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid #3b4b59; border-radius: 50%; font-size: 10px; }
-.workflow-step.active .workflow-dot { border-color: #67e8f9; color: #67e8f9; box-shadow: 0 0 12px #67e8f933; }
-.workflow-step.done .workflow-dot { border-color: #4ade80; color: #4ade80; }
-.workflow-line { width: 28px; height: 1px; background: #293641; }
 .view { max-width: 1180px; margin: 0 auto; padding: 38px 32px 64px !important; }
 .view-heading { margin-bottom: 28px !important; }
 .view-heading h2 { font-size: 25px !important; letter-spacing: -.025em; color: #f5f7fb !important; }
@@ -42,14 +33,20 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .review-view > div[style*="background"] { border-color: #263442 !important; }
 .pipeline-board { padding-bottom: 10px; }
 .pipeline-board > div { scrollbar-color: #344454 #10171f; }
+.pipeline-board > section { min-height: 180px; }
 .empty-state { padding: 40px 24px; border: 1px dashed #334250; border-radius: 10px; color: #82909e !important; text-align: center; }
+@media (max-width: 980px) and (min-width: 761px) {
+  .pipeline-board { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-x: visible !important; }
+  .pipeline-board > section { min-width: 0 !important; }
+}
 @media (max-width: 760px) {
   .app-header { padding: 0 16px !important; }
   .app-header-top { flex-wrap: wrap; gap: 8px; padding: 10px 0 0; }
   .brand { width: 100%; }
   .topnav { order: 3; width: 100%; overflow-x: auto; }
   .topnav button { padding: 13px 11px !important; }
-  .workflow-strip { padding-top: 12px; }
   .view { padding: 26px 16px 48px !important; }
+  .pipeline-board { display: grid !important; grid-template-columns: minmax(0, 1fr); overflow-x: visible !important; }
+  .pipeline-board > section { min-width: 0 !important; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }
