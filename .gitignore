@@ -1,0 +1,25 @@
+# ── Credentials / local config ────────────────────────────────────────────────
+tools/sockseek/sockseek.conf
+data/dj_prep.sqlite
+*.local.py
+dj_prep_settings.json
+.worktrees/
+
+# ── Rust / Tauri ──────────────────────────────────────────────────────────────
+dj-prep-tool/src-tauri/target/
+dj-prep-tool/src-tauri/gen/
+
+# ── Node / frontend ───────────────────────────────────────────────────────────
+dj-prep-tool/node_modules/
+dj-prep-tool/dist/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ── Editors / OS ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
