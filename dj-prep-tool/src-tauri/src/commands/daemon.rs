@@ -133,6 +133,16 @@ pub async fn validate_setup(app: AppHandle) -> Vec<SetupCheck> {
             "optional".into()
         };
         checks.push(SetupCheck { name: name.into(), ok, detail });
+        if key == "prep_inbox_dir" && ok {
+            if let Ok(bytes) = fs2::available_space(&value) {
+                let free_gb = bytes / 1_073_741_824;
+                checks.push(SetupCheck {
+                    name: "Free storage".into(),
+                    ok: bytes >= 5 * 1_073_741_824,
+                    detail: format!("{free_gb} GB available"),
+                });
+            }
+        }
     }
     checks
 }

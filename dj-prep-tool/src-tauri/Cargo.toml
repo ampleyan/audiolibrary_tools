@@ -20,6 +20,7 @@ reqwest = { version = "0.12", features = ["json"] }
 claxon = "0.4"
 rustfft = "6"
 tracing = "0.1"
+fs2 = "0.4"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -367,6 +368,9 @@ def command(name, payload):
         for name, path, required in (("Prep inbox", INBOX_DIR, True), ("Rekordbox folder", ARCHIVE_DIR, False)):
             exists = path.exists()
             checks.append({"name": name, "ok": exists or not required, "detail": "path exists" if exists else ("required" if required else "optional")})
+            if name == "Prep inbox" and exists:
+                free_gb = shutil.disk_usage(path).free // (1024 ** 3)
+                checks.append({"name": "Free storage", "ok": free_gb >= 5, "detail": f"{free_gb} GB available"})
         return checks
     if name == "backup_database":
         backup_dir = DATA_DIR / "backups"
