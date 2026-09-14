@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { RankedCandidate, SimilarTrack, TrackRow } from "../lib/types";
 import { matchQuality } from "../lib/matchQuality";
+import { PipelineSeedListbox } from "../components/PipelineSeedListbox";
 
 const EXT_COLOR: Record<string, string> = {
   flac: "#4ade80",
@@ -260,30 +261,21 @@ export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; on
   };
 
   return (
-    <section style={{ background: "#111827", border: "1px solid #293548", borderRadius: 8, marginBottom: 18, padding: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+    <section className="similar-panel" style={{ background: "#111827", border: "1px solid #293548", borderRadius: 8, marginBottom: 18, padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 18, marginBottom: 12 }}>
         <div>
           <h3 style={{ margin: 0, color: "#e5e7eb", fontSize: 15 }}>Similar tracks</h3>
           <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 12 }}>Discover tracks related to one or more review items.</p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div className="similar-source-picker">
-            <div className="similar-source-picker-head"><span>Choose seed tracks</span><strong>{sourceIds.length} selected</strong></div>
-            <div className="similar-source-list" role="listbox" aria-label="Tracks for similar search" aria-multiselectable="true">
-              {tracks.map((track) => {
-                const isSelected = sourceIds.includes(track.id);
-                return <button key={track.id} type="button" role="option" aria-selected={isSelected} className={isSelected ? "selected" : ""} onClick={() => {
-                  setSourceIds((current) => isSelected ? current.filter((id) => id !== track.id) : [...current, track.id]);
-                  setSimilarTracks(null);
-                  setSourceLabels({});
-                  setSelected(new Set());
-                  setPlayingIndex(null);
-                  setError(null);
-                }}><span className="source-check">{isSelected ? "✓" : ""}</span><span className="source-name">{track.artist ? `${track.artist} – ${track.title}` : track.title}</span><span className="source-state">{track.state.replace(/_/g, " ")}</span></button>;
-              })}
-            </div>
-            <span className="similar-source-hint">Click tracks to add or remove seeds</span>
-          </div>
+          <PipelineSeedListbox tracks={tracks} selectedIds={sourceIds} onChange={(ids) => {
+            setSourceIds(ids);
+            setSimilarTracks(null);
+            setSourceLabels({});
+            setSelected(new Set());
+            setPlayingIndex(null);
+            setError(null);
+          }} />
           <button onClick={load} disabled={selectedSources.length === 0 || loading} style={{ background: loading ? "#1f2937" : "#4c1d95", color: loading ? "#4b5563" : "#ddd6fe", border: "1px solid #6d28d9", borderRadius: 5, padding: "6px 12px", fontSize: 12, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
             {loading ? `Finding ${sourceProgress ?? "…"}` : similarTracks ? "Refresh" : "Find similar"}
           </button>
