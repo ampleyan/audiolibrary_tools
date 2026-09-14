@@ -108,7 +108,12 @@ button.rekordbox-row { cursor: pointer; }
 .similar-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 45px auto auto; align-items: center; gap: 12px; background: #1b121a; padding: 10px 12px; font-size: 12px; }
 .similar-row.selected { background: #3a1830; }
 .similar-row input { accent-color: #ff4fa3; }
-.similar-row iframe { grid-column: 1 / -1; display: block; width: min(100%, 560px); aspect-ratio: 16 / 9; height: auto; margin: 4px auto 0; border: 0; border-radius: 6px; }
+.similar-player { margin: 0 0 12px; padding: 10px; border: 1px solid #6b3152; border-radius: 8px; background: #20101b; }
+.similar-player-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-width: 0; }
+.similar-player-meta span { color: #ff6fb5; font-size: 10px; white-space: nowrap; }
+.similar-player-meta strong { min-width: 0; flex: 1; overflow: hidden; color: #fff0f7; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.similar-player-meta button { border: 1px solid #6b3152; border-radius: 5px; background: transparent; color: #d9b8c9; padding: 4px 8px; cursor: pointer; font-size: 11px; }
+.similar-player iframe { display: block; width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; border-radius: 6px; }
 .button.listen { background: transparent; color: #ff6fb5; }
 .youtube-message { margin: 0 0 10px; font-size: 12px; }
 .youtube-message.error { color: #fca5a5; }

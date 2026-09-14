@@ -127,11 +127,14 @@ export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; on
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
   const [creatingYoutube, setCreatingYoutube] = useState(false);
 
+  const getVideoId = (url: string) => url.match(/[?&]v=([^&]+)/)?.[1] ?? null;
   const selectedSources = tracks.filter((track) => sourceIds.includes(track.id));
   const selectedTrack = selectedSources[0] ?? tracks[0];
   const visibleTracks = similarTracks
     ?.filter((track) => track.score >= minimumScore)
     .slice(0, maxResults);
+  const playingTrack = playingIndex === null ? null : visibleTracks?.[playingIndex] ?? null;
+  const playingVideoId = playingTrack?.videoUrl ? getVideoId(playingTrack.videoUrl) : null;
 
   useEffect(() => {
     const validIds = sourceIds.filter((id) => tracks.some((track) => track.id === id));
@@ -231,8 +234,6 @@ export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; on
     URL.revokeObjectURL(url);
   };
 
-  const getVideoId = (url: string) => url.match(/[?&]v=([^&]+)/)?.[1] ?? null;
-
   const createYoutubePlaylist = async () => {
     if (!visibleTracks) return;
     const targets = selected.size > 0
@@ -308,6 +309,10 @@ export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; on
             </label>
             {visibleTracks?.length === 0 && <span style={{ color: "#f59e0b", fontSize: 11 }}>No tracks match these filters.</span>}
           </div>
+          {playingTrack && playingVideoId && <div className="similar-player" aria-label={`Previewing ${playingTrack.artist} ${playingTrack.title}`}>
+            <div className="similar-player-meta"><span>Previewing now</span><strong>{playingTrack.artist} – {playingTrack.title}</strong><button type="button" onClick={() => setPlayingIndex(null)}>Stop</button></div>
+            <iframe title={`Preview ${playingTrack.artist} ${playingTrack.title}`} src={`https://www.youtube.com/embed/${playingVideoId}?autoplay=1`} allow="autoplay; encrypted-media" />
+          </div>}
           <div style={{ maxHeight: 320, overflowY: "auto" }}>
             {visibleTracks?.map((track, index) => {
               const videoId = track.videoUrl ? getVideoId(track.videoUrl) : null;
@@ -321,7 +326,6 @@ export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; on
                   {videoId && <button onClick={() => setPlayingIndex(isPlaying ? null : index)} aria-label={isPlaying ? "Stop preview" : "Play preview"} style={{ flexShrink: 0, background: isPlaying ? "#1e3a5f" : "transparent", color: isPlaying ? "#60a5fa" : "#4b5563", border: isPlaying ? "1px solid #1e40af" : "none", borderRadius: 4, padding: "2px 7px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{isPlaying ? "⏹" : "▶"}</button>}
                 </div>
                 <div style={{ color: "#4b5563", fontSize: 10, padding: "0 0 5px 78px" }}>From {sourceLabels[key]?.join(", ")}</div>
-                {isPlaying && videoId && <iframe title={`Preview ${track.artist} ${track.title}`} src={`https://www.youtube.com/embed/${videoId}?autoplay=1`} width="100%" height="160" allow="autoplay; encrypted-media" style={{ display: "block", border: "none", borderRadius: 4, marginBottom: 6 }} />}
               </div>;
             })}
           </div>
