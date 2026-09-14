@@ -176,6 +176,8 @@ pub fn delete_track(app: AppHandle, id: i64) -> Result<(), String> {
 #[tauri::command]
 pub fn clear_tracks(app: AppHandle) -> Result<(), String> {
     let conn = db::open(&app).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM activities", [])
+        .map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM tracks", [])
         .map_err(|e| e.to_string())?;
     Ok(())

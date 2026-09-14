@@ -62,6 +62,7 @@ export default function SetupView({ settings, onSaved }: Props) {
   const [backups, setBackups] = useState<string[]>([]);
   const [selectedBackup, setSelectedBackup] = useState("");
   const [restoring, setRestoring] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     api.checkDaemon().then(setDaemonUp).catch(() => setDaemonUp(false));
@@ -125,6 +126,21 @@ export default function SetupView({ settings, onSaved }: Props) {
       setError(String(e));
     } finally {
       setRestoring(false);
+    }
+  };
+
+  const resetLibrary = async () => {
+    if (!window.confirm("Reset the entire library? This deletes every track and activity entry and cannot be undone.")) return;
+    setResetting(true);
+    setError(null);
+    try {
+      await api.clearTracks();
+      setBackupMessage("Library reset. All tracks and activity history were removed.");
+      onSaved();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -445,6 +461,20 @@ export default function SetupView({ settings, onSaved }: Props) {
           Save only
         </button>
       </div>
+
+      <section style={{ marginTop: 32, paddingTop: 20, borderTop: "1px solid #293548" }}>
+        <h3 style={{ fontSize: 13, color: "#f87171", marginBottom: 8 }}>DANGER ZONE</h3>
+        <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
+          Remove every imported track and its activity history. Downloaded files are not deleted.
+        </p>
+        <button
+          style={{ background: "transparent", color: resetting ? "#4b5563" : "#f87171", border: "1px solid #7f1d1d", borderRadius: 5, padding: "8px 16px", fontSize: 13, cursor: resetting ? "not-allowed" : "pointer" }}
+          disabled={resetting}
+          onClick={resetLibrary}
+        >
+          {resetting ? "Resetting…" : "Reset library"}
+        </button>
+      </section>
     </div>
   );
 }

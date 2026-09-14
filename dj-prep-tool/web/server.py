@@ -1,4 +1,5 @@
 import csv
+import datetime
 import io
 import json
 import os
@@ -29,6 +30,7 @@ YOUTUBE_REDIRECT_URI = os.environ.get("YOUTUBE_REDIRECT_URI", "")
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube"
 YOUTUBE_STATES = {}
 LOGS = []
+DOWNLOAD_PROGRESS = {}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tracks (
@@ -68,7 +70,7 @@ def row_json(row):
     return dict(row)
 
 def append_log(message):
-    LOGS.append(message)
+    LOGS.append({"timestamp": datetime.datetime.now().isoformat(timespec="seconds"), "message": message})
     del LOGS[:-300]
 
 def get_logs():
@@ -77,7 +79,7 @@ def get_logs():
             return [{"timestamp": "", "message": line} for line in Path(SOCKSEEK_LOG_FILE).read_text(encoding="utf-8", errors="replace").splitlines()[-300:]]
         except OSError:
             pass
-    return [{"timestamp": "", "message": line} for line in LOGS]
+    return LOGS
 
 def clean_pair(artist, title):
     artist = re.sub(r"\s{2,}", " ", artist.strip())
@@ -214,7 +216,8 @@ def youtube_video_id(url):
     return match.group(1) if match else None
 
 def command(name, payload):
-    if name != "get_logs": append_log(f"[app] {name}")
+    if name not in {"get_logs", "list_tracks", "list_activity", "get_settings", "check_daemon", "list_backups", "search_track", "search_track_loose", "approve_candidate", "start_download", "cancel_download", "check_download_progress", "poll_download", "run_quality_check", "clear_tracks"}:
+        append_log(f"[app] {name}")
     if name == "get_logs": return get_logs()
     if name == "get_settings":
         conn = db()
@@ -256,14 +259,25 @@ def command(name, payload):
     if name == "delete_track":
         conn = db(); conn.execute("DELETE FROM tracks WHERE id=?", (payload["id"],)); conn.commit(); conn.close(); return None
     if name == "clear_tracks":
-        conn = db(); conn.execute("DELETE FROM tracks"); conn.commit(); conn.close(); return None
+        conn = db()
+        conn.execute("DELETE FROM activities")
+        conn.execute("DELETE FROM tracks")
+        conn.commit(); conn.close()
+        append_log("[library] reset complete: tracks and activity history cleared")
+        return None
     if name == "update_track":
         return update(int(payload["id"]), "UPDATE tracks SET artist=?,title=?,mix_version=?,state=CASE WHEN state='needs_review' AND ?<>'' AND ?<>'' THEN 'requested' ELSE state END WHERE id=?", (payload["artist"], payload["title"], payload.get("mixVersion"), payload["artist"], payload["title"]))
     if name in ("search_track", "search_track_loose"):
         track = get_track(int(payload["trackId"]))
         query = track["title"] if name == "search_track" else f'{track["artist"]} {track["title"]}'
+        label = f'{track["artist"]} - {track["title"]}'
+        append_log(f"[search] started: {label} ({'loose' if name == 'search_track_loose' else 'normal'})")
         body = {"songQuery": {"artist": track["artist"] if name == "search_track" else None, "title": query}}
-        job = request("POST", "/api/jobs/search/tracks", body)["jobId"]
+        try:
+            job = request("POST", "/api/jobs/search/tracks", body)["jobId"]
+        except Exception as error:
+            append_log(f"[search] failed to start: {label}: {error}")
+            raise
         update(track["id"], "UPDATE tracks SET search_job_id=?,state='matched',error=NULL WHERE id=?", (job,))
         results = []
         for _ in range(15):
@@ -281,16 +295,21 @@ def command(name, payload):
         ranked.sort(key=lambda item: item["score"], reverse=True)
         if ranked:
             update(track["id"], "UPDATE tracks SET candidate_json=? WHERE id=?", (json.dumps(ranked),))
+            append_log(f"[search] completed: {label}: {len(ranked)} candidates")
         else:
             update(track["id"], "UPDATE tracks SET state='requested',error=? WHERE id=?", ("No results found — try editing the artist/title or search again later",))
+            append_log(f"[search] completed: {label}: no results")
         return ranked
     if name == "approve_candidate":
-        return update(int(payload["trackId"]), "UPDATE tracks SET selected_username=?,selected_filename=?,state='approved' WHERE id=?", (payload["username"], payload["filename"]))
+        result = update(int(payload["trackId"]), "UPDATE tracks SET selected_username=?,selected_filename=?,state='approved' WHERE id=?", (payload["username"], payload["filename"]))
+        append_log(f"[review] approved candidate for track {payload['trackId']}")
+        return result
     if name == "start_download":
         track = get_track(int(payload["trackId"]))
         if not track.get("search_job_id") or not track.get("selected_username") or not track.get("selected_filename"): raise ValueError("Approve a candidate before downloading")
         result = request("POST", f'/api/jobs/{track["search_job_id"]}/downloads/files', {"files": [{"username": track["selected_username"], "filename": track["selected_filename"]}]})
         job = result[0].get("jobId", "") if isinstance(result, list) and result else ""
+        append_log(f"[download] started: {track['artist']} - {track['title']}")
         return update(track["id"], "UPDATE tracks SET download_job_id=?,state='downloading' WHERE id=?", (job,))
     if name == "cancel_download":
         track = get_track(int(payload["trackId"]))
@@ -298,13 +317,20 @@ def command(name, payload):
         if not job_id:
             raise ValueError("track has no download job")
         request("POST", f"/api/jobs/{job_id}/cancel")
+        append_log(f"[download] cancelled: {track['artist']} - {track['title']}")
         return update(track["id"], "UPDATE tracks SET state='failed',error=? WHERE id=?", ("Download cancelled by user",))
     if name == "check_download_progress":
         track = get_track(int(payload["trackId"]))
         name_part = Path(track.get("selected_filename") or "").name
         found = next((path for path in (INBOX_DIR / name_part, INBOX_DIR / (name_part + ".part"), INBOX_DIR / (name_part + ".incomplete"), INBOX_DIR / (name_part + ".tmp")) if path.exists()), None)
         total = next((item["candidate"].get("size") for item in json.loads(track.get("candidate_json") or "[]") if Path(item["candidate"].get("filename", "")).name.lower() == name_part.lower()), None)
-        return {"bytesOnDisk": found.stat().st_size if found else None, "bytesTotal": total}
+        bytes_on_disk = found.stat().st_size if found else None
+        progress = (bytes_on_disk, total)
+        if DOWNLOAD_PROGRESS.get(track["id"]) != progress:
+            DOWNLOAD_PROGRESS[track["id"]] = progress
+            if bytes_on_disk is not None and total:
+                append_log(f"[download] progress: {track['artist']} - {track['title']}: {bytes_on_disk}/{total} bytes")
+        return {"bytesOnDisk": bytes_on_disk, "bytesTotal": total}
     if name == "get_youtube_auth_url":
         if not YOUTUBE_CLIENT_ID or not YOUTUBE_CLIENT_SECRET or not YOUTUBE_REDIRECT_URI: raise ValueError("YouTube OAuth is not configured on the server")
         if youtube_token(): return {"authorized": True, "url": None}
@@ -342,8 +368,10 @@ def command(name, payload):
         for _ in range(120):
             found = next((path for path in INBOX_DIR.iterdir() if path.name.lower() == expected.lower()), None) if INBOX_DIR.exists() else None
             if found:
+                append_log(f"[download] completed: {track['artist']} - {track['title']}")
                 return update(track["id"], "UPDATE tracks SET downloaded_path=?,state='downloaded' WHERE id=?", (str(found),))["downloaded_path"]
             time.sleep(5)
+        append_log(f"[download] timed out: {track['artist']} - {track['title']}")
         raise ValueError("download timed out after 10 minutes")
     if name == "run_quality_check":
         track = get_track(int(payload["trackId"]))
@@ -354,6 +382,7 @@ def command(name, payload):
         quality = json.loads(result.stdout)
         state = "quality_failed" if quality.get("is_real_flac") is False else "ready_for_conversion"
         update(track["id"], "UPDATE tracks SET quality_result=?,quality_notes=?,state=? WHERE id=?", ("fake_flac" if state == "quality_failed" else "ok", quality.get("notes", ""), state))
+        append_log(f"[quality] completed: {track['artist']} - {track['title']}: {state}")
         return {"isRealFlac": quality.get("is_real_flac"), "sampleRate": None, "bitDepth": None, "channels": None, "durationSecs": None, "spectralCutoffHz": None, "notes": quality.get("notes", "")}
     if name == "get_similar_tracks":
         track = get_track(int(payload["trackId"]))
@@ -484,8 +513,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.path.startswith("/api/invoke/"): self.send_json(404, {"error": "not found"}); return
         length = int(self.headers.get("Content-Length", "0")); payload = json.loads(self.rfile.read(length) or b"{}")
-        try: self.send_json(200, {"result": command(self.path.rsplit("/", 1)[-1], payload)})
-        except Exception as error: self.send_json(400, {"error": str(error)})
+        name = self.path.rsplit("/", 1)[-1]
+        try: self.send_json(200, {"result": command(name, payload)})
+        except Exception as error:
+            append_log(f"[error] {name}: {error}")
+            self.send_json(400, {"error": str(error)})
 
 if __name__ == "__main__":
     db()

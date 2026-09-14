@@ -39,5 +39,11 @@ $frontendRoot = $PSScriptRoot.Replace('\', '/')
 $viteEntry = "$frontendRoot/node_modules/vite/bin/vite.js"
 $tauriEntry = "$frontendRoot/node_modules/@tauri-apps/cli/tauri.js"
 $tauriDevConfig = @{ build = @{ devUrl = "http://localhost:$devPort"; beforeDevCommand = "node $viteEntry" } } | ConvertTo-Json -Compress
+$tauriConfigPath = Join-Path ([System.IO.Path]::GetTempPath()) "dj-prep-tool-tauri-$devPort.json"
+[System.IO.File]::WriteAllText($tauriConfigPath, $tauriDevConfig, [System.Text.UTF8Encoding]::new($false))
 Write-Host "Starting DJ Prep Tool on port $devPort"
-& node $tauriEntry dev --config $tauriDevConfig
+try {
+    & node $tauriEntry dev --config $tauriConfigPath
+} finally {
+    Remove-Item -LiteralPath $tauriConfigPath -Force -ErrorAction SilentlyContinue
+}

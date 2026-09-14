@@ -34,7 +34,7 @@ def check(path):
         sys.stdout = saved
 
     notes = captured.getvalue().strip()
-    return {"is_real_flac": is_real, "notes": notes}
+    return {"is_real_flac": None if is_real is None else bool(is_real), "notes": notes}
 
 
 if __name__ == "__main__":
