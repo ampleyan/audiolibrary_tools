@@ -695,6 +695,7 @@ export default function ReviewView() {
   const [loading, setLoading] = useState(true);
   const [searchingAll, setSearchingAll] = useState(false);
   const [searchProgress, setSearchProgress] = useState<{ done: number; total: number } | null>(null);
+  const [searchBatchErrors, setSearchBatchErrors] = useState<string[]>([]);
 
   const load = () => {
     setLoading(true);
@@ -713,29 +714,34 @@ export default function ReviewView() {
   const removeTrack = (id: number) =>
     setTracks((prev) => prev.filter((t) => t.id !== id));
 
-  const searchAll = async () => {
-    const searchable = tracks.filter(
-      (t) => t.state === "requested" || t.state === "needs_review"
-    );
+  const searchAll = async (loose = false) => {
+    const searchable = tracks.filter((t) => loose
+      ? t.state === "requested" && !!t.search_job_id
+      : t.state === "requested" || t.state === "needs_review");
     if (searchable.length === 0) return;
     setSearchingAll(true);
+    setSearchBatchErrors([]);
     setSearchProgress({ done: 0, total: searchable.length });
+    const failures: string[] = [];
     for (let i = 0; i < searchable.length; i++) {
       try {
-        await api.searchTrack(searchable[i].id);
-      } catch {
-        // continue with remaining tracks
+        if (loose) await api.searchTrackLoose(searchable[i].id);
+        else await api.searchTrack(searchable[i].id);
+      } catch (e) {
+        failures.push(`${searchable[i].artist} – ${searchable[i].title}: ${String(e)}`);
       }
       setSearchProgress({ done: i + 1, total: searchable.length });
     }
     setSearchingAll(false);
     setSearchProgress(null);
+    setSearchBatchErrors(failures);
     load();
   };
 
   const searchableCount = tracks.filter(
     (t) => t.state === "requested" || t.state === "needs_review"
   ).length;
+  const looseSearchCount = tracks.filter((t) => t.state === "requested" && !!t.search_job_id).length;
 
   return (
     <div className="view review-view" style={{ padding: 24, color: "#f9fafb" }}>
@@ -759,7 +765,7 @@ export default function ReviewView() {
           )}
           {searchableCount > 0 && (
             <button
-              onClick={searchAll}
+              onClick={() => searchAll()}
               disabled={searchingAll}
               style={{
                 background: searchingAll ? "#1f2937" : "#1e3a5f",
@@ -773,6 +779,15 @@ export default function ReviewView() {
               }}
             >
               {searchingAll ? "Searching…" : `Search all (${searchableCount})`}
+            </button>
+          )}
+          {looseSearchCount > 0 && (
+            <button
+              onClick={() => searchAll(true)}
+              disabled={searchingAll}
+              style={{ background: "transparent", color: searchingAll ? "#4b5563" : "#fbbf24", border: "1px solid #92400e", borderRadius: 5, padding: "6px 14px", fontSize: 13, cursor: searchingAll ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+            >
+              {searchingAll ? "Searching…" : `Retry loose (${looseSearchCount})`}
             </button>
           )}
           <button
@@ -792,6 +807,12 @@ export default function ReviewView() {
           </button>
         </div>
       </div>
+
+      {searchBatchErrors.length > 0 && (
+        <div style={{ marginBottom: 14, padding: "8px 10px", border: "1px solid #7f1d1d", borderRadius: 5, background: "#1a0c0c", color: "#fca5a5", fontSize: 12 }}>
+          {searchBatchErrors.length} search{searchBatchErrors.length === 1 ? "" : "es"} failed. Open the affected track to retry.
+        </div>
+      )}
 
       {loading ? (
         <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p>
