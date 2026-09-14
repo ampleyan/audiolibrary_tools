@@ -341,6 +341,22 @@ def command(name, payload):
     if name == "check_daemon":
         try: request("GET", ""); return True
         except Exception: return False
+    if name == "validate_setup":
+        try:
+            request("GET", "")
+            daemon_ok = True
+        except Exception:
+            daemon_ok = False
+        checks = [{"name": "Sockseek daemon", "ok": daemon_ok, "detail": SOCKSEEK_URL}]
+        conn = db()
+        values = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM settings")}
+        conn.close()
+        credentials_ok = bool(values.get("sockseek_username") and values.get("sockseek_password"))
+        checks.append({"name": "Sockseek credentials", "ok": credentials_ok, "detail": "credentials saved" if credentials_ok else "username and password required"})
+        for name, path, required in (("Prep inbox", INBOX_DIR, True), ("Rekordbox folder", ARCHIVE_DIR, False)):
+            exists = path.exists()
+            checks.append({"name": name, "ok": exists or not required, "detail": "path exists" if exists else ("required" if required else "optional")})
+        return checks
     raise ValueError(f"Unsupported web command: {name}")
 
 def youtube_callback(query):
