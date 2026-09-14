@@ -309,7 +309,14 @@ pub async fn poll_download(app: AppHandle, track_id: i64) -> Result<String, Stri
         }
     }
 
-    Err("download timed out after 10 minutes".into())
+    let error = format!("download timed out after 10 minutes: {}", active.expected_name);
+    if let Ok(conn) = db::open(&app) {
+        let _ = conn.execute(
+            "UPDATE tracks SET state = 'failed', error = ?1 WHERE id = ?2",
+            params![error, track_id],
+        );
+    }
+    Err(error)
 }
 
 /// Run quality check on the downloaded file and update the track state.
