@@ -115,5 +115,7 @@ export const api = {
   checkDaemon: () => call<boolean>("check_daemon"),
   validateSetup: () => call<SetupCheck[]>("validate_setup"),
   backupDatabase: () => call<string>("backup_database"),
+  listBackups: () => call<string[]>("list_backups"),
+  restoreDatabase: (backupName: string) => call<void>("restore_database", { backupName }),
   getLogs: () => call<LogEntry[]>("get_logs"),
 };

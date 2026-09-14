@@ -1,8 +1,9 @@
 use std::collections::VecDeque;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::process::Stdio;
 use std::sync::{Mutex, OnceLock};
+use rusqlite::backup::Backup;
 use serde::Serialize;
 use tauri::AppHandle;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -155,4 +156,50 @@ pub fn backup_database(app: AppHandle) -> Result<String, String> {
     let destination = backup_dir.join(format!("dj_prep-{timestamp}.sqlite"));
     std::fs::copy(&source, &destination).map_err(|e| format!("backup failed: {e}"))?;
     Ok(destination.to_string_lossy().to_string())
+}
+
+fn backup_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(db::db_path(app)
+        .parent()
+        .ok_or("database path has no parent directory")?
+        .join("backups"))
+}
+
+#[tauri::command]
+pub fn list_backups(app: AppHandle) -> Result<Vec<String>, String> {
+    let dir = backup_dir(&app)?;
+    let mut names = std::fs::read_dir(dir)
+        .map_err(|e| format!("list backups failed: {e}"))?
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?.to_string();
+            (path.is_file() && name.starts_with("dj_prep-") && path.extension()?.to_str()? == "sqlite").then_some(name)
+        })
+        .collect::<Vec<_>>();
+    names.sort_by(|a, b| b.cmp(a));
+    Ok(names)
+}
+
+#[tauri::command]
+pub fn restore_database(app: AppHandle, backup_name: String) -> Result<(), String> {
+    let safe_name = Path::new(&backup_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| *name == backup_name && name.starts_with("dj_prep-") && name.ends_with(".sqlite"))
+        .ok_or("invalid backup name")?;
+    let source_path = backup_dir(&app)?.join(safe_name);
+    if !source_path.is_file() {
+        return Err("backup not found".into());
+    }
+    let source = rusqlite::Connection::open(&source_path).map_err(|e| format!("open backup failed: {e}"))?;
+    let destination_path = db::db_path(&app);
+    let mut destination = rusqlite::Connection::open(&destination_path)
+        .map_err(|e| format!("open database failed: {e}"))?;
+    let backup = Backup::new(&source, &mut destination)
+        .map_err(|e| format!("prepare restore failed: {e}"))?;
+    backup
+        .run_to_completion(5, Duration::from_millis(50), None)
+        .map_err(|e| format!("restore failed: {e}"))?;
+    Ok(())
 }

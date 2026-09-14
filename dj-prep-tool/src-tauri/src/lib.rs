@@ -51,6 +51,8 @@ pub fn run() {
             commands::daemon::check_daemon,
             commands::daemon::validate_setup,
             commands::daemon::backup_database,
+            commands::daemon::list_backups,
+            commands::daemon::restore_database,
             commands::daemon::get_logs,
         ])
         .run(tauri::generate_context!())

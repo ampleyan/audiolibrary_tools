@@ -57,9 +57,13 @@ export default function SetupView({ settings, onSaved }: Props) {
   const [checking, setChecking] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
+  const [backups, setBackups] = useState<string[]>([]);
+  const [selectedBackup, setSelectedBackup] = useState("");
+  const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
     api.checkDaemon().then(setDaemonUp).catch(() => setDaemonUp(false));
+    api.listBackups().then(setBackups).catch(() => setBackups([]));
   }, []);
 
   const launchDaemon = async () => {
@@ -99,10 +103,26 @@ export default function SetupView({ settings, onSaved }: Props) {
     setError(null);
     try {
       setBackupMessage(`Backup created: ${await api.backupDatabase()}`);
+      setBackups(await api.listBackups());
     } catch (e) {
       setError(String(e));
     } finally {
       setBackingUp(false);
+    }
+  };
+
+  const restore = async () => {
+    if (!selectedBackup || !window.confirm(`Restore ${selectedBackup}? Current data will be replaced.`)) return;
+    setRestoring(true);
+    setBackupMessage(null);
+    setError(null);
+    try {
+      await api.restoreDatabase(selectedBackup);
+      setBackupMessage(`Restored ${selectedBackup}. Restart the app before continuing.`);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -359,6 +379,14 @@ export default function SetupView({ settings, onSaved }: Props) {
       )}
 
       {backupMessage && <p style={{ color: "#4ade80", fontSize: 12, marginBottom: 16 }}>{backupMessage}</p>}
+
+      {backups.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <select value={selectedBackup} onChange={(event) => setSelectedBackup(event.target.value)} disabled={restoring} style={{ ...input, width: "auto", flex: 1 }}>
+          <option value="">Choose a backup to restore…</option>
+          {backups.map((backupName) => <option key={backupName} value={backupName}>{backupName}</option>)}
+        </select>
+        <button onClick={restore} disabled={restoring || !selectedBackup} style={{ background: "transparent", color: selectedBackup && !restoring ? "#f87171" : "#4b5563", border: "1px solid #7f1d1d", borderRadius: 5, padding: "8px 12px", fontSize: 13, cursor: restoring || !selectedBackup ? "not-allowed" : "pointer" }}>{restoring ? "Restoring…" : "Restore"}</button>
+      </div>}
 
       <div style={{ display: "flex", gap: 10 }}>
         <button
