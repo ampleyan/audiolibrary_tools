@@ -69,6 +69,7 @@ function TrackList({
   };
 
   const needsReviewCount = tracks.filter((t) => t.state === "needs_review").length;
+  const duplicateCount = tracks.filter((t) => t.error?.toLowerCase().includes("duplicate")).length;
 
   return (
     <>
@@ -103,6 +104,12 @@ function TrackList({
           >
             Go to Review →
           </button>
+        </div>
+      )}
+      {duplicateCount > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#fbbf2418", border: "1px solid #fbbf2444", borderRadius: 6, marginBottom: 12, fontSize: 12, color: "#fbbf24" }}>
+          <span>{duplicateCount} duplicate{duplicateCount > 1 ? "s" : ""} detected</span>
+          <span style={{ color: "#9ca3af" }}>Remove the imported copy if you do not want to keep both.</span>
         </div>
       )}
       <table
@@ -161,6 +168,16 @@ function TrackList({
                 )}
               </td>
               <td style={{ padding: "7px 0", textAlign: "right" }}>
+                {t.error?.toLowerCase().includes("duplicate") && (
+                  <button
+                    disabled={deletingId === t.id}
+                    onClick={() => handleDelete(t.id)}
+                    style={{ background: "transparent", border: "1px solid #92400e", borderRadius: 4, color: "#fbbf24", cursor: deletingId === t.id ? "not-allowed" : "pointer", fontSize: 11, padding: "3px 6px", fontFamily: "inherit", marginRight: 4 }}
+                    title="Remove imported duplicate"
+                  >
+                    Remove duplicate
+                  </button>
+                )}
                 <button
                   disabled={deletingId === t.id}
                   onClick={() => handleDelete(t.id)}
