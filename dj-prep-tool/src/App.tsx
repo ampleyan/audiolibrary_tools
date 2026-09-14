@@ -8,11 +8,11 @@ import PipelineView from "./views/PipelineView";
 import ReviewView from "./views/ReviewView";
 import SetupView from "./views/SetupView";
 
-type Tab = "import" | "review" | "downloads" | "pipeline" | "discover" | "setup";
+type Tab = "import" | "review" | "downloads" | "pipeline" | "library" | "discover" | "setup";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "pipeline", label: "Overview" },
-  { id: "import", label: "Library" },
+  { id: "library", label: "Library" },
   { id: "discover", label: "Discover" },
 ];
 
@@ -26,7 +26,7 @@ export default function App() {
   useEffect(() => {
     const shortcuts: Record<string, Tab> = {
       "1": "pipeline",
-      "2": "import",
+      "2": "library",
       "3": "discover",
       "0": "setup",
     };
@@ -141,6 +141,7 @@ export default function App() {
         {tab === "review" && <ReviewView />}
         {tab === "downloads" && <DownloadView />}
         {tab === "pipeline" && <PipelineView />}
+        {tab === "library" && <PipelineView heading="Library" onNavigate={(t) => setTab(t as Tab)} />}
         {tab === "discover" && <DiscoveryView />}
         {tab === "setup" && (
           <SetupView

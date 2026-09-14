@@ -232,7 +232,7 @@ const secondaryButtonStyle = { ...buttonStyle, background: "transparent", color:
 const sectionStyle = { borderTop: "1px solid #293548", paddingTop: 16, marginTop: 18 };
 const sectionHeading = { color: "#e5e7eb", fontSize: 13, margin: "0 0 10px" };
 
-export default function PipelineView() {
+export default function PipelineView({ heading = "Overview", onNavigate }: { heading?: string; onNavigate?: (tab: string) => void }) {
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [activities, setActivities] = useState<Array<{ id: number; trackId: number; artist: string; title: string; fromState: string | null; toState: string; createdAt: string }>>([]);
   const [selectedTrack, setSelectedTrack] = useState<TrackRow | null>(null);
@@ -276,8 +276,9 @@ export default function PipelineView() {
   return (
     <div className="view pipeline-view" style={{ padding: 24, color: "#f9fafb" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
-        <div className="view-heading"><h2>Overview</h2><p>{tracks.length} track{tracks.length !== 1 ? "s" : ""} moving from import to DJ-ready.</p></div>
+        <div className="view-heading"><h2>{heading}</h2><p>{tracks.length} track{tracks.length !== 1 ? "s" : ""} moving from import to DJ-ready.</p></div>
         <div style={{ display: "flex", gap: 8 }}>
+          {onNavigate && <button onClick={() => onNavigate("import")} style={buttonStyle}>Add tracks</button>}
           {attentionTrack && <button onClick={() => setSelectedTrack(attentionTrack)} style={buttonStyle}>Continue</button>}
           <button onClick={load} style={secondaryButtonStyle}>Refresh</button>
         </div>

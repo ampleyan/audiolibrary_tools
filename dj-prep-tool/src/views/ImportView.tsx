@@ -308,7 +308,7 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
   return (
     <div className="view import-view" style={{ padding: "24px", color: "#f9fafb" }}>
       <div className="view-heading">
-        <h2>Library</h2>
+        <h2>Add tracks</h2>
         <p>Add tracks from a playlist, a pasted tracklist, or a CSV export.</p>
       </div>
 
