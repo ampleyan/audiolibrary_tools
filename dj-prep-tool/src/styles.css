@@ -105,8 +105,9 @@ button.rekordbox-row { cursor: pointer; }
 .related-heading { align-items: center; margin-bottom: 14px; }
 .related-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: #82909e; font-size: 11px; }
 .related-actions > span { margin-right: auto; }
-.similar-results { display: grid; gap: 1px; overflow: hidden; border: 1px solid #352330; border-radius: 6px; }
-.similar-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 45px auto auto; align-items: center; gap: 12px; background: #1b121a; padding: 10px 12px; font-size: 12px; }
+.similar-results { min-width: 0; overflow: hidden; border: 1px solid #352330; border-radius: 8px; background: #120d14; }
+.similar-row { display: grid; grid-template-columns: 24px minmax(100px, 1fr) 55px auto auto; align-items: center; gap: 10px; width: 100%; border: 0; border-bottom: 1px solid #202a35; background: transparent; color: #d5e6ef; padding: 10px 12px; text-align: left; font-size: 12px; }
+.similar-row:last-child { border-bottom: 0; }
 .similar-row.selected { background: #3a1830; }
 .similar-row input { accent-color: #ff4fa3; }
 .similar-player { margin: 0 0 12px; padding: 10px; border: 1px solid #6b3152; border-radius: 8px; background: #20101b; }
