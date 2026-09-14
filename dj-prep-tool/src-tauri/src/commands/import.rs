@@ -147,6 +147,13 @@ pub struct TelegramImportResult {
     pub skipped: Vec<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelegramLink {
+    pub url: String,
+    pub message_url: String,
+}
+
 fn telegram_session_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     if let Some(path) = config_store::get(app, "telegram_session_path").filter(|p| !p.is_empty()) {
         return Ok(std::path::PathBuf::from(path));
@@ -241,11 +248,11 @@ pub async fn telegram_check(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn import_telegram(
+pub async fn telegram_fetch_links(
     app: AppHandle,
     channel_id: String,
     limit: Option<u32>,
-) -> Result<TelegramImportResult, String> {
+) -> Result<Vec<TelegramLink>, String> {
     let result = run_telegram_action(&app, serde_json::json!({
         "action": "fetch",
         "channel_id": channel_id,
@@ -256,17 +263,46 @@ pub async fn import_telegram(
         .get("messages")
         .and_then(Value::as_array)
         .ok_or("Telegram helper returned no messages")?;
-    let mut tracks = Vec::new();
-    let mut skipped = Vec::new();
+    let mut links = Vec::new();
     for message in messages {
         let url = message.get("url").and_then(Value::as_str).unwrap_or_default();
         if url.is_empty() {
             continue;
         }
-        let source = message.get("message_url").and_then(Value::as_str);
-        match import_youtube_url(&app, url, source).await {
+        links.push(TelegramLink {
+            url: url.to_string(),
+            message_url: message
+                .get("message_url")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+        });
+    }
+    Ok(links)
+}
+
+#[tauri::command]
+pub async fn import_telegram_link(
+    app: AppHandle,
+    url: String,
+    message_url: String,
+) -> Result<Vec<import::TrackRow>, String> {
+    import_youtube_url(&app, &url, Some(&message_url)).await
+}
+
+#[tauri::command]
+pub async fn import_telegram(
+    app: AppHandle,
+    channel_id: String,
+    limit: Option<u32>,
+) -> Result<TelegramImportResult, String> {
+    let links = telegram_fetch_links(app.clone(), channel_id, limit).await?;
+    let mut tracks = Vec::new();
+    let mut skipped = Vec::new();
+    for link in links {
+        match import_telegram_link(app.clone(), link.url.clone(), link.message_url).await {
             Ok(mut rows) => tracks.append(&mut rows),
-            Err(error) => skipped.push(format!("{url}: {error}")),
+            Err(error) => skipped.push(format!("{}: {error}", link.url)),
         }
     }
     Ok(TelegramImportResult { tracks, skipped })

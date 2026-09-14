@@ -32,6 +32,8 @@ pub fn run() {
             commands::import::telegram_login_start,
             commands::import::telegram_login_code,
             commands::import::telegram_check,
+            commands::import::telegram_fetch_links,
+            commands::import::import_telegram_link,
             commands::import::import_telegram,
             commands::import::list_tracks,
             commands::import::list_activity,

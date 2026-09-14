@@ -279,6 +279,15 @@ def command(name, payload):
         return telegram_request({"action": "login_code", "code": payload.get("code", ""), "password": payload.get("password")}).get("status")
     if name == "telegram_check":
         return telegram_request({"action": "check"}).get("status")
+    if name == "telegram_fetch_links":
+        return telegram_request({"action": "fetch", "channel_id": payload.get("channelId", ""), "limit": max(1, min(int(payload.get("limit", 100)), 1000))}).get("messages", [])
+    if name == "import_telegram_link":
+        url = payload.get("url", "")
+        result = subprocess.run([PYTHON, str(ROOT / "py" / "yt_fetch.py"), url], capture_output=True, text=True, env=os.environ.copy(), check=False)
+        if result.returncode:
+            raise ValueError(result.stderr.strip() or "YouTube metadata failed")
+        message_url = payload.get("messageUrl") or url
+        return [insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), message_url, draft.get("state", "needs_review"), draft.get("notes"))) for draft in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
     if name == "import_telegram":
         messages = telegram_request({"action": "fetch", "channel_id": payload.get("channelId", ""), "limit": max(1, min(int(payload.get("limit", 100)), 1000))}).get("messages", [])
         added = []

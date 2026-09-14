@@ -346,13 +346,26 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
     setTelegramSkipped([]);
     setTelegramActivity("Fetching newest Telegram posts first, then resolving YouTube links…");
     try {
-      const result = await api.importTelegram(telegramChannelId.trim(), telegramLimit);
-      setTracks((prev) => {
-        const ids = new Set(result.tracks.map((track) => track.id));
-        return [...result.tracks, ...prev.filter((track) => !ids.has(track.id))];
-      });
-      setTelegramSkipped(result.skipped);
-      setTelegramActivity(`Finished: imported ${result.tracks.length} track${result.tracks.length === 1 ? "" : "s"} from the newest ${telegramLimit} posts.`);
+      const links = await api.telegramFetchLinks(telegramChannelId.trim(), telegramLimit);
+      if (links.length === 0) {
+        setTelegramActivity(`No YouTube links found in the newest ${telegramLimit} posts.`);
+        return;
+      }
+      const skipped: string[] = [];
+      let imported = 0;
+      for (let index = 0; index < links.length; index += 1) {
+        const link = links[index];
+        setTelegramActivity(`Fetching ${index + 1}/${links.length}: ${link.url}`);
+        try {
+          const added = await api.importTelegramLink(link.url, link.messageUrl);
+          imported += added.length;
+          await refresh();
+        } catch (e) {
+          skipped.push(`${link.url}: ${String(e)}`);
+        }
+      }
+      setTelegramSkipped(skipped);
+      setTelegramActivity(`Finished: imported ${imported} track${imported === 1 ? "" : "s"} from the newest ${telegramLimit} posts.`);
     } catch (e) {
       setError(String(e));
       setTelegramActivity("Telegram fetch failed.");
