@@ -26,6 +26,27 @@ export default function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
   useEffect(() => {
+    const shortcuts: Record<string, Tab> = {
+      "1": "pipeline",
+      "2": "discover",
+      "3": "import",
+      "4": "review",
+      "5": "downloads",
+      "0": "setup",
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      const nextTab = shortcuts[event.key];
+      if (!nextTab || event.altKey || event.ctrlKey || event.metaKey) return;
+      event.preventDefault();
+      setTab(nextTab);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
     if (!showLogs) return;
     let active = true;
     const loadLogs = () => api.getLogs().then((next) => { if (active) setLogs(next); }).catch(() => {});
@@ -96,8 +117,8 @@ export default function App() {
           <span className="brand-mark" />DJ PREP
         </span>
         <nav className="topnav" aria-label="Main navigation">
-        {TABS.map(({ id, label }) => (
-          <button key={id} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
+        {TABS.map(({ id, label }, index) => (
+          <button key={id} title={`Shortcut: ${index + 1}`} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
             {label}
           </button>
         ))}
