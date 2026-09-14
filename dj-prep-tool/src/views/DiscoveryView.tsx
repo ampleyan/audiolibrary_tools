@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
-import type { RekordboxTrack, SimilarTrack } from "../lib/types";
+import type { RekordboxTrack, SimilarTrack, TrackRow } from "../lib/types";
 
 function nameOf(track: { artist: string; title: string }) {
   return track.artist ? `${track.artist} – ${track.title}` : track.title;
@@ -9,8 +9,10 @@ function nameOf(track: { artist: string; title: string }) {
 export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string) => void }) {
   const [mode, setMode] = useState("library");
   const [tracks, setTracks] = useState<RekordboxTrack[]>([]);
-  const [pipeline, setPipeline] = useState<{ artist: string; title: string }[]>([]);
+  const [pipeline, setPipeline] = useState<TrackRow[]>([]);
+  const [pipelineSeedId, setPipelineSeedId] = useState<number | null>(null);
   const [selected, setSelected] = useState<RekordboxTrack | null>(null);
+  const [relatedSeed, setRelatedSeed] = useState<{ artist: string; title: string } | null>(null);
   const [results, setResults] = useState<SimilarTrack[] | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
@@ -26,10 +28,15 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
     try {
       const settings = await api.getSettings();
       const xmlPath = settings.rekordboxXmlPath.trim();
-      if (!xmlPath) throw new Error("Rekordbox XML not configured. Choose the XML file in Settings.");
-      const [preview, rows] = await Promise.all([api.checkRekordbox(xmlPath), api.listTracks()]);
-      setTracks(preview.tracksInXml);
+      const rows = await api.listTracks();
       setPipeline(rows);
+      setPipelineSeedId((current) => current && rows.some((track) => track.id === current) ? current : rows[0]?.id ?? null);
+      if (!xmlPath) {
+        setTracks([]);
+        throw new Error("Rekordbox XML not configured. Choose the XML file in Settings.");
+      }
+      const preview = await api.checkRekordbox(xmlPath);
+      setTracks(preview.tracksInXml);
       setSelected((current) => current && preview.tracksInXml.some((track) => nameOf(track) === nameOf(current)) ? current : preview.tracksInXml[0] ?? null);
     } catch (e) {
       setError(String(e));
@@ -55,16 +62,26 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
 
   const findRelated = async () => {
     if (!selected) return;
+    await findRelatedFor(selected.artist, selected.title);
+  };
+
+  const findRelatedFor = async (artist: string, title: string) => {
     setFinding(true);
     setError(null);
     setMode("related");
+    setRelatedSeed({ artist, title });
     try {
-      setResults(await api.getSimilarTracksForQuery(selected.artist, selected.title));
+      setResults(await api.getSimilarTracksForQuery(artist, title));
     } catch (e) {
       setError(String(e));
     } finally {
       setFinding(false);
     }
+  };
+
+  const findPipelineRelated = async () => {
+    const seed = pipeline.find((track) => track.id === pipelineSeedId);
+    if (seed) await findRelatedFor(seed.artist, seed.title);
   };
 
   const addToPipeline = async (track: { artist: string; title: string; mixVersion?: string | null }) => {
@@ -87,11 +104,12 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
 
   return <div className="view discovery-view">
     <div className="discovery-heading"><div className="view-heading"><h2>Discover</h2><p>Explore your Rekordbox library and find what belongs next.</p></div><button className="button secondary" onClick={() => load(true)} disabled={refreshing}>{refreshing ? "Refreshing…" : "Refresh XML"}</button></div>
-    <div className="discovery-tabs" role="tablist" aria-label="Discovery modes"><button role="tab" aria-selected={mode === "library"} onClick={() => setMode("library")}>Rekordbox library</button><button role="tab" aria-selected={mode === "related"} onClick={() => setMode("related")} disabled={!selected}>Related music</button></div>
+    <div className="discovery-tabs" role="tablist" aria-label="Discovery modes"><button role="tab" aria-selected={mode === "library"} onClick={() => setMode("library")}>Rekordbox library</button><button role="tab" aria-selected={mode === "related"} onClick={() => setMode("related")} disabled={!selected && !pipeline.length}>Related music</button></div>
+    {pipeline.length > 0 && <div className="pipeline-seed"><label htmlFor="pipeline-seed">Find related from Pipeline</label><select id="pipeline-seed" value={pipelineSeedId ?? ""} onChange={(event) => setPipelineSeedId(Number(event.target.value))}>{pipeline.map((track) => <option key={track.id} value={track.id}>{nameOf(track)} · {track.state.replace(/_/g, " ")}</option>)}</select><button className="button primary" onClick={findPipelineRelated} disabled={!pipelineSeedId || finding}>{finding ? "Finding…" : "Find related"}</button></div>}
     {error && <div className="inline-error" role="alert"><span>{error}</span><button onClick={() => onNavigate("setup")}>Open Settings</button></div>}
     {loading ? <div className="empty-state">Loading Rekordbox library…</div> : !error && !tracks.length ? <div className="empty-state">No tracks were found in this Rekordbox XML.</div> : <>
       {mode === "library" && <><div className="discovery-toolbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search artist, title, genre, playlist" aria-label="Search Rekordbox library" /><select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Filter Rekordbox library"><option value="all">All tracks · {tracks.length}</option><option value="library">In Pipeline · {tracks.length - gapCount}</option><option value="gap">Library gaps · {gapCount}</option></select></div><div className="discovery-browser"><div className="rekordbox-table" role="table" aria-label="Rekordbox tracks"><div className="rekordbox-row rekordbox-header" role="row"><span>Artist</span><span>Title</span><span>BPM</span><span>Key</span><span>Status</span></div>{visibleTracks.map((track) => <button className={`rekordbox-row${selected && nameOf(selected) === nameOf(track) ? " selected" : ""}`} key={`${track.artist}-${track.title}-${track.location}`} onClick={() => { setSelected(track); setResults(null); }} role="row"><span title={track.artist}>{track.artist || "Unknown artist"}</span><span title={track.title}>{track.title}</span><span>{track.bpm ? Math.round(Number(track.bpm)) : "—"}</span><span>{track.key || "—"}</span><span className={track.inLibrary ? "status-known" : "status-gap"}>{track.inLibrary ? "In Pipeline" : "Library gap"}</span></button>)}{!visibleTracks.length && <div className="table-empty">No tracks match this search.</div>}</div><TrackDetail track={selected} adding={adding} onFindRelated={findRelated} onAdd={addToPipeline} /></div></>}
-      {mode === "related" && <RelatedResults seed={selected} results={results} finding={finding} adding={adding} onBack={() => setMode("library")} onAdd={addToPipeline} />}
+      {mode === "related" && <RelatedResults seed={relatedSeed} results={results} finding={finding} adding={adding} onBack={() => setMode("library")} onAdd={addToPipeline} />}
     </>}
   </div>;
 }
@@ -101,6 +119,6 @@ function TrackDetail({ track, adding, onFindRelated, onAdd }: { track: Rekordbox
   return <aside className="track-detail"><p className="detail-kicker">Selected track</p><h3>{nameOf(track)}</h3>{track.mixVersion && <p className="detail-mix">{track.mixVersion}</p>}<dl className="detail-grid"><dt>Album</dt><dd>{track.album || "—"}</dd><dt>Genre</dt><dd>{track.genre || "—"}</dd><dt>BPM</dt><dd>{track.bpm ? Math.round(Number(track.bpm)) : "—"}</dd><dt>Key</dt><dd>{track.key || "—"}</dd><dt>Playlists</dt><dd>{track.playlists.length ? track.playlists.join(" / ") : "—"}</dd><dt>Location</dt><dd title={track.location ?? undefined}>{track.location || "—"}</dd></dl><div className="detail-actions"><button className="button primary" onClick={onFindRelated}>Find related</button><button className="button secondary" disabled={track.inLibrary || adding} onClick={() => onAdd(track)}>{track.inLibrary ? "Already in Pipeline" : adding ? "Adding…" : "Add to Pipeline"}</button></div></aside>;
 }
 
-function RelatedResults({ seed, results, finding, adding, onBack, onAdd }: { seed: RekordboxTrack | null; results: SimilarTrack[] | null; finding: boolean; adding: boolean; onBack: () => void; onAdd: (track: SimilarTrack) => void }) {
+function RelatedResults({ seed, results, finding, adding, onBack, onAdd }: { seed: { artist: string; title: string } | null; results: SimilarTrack[] | null; finding: boolean; adding: boolean; onBack: () => void; onAdd: (track: SimilarTrack) => void }) {
   return <div className="related-view"><div className="related-heading"><div><p className="detail-kicker">Related music</p><h3>{seed ? nameOf(seed) : "Select a seed track"}</h3></div><button className="button secondary" onClick={onBack}>Back to library</button></div>{finding ? <div className="empty-state">Finding related tracks…</div> : results && <div className="similar-results">{results.map((track) => <div className="similar-row" key={track.cosineId}><div><strong>{nameOf(track)}</strong>{track.mixVersion && <small>{track.mixVersion}</small>}</div><span>{Math.round(track.score * 100)}%</span><button className="button secondary" disabled={adding} onClick={() => onAdd(track)}>Add to Pipeline</button></div>)}</div>}</div>;
 }
