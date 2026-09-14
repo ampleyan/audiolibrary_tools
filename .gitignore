@@ -1,6 +1,7 @@
 # ── Credentials / local config ────────────────────────────────────────────────
 tools/sockseek/sockseek.conf
 data/dj_prep.sqlite
+data/backups/
 *.local.py
 dj_prep_settings.json
 dj-prep-tool/client_secret.json

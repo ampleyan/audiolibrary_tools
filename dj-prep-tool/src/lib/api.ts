@@ -111,5 +111,6 @@ export const api = {
   launchSockseek: () => call<void>("launch_sockseek"),
   checkDaemon: () => call<boolean>("check_daemon"),
   validateSetup: () => call<SetupCheck[]>("validate_setup"),
+  backupDatabase: () => call<string>("backup_database"),
   getLogs: () => call<LogEntry[]>("get_logs"),
 };

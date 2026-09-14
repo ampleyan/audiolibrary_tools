@@ -55,6 +55,8 @@ export default function SetupView({ settings, onSaved }: Props) {
   const [launching, setLaunching] = useState(false);
   const [checks, setChecks] = useState<{ name: string; ok: boolean; detail: string }[] | null>(null);
   const [checking, setChecking] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+  const [backupMessage, setBackupMessage] = useState<string | null>(null);
 
   useEffect(() => {
     api.checkDaemon().then(setDaemonUp).catch(() => setDaemonUp(false));
@@ -88,6 +90,19 @@ export default function SetupView({ settings, onSaved }: Props) {
       setError(String(e));
     } finally {
       setChecking(false);
+    }
+  };
+
+  const backup = async () => {
+    setBackingUp(true);
+    setBackupMessage(null);
+    setError(null);
+    try {
+      setBackupMessage(`Backup created: ${await api.backupDatabase()}`);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBackingUp(false);
     }
   };
 
@@ -343,6 +358,8 @@ export default function SetupView({ settings, onSaved }: Props) {
         </div>
       )}
 
+      {backupMessage && <p style={{ color: "#4ade80", fontSize: 12, marginBottom: 16 }}>{backupMessage}</p>}
+
       <div style={{ display: "flex", gap: 10 }}>
         <button
           style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 5, padding: "8px 16px", fontSize: 14, cursor: checking ? "not-allowed" : "pointer" }}
@@ -350,6 +367,13 @@ export default function SetupView({ settings, onSaved }: Props) {
           onClick={validate}
         >
           {checking ? "Checking…" : "Validate setup"}
+        </button>
+        <button
+          style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 5, padding: "8px 16px", fontSize: 14, cursor: backingUp ? "not-allowed" : "pointer" }}
+          disabled={backingUp}
+          onClick={backup}
+        >
+          {backingUp ? "Backing up…" : "Back up database"}
         </button>
         <button
           style={{

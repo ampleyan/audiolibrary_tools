@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::process::Stdio;
 use std::sync::{Mutex, OnceLock};
 use serde::Serialize;
 use tauri::AppHandle;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::config_store;
+use crate::{config_store, db};
 
 static LOGS: OnceLock<Mutex<VecDeque<String>>> = OnceLock::new();
 
@@ -133,4 +134,25 @@ pub async fn validate_setup(app: AppHandle) -> Vec<SetupCheck> {
         checks.push(SetupCheck { name: name.into(), ok, detail });
     }
     checks
+}
+
+#[tauri::command]
+pub fn backup_database(app: AppHandle) -> Result<String, String> {
+    let source = db::db_path(&app);
+    let backup_dir = source
+        .parent()
+        .ok_or("database path has no parent directory")?
+        .join("backups");
+    std::fs::create_dir_all(&backup_dir).map_err(|e| format!("create backup folder failed: {e}"))?;
+    db::open(&app)
+        .map_err(|e| format!("open database failed: {e}"))?
+        .execute_batch("PRAGMA wal_checkpoint(FULL);")
+        .map_err(|e| format!("checkpoint database failed: {e}"))?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("clock error: {e}"))?
+        .as_secs();
+    let destination = backup_dir.join(format!("dj_prep-{timestamp}.sqlite"));
+    std::fs::copy(&source, &destination).map_err(|e| format!("backup failed: {e}"))?;
+    Ok(destination.to_string_lossy().to_string())
 }
