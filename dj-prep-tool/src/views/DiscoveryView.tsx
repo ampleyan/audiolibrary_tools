@@ -69,6 +69,7 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
     setFinding(true);
     setError(null);
     setMode("related");
+    setRelatedSource("rekordbox");
     setRelatedSeed({ artist, title });
     try {
       setResults(await api.getSimilarTracksForQuery(artist, title));
