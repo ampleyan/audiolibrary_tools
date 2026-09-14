@@ -11,6 +11,18 @@ pub fn get_settings(app: AppHandle) -> config_store::PublicSettings {
     config_store::get_public(&app)
 }
 
+#[tauri::command]
+pub fn check_rekordbox(app: AppHandle, xml_path: String) -> Result<Vec<i64>, String> {
+    let xml = std::fs::read_to_string(&xml_path)
+        .map_err(|e| format!("Cannot read Rekordbox XML: {e}"))?;
+    let tracks = import::list_tracks(&app, None).map_err(|e| e.to_string())?;
+    let candidates = tracks
+        .iter()
+        .map(|track| (track.id, track.artist.clone(), track.title.clone()))
+        .collect::<Vec<_>>();
+    Ok(crate::rekordbox::matching_track_ids(&xml, &candidates))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveSettingsPayload {

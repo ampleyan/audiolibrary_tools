@@ -3,6 +3,7 @@ pub mod config_store;
 pub mod db;
 pub mod import;
 pub mod quality;
+pub mod rekordbox;
 pub mod scoring;
 pub mod sockseek;
 
@@ -25,6 +26,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::import::get_settings,
+            commands::import::check_rekordbox,
             commands::import::save_settings,
             commands::import::import_text,
             commands::import::import_csv,
