@@ -11,6 +11,8 @@ const DOWNLOAD_STATES: TrackState[] = [
   "ready_for_conversion",
   "tagging_review",
   "ready_for_rekordbox",
+  "rekordbox_pending",
+  "dj_ready",
   "failed",
 ];
 
@@ -399,7 +401,7 @@ function ActionBtn({
 
 type BatchOp = "download" | "retry" | "check" | "convert";
 
-export default function DownloadView() {
+export default function DownloadView({ states = DOWNLOAD_STATES, embedded = false, emptyMessage = "No tracks in the download pipeline. Approve candidates in Review first." }: { states?: TrackState[]; embedded?: boolean; emptyMessage?: string }) {
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [batchOp, setBatchOp] = useState<BatchOp | null>(null);
@@ -408,13 +410,13 @@ export default function DownloadView() {
 
   const load = (showSpinner = false) => {
     if (showSpinner) setLoading(true);
-    Promise.all(DOWNLOAD_STATES.map((s) => api.listTracks(s)))
+    Promise.all(states.map((s) => api.listTracks(s)))
       .then((groups) => setTracks(groups.flat()))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => load(true), []);
+  useEffect(() => load(true), [states]);
 
   const runBatch = async (op: BatchOp, subset: TrackRow[], action: (t: TrackRow) => Promise<unknown>) => {
     if (!subset.length) return;
@@ -504,10 +506,10 @@ export default function DownloadView() {
           marginBottom: 20,
         }}
       >
-        <div className="view-heading">
+        {!embedded && <div className="view-heading">
           <h2>Download and prepare</h2>
           <p>Move approved tracks through download, quality check, tagging, and Rekordbox.</p>
-        </div>
+        </div>}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {batchBtn("download", "Download all", approvedCount, downloadAll)}
           {batchBtn("retry", "Retry failed", failedCount, retryAll)}
@@ -554,7 +556,7 @@ export default function DownloadView() {
         <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p>
       ) : tracks.length === 0 ? (
         <p style={{ color: "#4b5563", fontSize: 14 }}>
-          No tracks in the download pipeline. Approve candidates in Review first.
+          {emptyMessage}
         </p>
       ) : (
         tracks.map((t) => (

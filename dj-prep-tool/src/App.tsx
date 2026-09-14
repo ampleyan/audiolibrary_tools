@@ -1,35 +1,50 @@
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 import type { LogEntry, PublicSettings } from "./lib/types";
-import DownloadView from "./views/DownloadView";
 import DiscoveryView from "./views/DiscoveryView";
 import ImportView from "./views/ImportView";
 import PipelineView from "./views/PipelineView";
-import ReviewView from "./views/ReviewView";
+import PrepareView, { type PrepareStage } from "./views/PrepareView";
 import SetupView from "./views/SetupView";
 
-type Tab = "import" | "review" | "downloads" | "pipeline" | "library" | "discover" | "setup";
+type Tab = "import" | "pipeline" | "library" | "prepare" | "discover" | "setup";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "pipeline", label: "Overview" },
   { id: "library", label: "Library" },
+  { id: "prepare", label: "Prepare" },
   { id: "discover", label: "Discover" },
+  { id: "setup", label: "Settings" },
 ];
 
 export default function App() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [tab, setTab] = useState<Tab>("pipeline");
+  const [prepareStage, setPrepareStage] = useState<PrepareStage>("find");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const navigate = (nextTab: string) => setTab(nextTab as Tab);
+  const navigate = (nextTab: string) => {
+    if (nextTab === "review") {
+      setPrepareStage("find");
+      setTab("prepare");
+      return;
+    }
+    if (nextTab === "downloads") {
+      setPrepareStage("download");
+      setTab("prepare");
+      return;
+    }
+    setTab(nextTab as Tab);
+  };
 
   useEffect(() => {
     const shortcuts: Record<string, Tab> = {
       "1": "pipeline",
       "2": "library",
-      "3": "discover",
-      "0": "setup",
+      "3": "prepare",
+      "4": "discover",
+      "5": "setup",
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
@@ -115,7 +130,7 @@ export default function App() {
         </span>
         <nav className="topnav" aria-label="Main navigation">
         {TABS.map(({ id, label }, index) => (
-          <button key={id} title={`Shortcut: ${index + 1}`} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
+          <button key={id} title={`${label} (Shortcut: ${index + 1})`} aria-label={`${label}, shortcut ${index + 1}`} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
             {label}
           </button>
         ))}
@@ -124,25 +139,15 @@ export default function App() {
           <label style={{ color: "#8190a0", fontSize: 12, marginRight: 12, userSelect: "none" }}>
             <input type="checkbox" checked={showLogs} onChange={(event) => setShowLogs(event.target.checked)} /> Show logs
           </label>
-          <button
-            className="settings-button"
-            onClick={() => setTab("setup")}
-            title="Settings (Shortcut: 0)"
-            aria-current={tab === "setup" ? "page" : undefined}
-            aria-label="Settings"
-          >
-            ⚙
-          </button>
         </div>
         </div>
       </header>
 
       <main>
         {tab === "import" && <ImportView onNavigate={navigate} />}
-        {tab === "review" && <ReviewView />}
-        {tab === "downloads" && <DownloadView />}
         {tab === "pipeline" && <PipelineView onNavigate={navigate} />}
         {tab === "library" && <PipelineView heading="Library" onNavigate={navigate} />}
+        {tab === "prepare" && <PrepareView stage={prepareStage} onStageChange={setPrepareStage} />}
         {tab === "discover" && <DiscoveryView onNavigate={navigate} />}
         {tab === "setup" && (
           <SetupView
