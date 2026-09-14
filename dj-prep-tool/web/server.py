@@ -1,3 +1,4 @@
+import concurrent.futures
 import csv
 import datetime
 import io
@@ -9,6 +10,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -16,6 +18,12 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+try:
+    from lxml import etree as _lxml
+    _HAS_LXML = True
+except ImportError:
+    _HAS_LXML = False
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("DJ_PREP_DATA_DIR", "/data"))
@@ -60,15 +68,21 @@ MIX = re.compile(r"(?i)\s*[\(\[]([\w\s\-'&]* (?:original|extended|radio|club|dub
 EXT = re.compile(r"(?i)\.(mp3|flac|aac|ogg|wav|m4a|aif{1,2}|wma|opus)\s*$")
 PREFIX = re.compile(r"^(?:(?:[-*•]\s+)|(?:\d{1,3}(?:[.\):]\s*|\s+-\s+)))+")
 
+_db_migrated = False
+
 def db():
+    global _db_migrated
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA)
-    try:
-        conn.execute("ALTER TABLE tracks ADD COLUMN import_tag TEXT")
-    except sqlite3.OperationalError:
-        pass
+    if not _db_migrated:
+        conn.executescript(SCHEMA)
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN import_tag TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+        _db_migrated = True
     return conn
 
 def row_json(row):
@@ -160,27 +174,65 @@ def track_exists(artist, title):
     conn.close()
     return bool(exists)
 
-def rekordbox_entries(xml_path):
-    try:
-        root = ET.parse(xml_path).getroot()
-    except (OSError, ET.ParseError) as error:
-        raise ValueError(f"Cannot read Rekordbox XML: {error}")
-    return [
-        {
-            "artist": " ".join((track.attrib.get("Artist") or "").split()).casefold(),
-            "title": " ".join((track.attrib.get("Name") or "").split()).casefold(),
-            "location": track.attrib.get("Location") or "",
-        }
-        for track in root.iter("TRACK")
-    ]
+_rek_cache = {"mtime": None, "index": {}}
 
-def rekordbox_location(entries, artist, title):
-    artist_key = " ".join((artist or "").split()).casefold()
-    title_key = " ".join((title or "").split()).casefold()
-    for entry in entries:
-        if entry["artist"] == artist_key and entry["title"] == title_key:
-            return entry["location"] or None
-    return None
+def _parse_rekordbox_xml(xml_path):
+    index = {}
+    if _HAS_LXML:
+        try:
+            for _, elem in _lxml.iterparse(xml_path, tag="TRACK"):
+                artist = " ".join((elem.get("Artist") or "").split()).casefold()
+                title = " ".join((elem.get("Name") or "").split()).casefold()
+                index[(artist, title)] = elem.get("Location") or ""
+                elem.clear()
+        except _lxml.XMLSyntaxError as error:
+            raise ValueError(f"Cannot read Rekordbox XML: {error}")
+    else:
+        try:
+            for _, elem in ET.iterparse(xml_path, events=("end",)):
+                if elem.tag == "TRACK":
+                    artist = " ".join((elem.attrib.get("Artist") or "").split()).casefold()
+                    title = " ".join((elem.attrib.get("Name") or "").split()).casefold()
+                    index[(artist, title)] = elem.attrib.get("Location") or ""
+                    elem.clear()
+        except ET.ParseError as error:
+            raise ValueError(f"Cannot read Rekordbox XML: {error}")
+    return index
+
+def rekordbox_index(xml_path):
+    try:
+        mtime = Path(xml_path).stat().st_mtime
+    except OSError as error:
+        raise ValueError(f"Cannot read Rekordbox XML: {error}")
+    if _rek_cache["mtime"] == mtime:
+        return _rek_cache["index"]
+    conn = db()
+    stored = conn.execute("SELECT value FROM settings WHERE key='rek_index_mtime'").fetchone()
+    stored_mtime = float(stored[0]) if stored else None
+    if stored_mtime == mtime:
+        blob = conn.execute("SELECT value FROM settings WHERE key='rek_index_blob'").fetchone()
+        conn.close()
+        if blob:
+            index = {(r[0], r[1]): r[2] for r in json.loads(blob[0])}
+            _rek_cache.update(mtime=mtime, index=index)
+            return index
+    conn.close()
+    index = _parse_rekordbox_xml(xml_path)
+    serialized = json.dumps([[k[0], k[1], v] for k, v in index.items()])
+    conn = db()
+    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('rek_index_mtime',?)", (str(mtime),))
+    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('rek_index_blob',?)", (serialized,))
+    conn.commit()
+    conn.close()
+    _rek_cache.update(mtime=mtime, index=index)
+    return index
+
+def rekordbox_location(index, artist, title):
+    key = (
+        " ".join((artist or "").split()).casefold(),
+        " ".join((title or "").split()).casefold(),
+    )
+    return index.get(key) or None
 
 def tracks(state=None):
     conn = db()
@@ -294,14 +346,14 @@ def command(name, payload):
         xml_path = payload.get("xmlPath") or setting("rekordbox_xml_path")
         if not xml_path:
             raise ValueError("Rekordbox XML path is not configured")
-        entries = rekordbox_entries(xml_path)
-        return [track["id"] for track in tracks() if rekordbox_location(entries, track["artist"], track["title"])]
+        index = rekordbox_index(xml_path)
+        return [track["id"] for track in tracks() if rekordbox_location(index, track["artist"], track["title"])]
     if name == "finish_rekordbox":
         track = get_track(int(payload["trackId"]))
         dj_path = track.get("dj_path")
         xml_path = setting("rekordbox_xml_path")
         if xml_path:
-            dj_path = rekordbox_location(rekordbox_entries(xml_path), track["artist"], track["title"]) or dj_path
+            dj_path = rekordbox_location(rekordbox_index(xml_path), track["artist"], track["title"]) or dj_path
         return update(track["id"], "UPDATE tracks SET dj_path=?, state='dj_ready', error=NULL WHERE id=?", (dj_path,))
     if name in ("import_text", "import_csv"):
         content = payload.get("text", "") if name == "import_text" else payload.get("content", "")
@@ -352,24 +404,29 @@ def command(name, payload):
         return rows
     if name == "import_telegram":
         messages = telegram_request({"action": "fetch", "channel_id": payload.get("channelId", ""), "limit": max(1, min(int(payload.get("limit", 100)), 1000))}).get("messages", [])
+        script = ROOT / "py" / "yt_fetch.py"
+
+        def fetch_message(message):
+            url = message.get("url", "")
+            result = subprocess.run([PYTHON, str(script), url], capture_output=True, text=True, env=os.environ.copy(), check=False)
+            return message, url, result
+
         added = []
         skipped = []
-        for message in messages:
-            url = message.get("url", "")
-            script = ROOT / "py" / "yt_fetch.py"
-            result = subprocess.run([PYTHON, str(script), url], capture_output=True, text=True, env=os.environ.copy(), check=False)
-            if result.returncode:
-                skipped.append(f"{url}: {result.stderr.strip() or 'YouTube metadata failed'}")
-                continue
-            for line in result.stdout.splitlines():
-                if line.strip():
-                    draft = json.loads(line)
-                    artist = draft.get("artist", "")
-                    title = draft.get("title", "")
-                    if track_exists(artist, title):
-                        skipped.append(f"{artist} - {title}: already in library")
-                        continue
-                    added.append(insert((artist, title, draft.get("mix_version"), message.get("message_url") or draft.get("source_url") or url, draft.get("state", "needs_review"), draft.get("notes"))))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            for message, url, result in pool.map(fetch_message, messages):
+                if result.returncode:
+                    skipped.append(f"{url}: {result.stderr.strip() or 'YouTube metadata failed'}")
+                    continue
+                for line in result.stdout.splitlines():
+                    if line.strip():
+                        draft = json.loads(line)
+                        artist = draft.get("artist", "")
+                        title = draft.get("title", "")
+                        if track_exists(artist, title):
+                            skipped.append(f"{artist} - {title}: already in library")
+                            continue
+                        added.append(insert((artist, title, draft.get("mix_version"), message.get("message_url") or draft.get("source_url") or url, draft.get("state", "needs_review"), draft.get("notes"))))
         return {"tracks": added, "skipped": skipped}
     if name == "list_tracks": return tracks(payload.get("state"))
     if name == "list_activity":
@@ -643,5 +700,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": str(error)})
 
 if __name__ == "__main__":
-    db()
+    conn = db()
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.close()
+    xml_path = setting("rekordbox_xml_path")
+    if xml_path:
+        threading.Thread(target=rekordbox_index, args=(xml_path,), daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()
