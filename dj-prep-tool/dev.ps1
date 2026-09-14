@@ -1,6 +1,6 @@
 # dev.ps1 — launch DJ Prep Tool in development mode
 # Sets the MSVC + Windows SDK environment that cargo requires on Windows,
-# then starts `npm run tauri dev` from this directory.
+# then starts the installed Tauri CLI from this directory.
 
 $MSVC    = "C:\BuildTools\VC\Tools\MSVC\14.44.35207"
 $SDK     = "C:\Program Files (x86)\Windows Kits\10"
@@ -37,6 +37,7 @@ while (Get-NetTCPConnection -LocalPort $devPort -State Listen -ErrorAction Silen
 $env:VITE_PORT = $devPort
 $frontendRoot = $PSScriptRoot.Replace('\', '/')
 $viteEntry = "$frontendRoot/node_modules/vite/bin/vite.js"
+$tauriEntry = "$frontendRoot/node_modules/@tauri-apps/cli/tauri.js"
 $tauriDevConfig = @{ build = @{ devUrl = "http://localhost:$devPort"; beforeDevCommand = "node $viteEntry" } } | ConvertTo-Json -Compress
 Write-Host "Starting DJ Prep Tool on port $devPort"
-npm run tauri dev -- --config $tauriDevConfig
+& node $tauriEntry dev --config $tauriDevConfig
