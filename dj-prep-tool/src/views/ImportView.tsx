@@ -139,6 +139,7 @@ function TrackList({
             <th style={{ padding: "6px 10px", fontWeight: 500 }}>Title</th>
             <th style={{ padding: "6px 10px", fontWeight: 500 }}>Mix</th>
             <th style={{ padding: "6px 10px", fontWeight: 500 }}>Source</th>
+            <th style={{ padding: "6px 10px", fontWeight: 500 }}>Tag</th>
             <th style={{ padding: "6px 10px", fontWeight: 500 }}>State</th>
             <th style={{ padding: "6px 0", fontWeight: 500 }} />
           </tr>
@@ -177,6 +178,7 @@ function TrackList({
                   </a>
                 ) : "—"}
               </td>
+              <td style={{ padding: "7px 10px", color: "#a78bfa", fontSize: 11 }}>{t.import_tag || "—"}</td>
               <td style={{ padding: "7px 10px" }}>
                 <StateBadge state={t.state} />
                 {t.error && (
@@ -371,11 +373,12 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
     try {
       const skipped: string[] = [];
       let imported = 0;
+      const importTag = `Telegram · ${new Date().toISOString().slice(0, 10)}`;
       for (let index = 0; index < telegramLinks.length; index += 1) {
         const link = telegramLinks[index];
         setTelegramActivity(`Fetching ${index + 1}/${telegramLinks.length}: ${link.url}`);
         try {
-          const added = await api.importTelegramLink(link.url, link.messageUrl);
+          const added = await api.importTelegramLink(link.url, link.messageUrl, importTag);
           imported += added.length;
           await refresh();
         } catch (e) {

@@ -75,8 +75,8 @@ export const api = {
   telegramFetchLinks: (channelId: string, limit: number) =>
     call<Array<{ url: string; messageUrl: string }>>("telegram_fetch_links", { channelId, limit }),
 
-  importTelegramLink: (url: string, messageUrl: string) =>
-    call<TrackRow[]>("import_telegram_link", { url, messageUrl }),
+  importTelegramLink: (url: string, messageUrl: string, importTag: string) =>
+    call<TrackRow[]>("import_telegram_link", { url, messageUrl, importTag }),
 
   importTelegram: (channelId: string, limit: number) =>
     call<{ tracks: TrackRow[]; skipped: string[] }>("import_telegram", { channelId, limit }),

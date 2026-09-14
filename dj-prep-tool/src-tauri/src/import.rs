@@ -50,6 +50,7 @@ pub struct TrackDraft {
     pub title: String,
     pub mix_version: Option<String>,
     pub source_url: Option<String>,
+    pub import_tag: Option<String>,
     pub state: String,
     #[serde(default)]
     pub notes: Option<String>,
@@ -62,6 +63,7 @@ pub struct TrackRow {
     pub title: String,
     pub mix_version: Option<String>,
     pub source_url: Option<String>,
+    pub import_tag: Option<String>,
     pub state: String,
     pub candidate_json: Option<String>,
     pub selected_username: Option<String>,
@@ -225,6 +227,7 @@ pub fn parse_text(text: &str) -> Vec<TrackDraft> {
                 title,
                 mix_version,
                 source_url: None,
+                import_tag: None,
                 state: state.into(),
                 notes,
             }
@@ -316,6 +319,7 @@ pub fn parse_csv(content: &str) -> Vec<TrackDraft> {
             title,
             mix_version,
             source_url: opt(url_idx),
+            import_tag: None,
             notes,
         });
     }
@@ -331,25 +335,26 @@ fn map_row(r: &rusqlite::Row) -> rusqlite::Result<TrackRow> {
         title: r.get(2)?,
         mix_version: r.get(3)?,
         source_url: r.get(4)?,
-        state: r.get(5)?,
-        candidate_json: r.get(6)?,
-        selected_username: r.get(7)?,
-        selected_filename: r.get(8)?,
-        downloaded_path: r.get(9)?,
-        quality_result: r.get(10)?,
-        quality_notes: r.get(11)?,
-        archive_path: r.get(12)?,
-        dj_path: r.get(13)?,
-        search_job_id: r.get(14)?,
-        download_job_id: r.get(15)?,
-        error: r.get(16)?,
-        created_at: r.get(17)?,
-        updated_at: r.get(18)?,
+        import_tag: r.get(5)?,
+        state: r.get(6)?,
+        candidate_json: r.get(7)?,
+        selected_username: r.get(8)?,
+        selected_filename: r.get(9)?,
+        downloaded_path: r.get(10)?,
+        quality_result: r.get(11)?,
+        quality_notes: r.get(12)?,
+        archive_path: r.get(13)?,
+        dj_path: r.get(14)?,
+        search_job_id: r.get(15)?,
+        download_job_id: r.get(16)?,
+        error: r.get(17)?,
+        created_at: r.get(18)?,
+        updated_at: r.get(19)?,
     })
 }
 
 const SELECT_COLS: &str =
-    "id, artist, title, mix_version, source_url, state,
+    "id, artist, title, mix_version, source_url, import_tag, state,
      candidate_json, selected_username, selected_filename,
      downloaded_path, quality_result, quality_notes,
      archive_path, dj_path, search_job_id, download_job_id,
@@ -371,8 +376,8 @@ pub fn insert_track(app: &AppHandle, draft: &TrackDraft) -> Result<TrackRow, rus
         draft.notes.clone()
     };
     conn.execute(
-        "INSERT INTO tracks (artist, title, mix_version, source_url, state, error)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO tracks (artist, title, mix_version, source_url, import_tag, state, error)
+         VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6)",
         params![
             draft.artist,
             draft.title,

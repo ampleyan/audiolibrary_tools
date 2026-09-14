@@ -35,7 +35,7 @@ DOWNLOAD_PROGRESS = {}
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tracks (
  id INTEGER PRIMARY KEY AUTOINCREMENT, artist TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
- mix_version TEXT, source_url TEXT, state TEXT NOT NULL DEFAULT 'requested', candidate_json TEXT,
+ mix_version TEXT, source_url TEXT, import_tag TEXT, state TEXT NOT NULL DEFAULT 'requested', candidate_json TEXT,
  selected_username TEXT, selected_filename TEXT, downloaded_path TEXT, quality_result TEXT,
  quality_notes TEXT, archive_path TEXT, dj_path TEXT, search_job_id TEXT, download_job_id TEXT,
  error TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -64,6 +64,10 @@ def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    try:
+        conn.execute("ALTER TABLE tracks ADD COLUMN import_tag TEXT")
+    except sqlite3.OperationalError:
+        pass
     return conn
 
 def row_json(row):
@@ -143,7 +147,7 @@ def insert(draft):
     exists = conn.execute("SELECT EXISTS(SELECT 1 FROM tracks WHERE lower(trim(artist))=lower(trim(?)) AND lower(trim(title))=lower(trim(?)))", (artist, title)).fetchone()[0]
     if exists:
         error = f"{error}; duplicate of existing track" if error else "duplicate of existing track"
-    cur = conn.execute("INSERT INTO tracks (artist,title,mix_version,source_url,state,error) VALUES (?,?,?,?,?,?)", (artist, title, mix_version, source_url, state, error))
+    cur = conn.execute("INSERT INTO tracks (artist,title,mix_version,source_url,import_tag,state,error) VALUES (?,?,?,?,?,?,?)", (artist, title, mix_version, source_url, None, state, error))
     row = conn.execute("SELECT * FROM tracks WHERE id=?", (cur.lastrowid,)).fetchone()
     conn.commit()
     conn.close()
@@ -287,7 +291,14 @@ def command(name, payload):
         if result.returncode:
             raise ValueError(result.stderr.strip() or "YouTube metadata failed")
         message_url = payload.get("messageUrl") or url
-        return [insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), message_url, draft.get("state", "needs_review"), draft.get("notes"))) for draft in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
+        rows = [insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), message_url, draft.get("state", "needs_review"), draft.get("notes"))) for draft in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
+        import_tag = payload.get("importTag") or "Telegram"
+        conn = db()
+        for row in rows:
+            conn.execute("UPDATE tracks SET import_tag=? WHERE id=?", (import_tag, row["id"]))
+            row["import_tag"] = import_tag
+        conn.commit(); conn.close()
+        return rows
     if name == "import_telegram":
         messages = telegram_request({"action": "fetch", "channel_id": payload.get("channelId", ""), "limit": max(1, min(int(payload.get("limit", 100)), 1000))}).get("messages", [])
         added = []

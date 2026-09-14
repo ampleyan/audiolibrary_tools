@@ -46,6 +46,7 @@ pub fn open(app: &AppHandle) -> Result<Connection, rusqlite::Error> {
 pub fn init(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let conn = open(app)?;
     conn.execute_batch(SCHEMA)?;
+    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN import_tag TEXT", []);
     conn.execute(
         "UPDATE tracks SET state = 'conversion_pending' WHERE state = 'downloaded' AND downloaded_path IS NOT NULL AND lower(downloaded_path) NOT LIKE '%.mp3'",
         [],
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     title           TEXT NOT NULL DEFAULT '',
     mix_version     TEXT,
     source_url      TEXT,
+    import_tag      TEXT,
     state           TEXT NOT NULL DEFAULT 'requested',
     candidate_json  TEXT,
     selected_username TEXT,

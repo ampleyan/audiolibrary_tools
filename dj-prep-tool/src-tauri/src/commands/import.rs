@@ -286,8 +286,20 @@ pub async fn import_telegram_link(
     app: AppHandle,
     url: String,
     message_url: String,
+    import_tag: String,
 ) -> Result<Vec<import::TrackRow>, String> {
-    import_youtube_url(&app, &url, Some(&message_url)).await
+    let rows = import_youtube_url(&app, &url, Some(&message_url)).await?;
+    let conn = db::open(&app).map_err(|e| e.to_string())?;
+    for row in &rows {
+        conn.execute(
+            "UPDATE tracks SET import_tag = ?1 WHERE id = ?2",
+            rusqlite::params![import_tag, row.id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    rows.into_iter()
+        .map(|row| import::get_track(&app, row.id).map_err(|e| e.to_string()))
+        .collect()
 }
 
 #[tauri::command]
@@ -300,7 +312,7 @@ pub async fn import_telegram(
     let mut tracks = Vec::new();
     let mut skipped = Vec::new();
     for link in links {
-        match import_telegram_link(app.clone(), link.url.clone(), link.message_url).await {
+        match import_telegram_link(app.clone(), link.url.clone(), link.message_url, "Telegram".into()).await {
             Ok(mut rows) => tracks.append(&mut rows),
             Err(error) => skipped.push(format!("{}: {error}", link.url)),
         }

@@ -23,6 +23,7 @@ export interface TrackRow {
   title: string;
   mix_version: string | null;
   source_url: string | null;
+  import_tag: string | null;
   state: TrackState;
   candidate_json: string | null;
   selected_username: string | null;
