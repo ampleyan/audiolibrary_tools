@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { RankedCandidate, SimilarTrack, TrackRow } from "../lib/types";
+import type { RankedCandidate, SimilarTrack, TrackRow, TrackState } from "../lib/types";
 import { matchQuality } from "../lib/matchQuality";
 import { PipelineSeedListbox } from "../components/PipelineSeedListbox";
 
@@ -108,6 +108,8 @@ const editInput: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
 };
+
+const DEFAULT_REVIEW_STATES: TrackState[] = ["requested", "needs_review", "matched", "not_found"];
 
 export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: TrackRow[]; onOpenLibrary?: () => void; onPlayTrack: (tracks: SimilarTrack[], index: number) => void }) {
   const [sourceIds, setSourceIds] = useState<number[]>(tracks[0] ? [tracks[0].id] : []);
@@ -725,7 +727,7 @@ function TrackCard({
   );
 }
 
-export default function ReviewView({ onTrackChanged }: { onTrackChanged?: (track: TrackRow) => void }) {
+export default function ReviewView({ states = DEFAULT_REVIEW_STATES, onTrackChanged }: { states?: TrackState[]; onTrackChanged?: (track: TrackRow) => void }) {
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchingAll, setSearchingAll] = useState(false);
@@ -738,20 +740,15 @@ export default function ReviewView({ onTrackChanged }: { onTrackChanged?: (track
   const load = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const [a, b, c, d] = await Promise.all([
-        api.listTracks("requested"),
-        api.listTracks("needs_review"),
-        api.listTracks("matched"),
-        api.listTracks("not_found"),
-      ]);
-      setTracks([...a, ...b, ...c, ...d]);
+      const results = await Promise.all(states.map((state) => api.listTracks(state)));
+      setTracks(results.flat());
     } catch {
     } finally {
       if (showLoading) setLoading(false);
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [states]);
 
   const removeTrack = (id: number) =>
     setTracks((prev) => prev.filter((t) => t.id !== id));

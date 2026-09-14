@@ -4,11 +4,15 @@ import type { TrackRow, TrackState } from "../lib/types";
 import DownloadView from "./DownloadView";
 import ReviewView from "./ReviewView";
 
-export type PrepareStage = "find" | "download" | "convert" | "quality" | "tag" | "rekordbox";
+export type PrepareStage = "find" | "match" | "download" | "convert" | "quality" | "tag" | "rekordbox";
 type PreparationBucket = "needsAction" | "running" | "blocked" | "done";
 
+const FIND_STATES: TrackState[] = ["requested", "needs_review", "not_found"];
+const MATCH_STATES: TrackState[] = ["matched"];
+
 const STAGES: { id: PrepareStage; label: string; description: string; primaryAction: string; states: TrackState[] }[] = [
-  { id: "find", label: "Find files", description: "Search Soulseek, compare candidates, and approve the right file.", primaryAction: "Search for a file", states: ["requested", "needs_review", "matched", "not_found"] },
+  { id: "find", label: "Find files", description: "Search Soulseek and find candidate files for each track.", primaryAction: "Search for a file", states: ["requested", "needs_review", "not_found"] },
+  { id: "match", label: "Match", description: "Choose the right candidate file before downloading.", primaryAction: "Approve a match", states: ["matched"] },
   { id: "download", label: "Download", description: "Start an approved download and monitor it to completion.", primaryAction: "Start download", states: ["approved", "downloading", "failed"] },
   { id: "convert", label: "Convert", description: "Convert FLAC and other lossless files to MP3 before quality checking.", primaryAction: "Convert to MP3", states: ["conversion_pending"] },
   { id: "quality", label: "Quality", description: "Check MP3 files before Beets tagging.", primaryAction: "Run quality check", states: ["downloaded", "converted", "quality_failed"] },
@@ -24,7 +28,8 @@ const BUCKETS: { id: PreparationBucket; label: string; color: string }[] = [
 ];
 
 function stageForTrack(track: TrackRow): PrepareStage {
-  if (["requested", "needs_review", "matched", "not_found"].includes(track.state)) return "find";
+  if (["requested", "needs_review", "not_found"].includes(track.state)) return "find";
+  if (track.state === "matched") return "match";
   if (["approved", "downloading", "failed"].includes(track.state)) return "download";
   if (track.state === "conversion_pending") return "convert";
   if (["downloaded", "converted", "quality_failed"].includes(track.state)) return "quality";
@@ -133,7 +138,7 @@ export default function PrepareView({ stage, onStageChange }: { stage: PrepareSt
         </div>
         <p style={{ color: "#6b7280", fontSize: 12, margin: "0 0 4px" }}>{activeStage.description}</p>
         <p style={{ color: "#93c5fd", fontSize: 12, margin: "0 0 8px" }}>Primary action: {activeStage.primaryAction}</p>
-        {stage === "find" ? <ReviewView onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} /> : <DownloadView states={activeStage.states} embedded selectedTrackId={continuedTrack?.id} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} emptyMessage={`No tracks are ready for ${activeStage.label.toLowerCase()} yet.`} />}
+        {stage === "find" ? <ReviewView states={FIND_STATES} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} /> : stage === "match" ? <ReviewView states={MATCH_STATES} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} /> : <DownloadView states={activeStage.states} embedded selectedTrackId={continuedTrack?.id} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} emptyMessage={`No tracks are ready for ${activeStage.label.toLowerCase()} yet.`} />}
       </section>
     </div>
   );
