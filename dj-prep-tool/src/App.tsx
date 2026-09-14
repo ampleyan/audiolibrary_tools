@@ -22,6 +22,7 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const navigate = (nextTab: string) => setTab(nextTab as Tab);
 
   useEffect(() => {
     const shortcuts: Record<string, Tab> = {
@@ -137,11 +138,11 @@ export default function App() {
       </header>
 
       <main>
-        {tab === "import" && <ImportView onNavigate={(t) => setTab(t as Tab)} />}
+        {tab === "import" && <ImportView onNavigate={navigate} />}
         {tab === "review" && <ReviewView />}
         {tab === "downloads" && <DownloadView />}
         {tab === "pipeline" && <PipelineView />}
-        {tab === "library" && <PipelineView heading="Library" onNavigate={(t) => setTab(t as Tab)} />}
+        {tab === "library" && <PipelineView heading="Library" onNavigate={navigate} />}
         {tab === "discover" && <DiscoveryView />}
         {tab === "setup" && (
           <SetupView

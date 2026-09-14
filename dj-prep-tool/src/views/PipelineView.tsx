@@ -37,6 +37,11 @@ function nextActionFor(track: TrackRow): string {
   return "Open details"
 }
 
+function workViewFor(track: TrackRow): "review" | "downloads" {
+  if (track.state === "requested" || track.state === "needs_review" || track.state === "matched" || track.state === "not_found") return "review";
+  return "downloads";
+}
+
 function emptyGroups(): Record<PipelineGroupId, TrackRow[]> {
   return { inbox: [], attention: [], progress: [], ready: [], skipped: [] };
 }
@@ -54,10 +59,12 @@ function GroupColumn({
   group,
   tracks,
   onOpen,
+  onNextAction,
 }: {
   group: (typeof PIPELINE_GROUPS)[number];
   tracks: TrackRow[];
-  onOpen: (track: TrackRow) => void;
+  onOpen?: (track: TrackRow) => void;
+  onNextAction?: (track: TrackRow) => void;
 }) {
   return (
     <section style={{ minWidth: 260, flex: "1 1 0", background: "#111827", border: "1px solid #293548", borderRadius: 8, padding: 14 }} aria-labelledby={`${group.id}-heading`}>
@@ -71,14 +78,15 @@ function GroupColumn({
         {tracks.length === 0 ? (
           <p style={{ color: "#4b5563", fontSize: 12, margin: 0 }}>Nothing here yet.</p>
         ) : tracks.map((track) => (
-          <button key={track.id} onClick={() => onOpen(track)} style={{ background: "#1f2937", border: "none", borderLeft: `3px solid ${group.color}66`, borderRadius: 5, padding: "8px 10px", color: "inherit", textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>
+          <div key={track.id} style={{ background: "#1f2937", borderLeft: `3px solid ${group.color}66`, borderRadius: 5, padding: "8px 10px" }}>
             <span style={{ display: "block", fontSize: 12, color: "#e5e7eb", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${track.artist} – ${track.title}`}>
               {track.artist ? `${track.artist} – ${track.title}` : track.title}
             </span>
             <span style={{ display: "block", fontSize: 10, color: group.color, marginTop: 3 }}>{nextActionFor(track)}</span>
             {track.mix_version && <span style={{ display: "block", fontSize: 10, color: "#6b7280", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.mix_version}</span>}
             {track.error && <span style={{ display: "block", fontSize: 10, color: track.state === "not_found" ? "#9ca3af" : "#f87171", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={track.error}>{track.state === "not_found" ? "ⓘ" : "⚠"} {track.error}</span>}
-          </button>
+            {onNextAction ? <button onClick={() => onNextAction(track)} style={{ ...secondaryButtonStyle, marginTop: 8, width: "100%" }}>{nextActionFor(track)}</button> : onOpen && <button onClick={() => onOpen(track)} style={{ ...secondaryButtonStyle, marginTop: 8, width: "100%" }}>Open details</button>}
+          </div>
         ))}
       </div>
     </section>
@@ -272,11 +280,12 @@ export default function PipelineView({ heading = "Overview", onNavigate }: { hea
     { label: "Not found", value: byGroup.skipped.length, color: "#9ca3af" },
     { label: "Completion", value: tracks.length ? `${Math.round((byGroup.ready.length / tracks.length) * 100)}%` : "—", color: "#60a5fa" },
   ];
+  const isLibrary = heading === "Library";
 
   return (
     <div className="view pipeline-view" style={{ padding: 24, color: "#f9fafb" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
-        <div className="view-heading"><h2>{heading}</h2><p>{tracks.length} track{tracks.length !== 1 ? "s" : ""} moving from import to DJ-ready.</p></div>
+        <div className="view-heading"><h2>{heading}</h2><p>{isLibrary ? "Your preparation queue. Add tracks, then follow the next step for each track." : `${tracks.length} track${tracks.length !== 1 ? "s" : ""} moving from import to DJ-ready.`}</p></div>
         <div style={{ display: "flex", gap: 8 }}>
           {onNavigate && <button onClick={() => onNavigate("import")} style={buttonStyle}>Add tracks</button>}
           {attentionTrack && <button onClick={() => setSelectedTrack(attentionTrack)} style={buttonStyle}>Continue</button>}
@@ -304,8 +313,8 @@ export default function PipelineView({ heading = "Overview", onNavigate }: { hea
         </div>
       </section>}
 
-      {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in your Library yet. Add tracks to get started.</p> : <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>{PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} onOpen={setSelectedTrack} />)}</div>}
-      {selectedTrack && <TrackDrawer track={selectedTrack} onClose={() => setSelectedTrack(null)} onUpdated={updateTrack} onNextAttention={nextAttention} hasNextAttention={tracks.some((track) => track.id !== selectedTrack.id && groupForTrack(track) === "attention")} />}
+      {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in your Library yet. Add tracks to get started.</p> : <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>{PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} onOpen={isLibrary ? undefined : setSelectedTrack} onNextAction={isLibrary ? (track) => onNavigate?.(workViewFor(track)) : undefined} />)}</div>}
+      {!isLibrary && selectedTrack && <TrackDrawer track={selectedTrack} onClose={() => setSelectedTrack(null)} onUpdated={updateTrack} onNextAttention={nextAttention} hasNextAttention={tracks.some((track) => track.id !== selectedTrack.id && groupForTrack(track) === "attention")} />}
     </div>
   );
 }
