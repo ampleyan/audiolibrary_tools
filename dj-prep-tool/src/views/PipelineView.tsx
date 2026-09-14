@@ -19,6 +19,20 @@ function groupForTrack(track: TrackRow): PipelineGroupId {
   return "progress";
 }
 
+function nextActionFor(track: TrackRow): string {
+  if (track.state === "requested" || track.state === "needs_review") return "Search for a file"
+  if (track.state === "matched") return "Approve a candidate"
+  if (track.state === "approved") return "Start download"
+  if (track.state === "downloading") return "Download in progress"
+  if (track.state === "downloaded" || track.state === "quality_failed") return "Run quality check"
+  if (track.state === "ready_for_conversion") return "Tag in Picard"
+  if (track.state === "tagging_review" || track.state === "picard_pending") return "Finish tagging"
+  if (track.state === "ready_for_rekordbox" || track.state === "rekordbox_pending") return "Send to Rekordbox"
+  if (track.state === "failed") return "Review error"
+  if (track.state === "dj_ready") return "Ready to use"
+  return "Open details"
+}
+
 function emptyGroups(): Record<PipelineGroupId, TrackRow[]> {
   return { inbox: [], attention: [], progress: [], ready: [] };
 }
@@ -57,6 +71,7 @@ function GroupColumn({
             <span style={{ display: "block", fontSize: 12, color: "#e5e7eb", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${track.artist} – ${track.title}`}>
               {track.artist ? `${track.artist} – ${track.title}` : track.title}
             </span>
+            <span style={{ display: "block", fontSize: 10, color: group.color, marginTop: 3 }}>{nextActionFor(track)}</span>
             {track.mix_version && <span style={{ display: "block", fontSize: 10, color: "#6b7280", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.mix_version}</span>}
             {track.error && <span style={{ display: "block", fontSize: 10, color: "#f87171", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={track.error}>⚠ {track.error}</span>}
           </button>
@@ -73,7 +88,7 @@ function TrackDrawer({
 }: {
   track: TrackRow;
   onClose: () => void;
-  onUpdated: (track: TrackRow) => void;
+  onUpdated: (trackId: number) => Promise<void>;
 }) {
   const [artist, setArtist] = useState(track.artist);
   const [title, setTitle] = useState(track.title);
@@ -110,30 +125,30 @@ function TrackDrawer({
   };
 
   const save = () => update(async () => {
-    const updated = await api.updateTrack(track.id, artist.trim(), title.trim(), mixVersion.trim() || null);
-    onUpdated(updated);
+    await api.updateTrack(track.id, artist.trim(), title.trim(), mixVersion.trim() || null);
+    await onUpdated(track.id);
   });
 
   const search = (loose = false) => update(async () => {
     const results = loose ? await api.searchTrackLoose(track.id) : await api.searchTrack(track.id);
     setCandidates(results);
-    onUpdated({ ...track, artist: artist.trim(), title: title.trim(), mix_version: mixVersion.trim() || null, state: "matched", candidate_json: JSON.stringify(results), search_job_id: track.search_job_id });
+    await onUpdated(track.id);
   });
 
   const approve = (candidate: Candidate) => update(async () => {
     await api.approveCandidate(track.id, candidate.username, candidate.filename);
-    onUpdated({ ...track, state: "approved", selected_username: candidate.username, selected_filename: candidate.filename });
+    await onUpdated(track.id);
   });
 
   const startDownload = () => update(async () => {
     await api.startDownload(track.id);
-    onUpdated({ ...track, state: "downloading" });
+    await onUpdated(track.id);
   });
 
   const qualityCheck = () => update(async () => {
     const result = await api.runQualityCheck(track.id);
     setQuality(result);
-    onUpdated({ ...track, state: result.isRealFlac === false ? "quality_failed" : "ready_for_conversion", quality_result: result.isRealFlac === false ? "fake_flac" : "ok", quality_notes: result.notes });
+    await onUpdated(track.id);
   });
 
   return (
@@ -193,7 +208,9 @@ export default function PipelineView() {
     return groups;
   }, emptyGroups());
 
-  const updateTrack = (updated: TrackRow) => {
+  const updateTrack = async (trackId: number) => {
+    const updated = (await api.listTracks()).find((track) => track.id === trackId);
+    if (!updated) return;
     setTracks((current) => current.map((track) => track.id === updated.id ? updated : track));
     setSelectedTrack(updated);
   };
