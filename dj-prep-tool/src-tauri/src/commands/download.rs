@@ -64,6 +64,31 @@ pub async fn check_download_progress(
 }
 
 #[tauri::command]
+pub async fn cancel_download(app: AppHandle, track_id: i64) -> Result<(), String> {
+    let job_id = {
+        let conn = db::open(&app).map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT download_job_id FROM tracks WHERE id = ?1",
+            params![track_id],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .map_err(|e| e.to_string())?
+        .ok_or("track has no download job")?
+    };
+    make_client(&app)
+        .cancel(&job_id)
+        .await
+        .map_err(|e| format!("cancel download failed: {e}"))?;
+    let conn = db::open(&app).map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE tracks SET state = 'failed', error = 'Download cancelled by user' WHERE id = ?1",
+        params![track_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn open_in_picard(app: AppHandle, track_id: i64) -> Result<(), String> {
     let picard_path = config_store::get(&app, "picard_path")
         .ok_or("picard_path not configured — check Setup")?;

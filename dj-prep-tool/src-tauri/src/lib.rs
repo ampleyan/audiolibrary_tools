@@ -41,6 +41,7 @@ pub fn run() {
             commands::search::start_download,
             commands::download::poll_download,
             commands::download::check_download_progress,
+            commands::download::cancel_download,
             commands::download::run_quality_check,
             commands::tagging::tag_track,
             commands::tagging::open_folder,

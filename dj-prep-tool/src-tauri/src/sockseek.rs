@@ -186,4 +186,13 @@ impl SockseekClient {
             .await?;
         Ok(resp.into_iter().next().map(|j| j.job_id).unwrap_or_default())
     }
+
+    pub async fn cancel(&self, job_id: &str) -> Result<(), reqwest::Error> {
+        self.client
+            .post(format!("{}/api/jobs/{}/cancel", self.base_url, job_id))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
 }
