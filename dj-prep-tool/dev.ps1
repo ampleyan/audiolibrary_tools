@@ -29,4 +29,12 @@ if (Test-Path (Join-Path $PSScriptRoot "client_secret.json")) {
 }
 
 Set-Location $PSScriptRoot
-npm run tauri dev
+$devPort = 5173
+while (Get-NetTCPConnection -LocalPort $devPort -State Listen -ErrorAction SilentlyContinue) {
+    $devPort++
+}
+
+$env:VITE_PORT = $devPort
+$tauriDevConfig = @{ build = @{ devUrl = "http://localhost:$devPort" } } | ConvertTo-Json -Compress
+Write-Host "Starting DJ Prep Tool on port $devPort"
+npm run tauri dev -- --config $tauriDevConfig
