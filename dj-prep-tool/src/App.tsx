@@ -11,11 +11,9 @@ import SetupView from "./views/SetupView";
 type Tab = "import" | "review" | "downloads" | "pipeline" | "discover" | "setup";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "pipeline", label: "Pipeline" },
+  { id: "pipeline", label: "Overview" },
+  { id: "import", label: "Library" },
   { id: "discover", label: "Discover" },
-  { id: "import", label: "Add tracks" },
-  { id: "review", label: "Review" },
-  { id: "downloads", label: "Download & check" },
 ];
 
 export default function App() {
@@ -28,10 +26,8 @@ export default function App() {
   useEffect(() => {
     const shortcuts: Record<string, Tab> = {
       "1": "pipeline",
-      "2": "discover",
-      "3": "import",
-      "4": "review",
-      "5": "downloads",
+      "2": "import",
+      "3": "discover",
       "0": "setup",
     };
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -130,7 +126,8 @@ export default function App() {
           <button
             className="settings-button"
             onClick={() => setTab("setup")}
-            title="Settings"
+            title="Settings (Shortcut: 0)"
+            aria-current={tab === "setup" ? "page" : undefined}
             aria-label="Settings"
           >
             ⚙

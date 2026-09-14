@@ -276,7 +276,7 @@ export default function PipelineView() {
   return (
     <div className="view pipeline-view" style={{ padding: 24, color: "#f9fafb" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
-        <div className="view-heading"><h2>Pipeline</h2><p>{tracks.length} track{tracks.length !== 1 ? "s" : ""} moving from import to DJ-ready.</p></div>
+        <div className="view-heading"><h2>Overview</h2><p>{tracks.length} track{tracks.length !== 1 ? "s" : ""} moving from import to DJ-ready.</p></div>
         <div style={{ display: "flex", gap: 8 }}>
           {attentionTrack && <button onClick={() => setSelectedTrack(attentionTrack)} style={buttonStyle}>Continue</button>}
           <button onClick={load} style={secondaryButtonStyle}>Refresh</button>
@@ -303,7 +303,7 @@ export default function PipelineView() {
         </div>
       </section>}
 
-      {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in the Pipeline yet. Add tracks to get started.</p> : <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>{PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} onOpen={setSelectedTrack} />)}</div>}
+      {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in your Library yet. Add tracks to get started.</p> : <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>{PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} onOpen={setSelectedTrack} />)}</div>}
       {selectedTrack && <TrackDrawer track={selectedTrack} onClose={() => setSelectedTrack(null)} onUpdated={updateTrack} onNextAttention={nextAttention} hasNextAttention={tracks.some((track) => track.id !== selectedTrack.id && groupForTrack(track) === "attention")} />}
     </div>
   );
