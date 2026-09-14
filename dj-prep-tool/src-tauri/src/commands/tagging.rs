@@ -81,6 +81,10 @@ fn append_log(app: &AppHandle, content: &str) {
 async fn convert_to_mp3(app: &AppHandle, source_path: &str) -> Result<String, String> {
     let ffmpeg = find_ffmpeg(app);
     let input = Path::new(source_path);
+    if input.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("mp3")) {
+        crate::commands::daemon::app_log(format!("[tag] source already MP3; skipped conversion: {}", source_path));
+        return Ok(source_path.to_string());
+    }
     let output = input.with_extension("mp3");
     let output_str = output.to_string_lossy().to_string();
 
@@ -112,6 +116,7 @@ async fn convert_to_mp3(app: &AppHandle, source_path: &str) -> Result<String, St
 pub async fn tag_track(app: AppHandle, track_id: i64) -> Result<TrackRow, String> {
     let track =
         crate::import::get_track(&app, track_id).map_err(|_| "Track not found".to_string())?;
+    crate::commands::daemon::app_log(format!("[tag] started: {} - {}", track.artist, track.title));
 
     let source_path = track
         .downloaded_path
@@ -131,6 +136,7 @@ pub async fn tag_track(app: AppHandle, track_id: i64) -> Result<TrackRow, String
             params![mp3_path, track_id],
         )
         .map_err(|e| e.to_string())?;
+        crate::commands::daemon::app_log(format!("[tag] completed: track {}: ready_for_rekordbox", track_id));
         return crate::import::get_track(&app, track_id).map_err(|e| e.to_string());
     }
 
@@ -187,6 +193,7 @@ pub async fn tag_track(app: AppHandle, track_id: i64) -> Result<TrackRow, String
     }
     .map_err(|e| e.to_string())?;
 
+    crate::commands::daemon::app_log(format!("[tag] completed: track {}: {}", track_id, state));
     crate::import::get_track(&app, track_id).map_err(|e| e.to_string())
 }
 

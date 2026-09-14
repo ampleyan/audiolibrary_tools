@@ -3,6 +3,7 @@ import { api } from "./lib/api";
 import type { LogEntry, PublicSettings } from "./lib/types";
 import DiscoveryView from "./views/DiscoveryView";
 import ImportView from "./views/ImportView";
+import LibraryView from "./views/LibraryView";
 import PipelineView from "./views/PipelineView";
 import PrepareView, { type PrepareStage } from "./views/PrepareView";
 import SetupView from "./views/SetupView";
@@ -146,7 +147,7 @@ export default function App() {
       <main>
         {tab === "import" && <ImportView onNavigate={navigate} />}
         {tab === "pipeline" && <PipelineView onNavigate={navigate} />}
-        {tab === "library" && <PipelineView heading="Library" onNavigate={navigate} />}
+        {tab === "library" && <LibraryView onNavigate={navigate} />}
         {tab === "prepare" && <PrepareView stage={prepareStage} onStageChange={setPrepareStage} />}
         {tab === "discover" && <DiscoveryView onNavigate={navigate} />}
         {tab === "setup" && (

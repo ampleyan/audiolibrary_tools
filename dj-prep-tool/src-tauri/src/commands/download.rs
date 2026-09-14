@@ -297,6 +297,7 @@ pub async fn poll_download(app: AppHandle, track_id: i64) -> Result<String, Stri
                 params![path_str, track_id],
             )
             .map_err(|e| e.to_string())?;
+            crate::commands::daemon::app_log(format!("[download] completed: track {}", track_id));
             return Ok(path_str);
         }
 
@@ -327,6 +328,7 @@ pub async fn poll_download(app: AppHandle, track_id: i64) -> Result<String, Stri
                             params![e, track_id],
                         )
                         .ok();
+                        crate::commands::daemon::app_log(format!("[download] failed: track {}: {}", track_id, e));
                         return Err(e);
                     }
                 }
@@ -341,6 +343,7 @@ pub async fn poll_download(app: AppHandle, track_id: i64) -> Result<String, Stri
             params![error, track_id],
         );
     }
+    crate::commands::daemon::app_log(format!("[download] timed out: track {}", track_id));
     Err(error)
 }
 
@@ -358,5 +361,8 @@ pub async fn run_quality_check(app: AppHandle, track_id: i64) -> Result<quality:
     };
 
     let path = downloaded_path.ok_or("track has no downloaded file — poll_download first")?;
-    quality::check_file(&app, track_id, &path).await
+    let result = quality::check_file(&app, track_id, &path).await?;
+    let outcome = if result.is_real_flac == Some(false) { "quality_failed" } else { "ready_for_conversion" };
+    crate::commands::daemon::app_log(format!("[quality] completed: track {}: {}", track_id, outcome));
+    Ok(result)
 }

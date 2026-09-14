@@ -16,6 +16,14 @@ const DOWNLOAD_STATES: TrackState[] = [
   "failed",
 ];
 
+const RETURN_STAGES: { state: TrackState; label: string }[] = [
+  { state: "requested", label: "Find files" },
+  { state: "approved", label: "Download" },
+  { state: "downloaded", label: "Quality check" },
+  { state: "ready_for_conversion", label: "Beets tagging" },
+  { state: "ready_for_rekordbox", label: "Rekordbox" },
+];
+
 function fmt(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -100,6 +108,7 @@ function DownloadCard({
   const [qualityResult, setQualityResult] = useState<QualityResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busyLabel, setBusyLabel] = useState("");
+  const [returnStage, setReturnStage] = useState<TrackState>("downloaded");
   const [progress, setProgress] = useState<{ bytesOnDisk: number | null; bytesTotal: number | null } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -117,7 +126,7 @@ function DownloadCard({
     };
   }, [track.id, track.state]);
 
-  const act = async (label: string, fn: () => Promise<unknown>) => {
+  const act = async (label: string, fn: () => Promise<unknown>, refresh = true) => {
     setBusy(true);
     setBusyLabel(label);
     setErr(null);
@@ -126,7 +135,7 @@ function DownloadCard({
       if (result && typeof result === "object" && "id" in result) {
         onUpdate(result as TrackRow);
       }
-      onRefresh();
+      if (refresh) onRefresh();
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -142,7 +151,13 @@ function DownloadCard({
     act("Checking…", async () => {
       const r = await api.runQualityCheck(track.id);
       setQualityResult(r);
-    });
+      onUpdate({
+        ...track,
+        state: r.isRealFlac === false ? "quality_failed" : "ready_for_conversion",
+        quality_result: r.isRealFlac === false ? "fake_flac" : "ok",
+        quality_notes: r.notes,
+      });
+    }, false);
   const tagTrack = () => act("Tagging…", () => api.tagTrack(track.id));
   const openFolder = (path: string | null) => {
     if (!path) return;
@@ -150,6 +165,11 @@ function DownloadCard({
   };
   const markAsTagged = () => act("…", () => api.updateTrackState(track.id, "ready_for_rekordbox"));
   const markImported = () => act("…", () => api.updateTrackState(track.id, "dj_ready"));
+  const returnToStage = () =>
+    act("Returning…", async () => {
+      await api.updateTrackState(track.id, returnStage);
+      setQualityResult(null);
+    });
 
   const isDownloading = track.state === "downloading";
 
@@ -257,6 +277,12 @@ function DownloadCard({
               )}
             </div>
           )}
+          {!qualityResult && track.quality_result === "ok" && (
+            <p style={{ fontSize: 12, color: "#4ade80", margin: "4px 0 0" }}>
+              ✓ Quality check passed — ready for Beets tagging
+              {track.quality_notes && ` — ${track.quality_notes}`}
+            </p>
+          )}
           {track.quality_result === "fake_flac" && !qualityResult && (
             <p style={{ fontSize: 12, color: "#f87171", margin: "4px 0 0" }}>
               ✗ Fake FLAC detected
@@ -313,8 +339,13 @@ function DownloadCard({
           {isDownloading && (
             <ActionBtn label="Cancel download" busy={busy} busyLabel={busyLabel} onClick={cancelDownload} />
           )}
-          {(track.state === "downloaded" || track.state === "quality_failed") && (
+          {(track.state === "downloaded" || track.state === "quality_failed") && !qualityResult && (
             <ActionBtn label="Quality check" busy={busy} busyLabel={busyLabel} onClick={qualityCheck} />
+          )}
+          {qualityResult && (
+            <span style={{ color: "#4ade80", fontSize: 12, textAlign: "right" }}>
+              {qualityResult.isRealFlac === null ? "✓ Quality complete" : "✓ Quality passed"}
+            </span>
           )}
           {track.state === "ready_for_conversion" && (
             <ActionBtn label="Run Beets tagging" busy={busy} busyLabel={busyLabel} onClick={tagTrack} />
@@ -330,6 +361,20 @@ function DownloadCard({
           )}
           {track.state === "ready_for_rekordbox" && (
             <ActionBtn label="Mark imported" busy={busy} busyLabel={busyLabel} onClick={markImported} />
+          )}
+          {!isDownloading && (
+            <div style={{ display: "flex", gap: 4 }}>
+              <select
+                value={returnStage}
+                disabled={busy}
+                onChange={(event) => setReturnStage(event.target.value as TrackState)}
+                aria-label="Return track to stage"
+                style={{ minWidth: 0, flex: 1, background: "#111827", color: "#9ca3af", border: "1px solid #374151", borderRadius: 4, padding: "5px 4px", fontSize: 11, fontFamily: "inherit" }}
+              >
+                {RETURN_STAGES.map((stage) => <option key={stage.state} value={stage.state}>{stage.label}</option>)}
+              </select>
+              <ActionBtn label="Return" busy={busy} busyLabel={busyLabel} onClick={returnToStage} />
+            </div>
           )}
         </div>
       </div>

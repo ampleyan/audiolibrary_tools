@@ -21,6 +21,7 @@ async fn search_with_query(
     query_title: &str,
     relax: bool,
 ) -> Result<Vec<scoring::RankedCandidate>, String> {
+    crate::commands::daemon::app_log(format!("[search] started: {} - {}", artist, title));
     let client = make_client(app);
     let job_id = client
         .search(query_artist, query_title, None, relax)
@@ -53,6 +54,7 @@ async fn search_with_query(
     let ranked = scoring::rank(candidates, artist, title, None);
 
     if ranked.is_empty() {
+        crate::commands::daemon::app_log(format!("[search] completed: {} - {}: no results", artist, title));
         let conn = db::open(app).map_err(|e| e.to_string())?;
         conn.execute(
             "UPDATE tracks SET state = 'requested', error = 'No results found — try editing the artist/title or search again later' WHERE id = ?1",
@@ -60,6 +62,7 @@ async fn search_with_query(
         )
         .map_err(|e| e.to_string())?;
     } else {
+        crate::commands::daemon::app_log(format!("[search] completed: {} - {}: {} candidates", artist, title, ranked.len()));
         let json = serde_json::to_string(&ranked).unwrap_or_default();
         let conn = db::open(app).map_err(|e| e.to_string())?;
         conn.execute(
@@ -117,12 +120,14 @@ pub fn approve_candidate(
         params![username, filename, track_id],
     )
     .map_err(|e| e.to_string())?;
+    crate::commands::daemon::app_log(format!("[review] approved candidate for track {}", track_id));
     Ok(())
 }
 
 #[tauri::command]
 pub async fn start_download(app: AppHandle, track_id: i64) -> Result<(), String> {
     let track = import::get_track(&app, track_id).map_err(|e| e.to_string())?;
+    crate::commands::daemon::app_log(format!("[download] started: {} - {}", track.artist, track.title));
 
     let mut job_id = track
         .search_job_id

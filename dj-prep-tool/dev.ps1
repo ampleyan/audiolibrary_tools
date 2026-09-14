@@ -36,14 +36,16 @@ while (Get-NetTCPConnection -LocalPort $devPort -State Listen -ErrorAction Silen
 
 $env:VITE_PORT = $devPort
 $frontendRoot = $PSScriptRoot.Replace('\', '/')
+$nodePath = (Get-Command node.exe -ErrorAction Stop).Source.Replace('\', '/')
 $viteEntry = "$frontendRoot/node_modules/vite/bin/vite.js"
 $tauriEntry = "$frontendRoot/node_modules/@tauri-apps/cli/tauri.js"
-$tauriDevConfig = @{ build = @{ devUrl = "http://localhost:$devPort"; beforeDevCommand = "node $viteEntry" } } | ConvertTo-Json -Compress
+$beforeDevCommand = "$nodePath $viteEntry"
+$tauriDevConfig = @{ build = @{ devUrl = "http://localhost:$devPort"; beforeDevCommand = $beforeDevCommand } } | ConvertTo-Json -Compress
 $tauriConfigPath = Join-Path ([System.IO.Path]::GetTempPath()) "dj-prep-tool-tauri-$devPort.json"
 [System.IO.File]::WriteAllText($tauriConfigPath, $tauriDevConfig, [System.Text.UTF8Encoding]::new($false))
 Write-Host "Starting DJ Prep Tool on port $devPort"
 try {
-    & node $tauriEntry dev --config $tauriConfigPath
+    & $nodePath $tauriEntry dev --config $tauriConfigPath
 } finally {
     Remove-Item -LiteralPath $tauriConfigPath -Force -ErrorAction SilentlyContinue
 }

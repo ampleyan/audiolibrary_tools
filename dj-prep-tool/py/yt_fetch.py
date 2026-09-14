@@ -205,6 +205,7 @@ def _fetch_apple_music(url):
     }
     resp = requests.get(url, headers=headers, timeout=20)
     resp.raise_for_status()
+    resp.encoding = "utf-8"
 
     ld_blocks = re.findall(
         r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
@@ -234,6 +235,34 @@ def _fetch_apple_music(url):
             yield _make_draft(artist, name, source_url=t.get("url"))
         return
 
+    serialized = re.search(
+        r'<script[^>]*id=["\']serialized-server-data["\'][^>]*>(.*?)</script>',
+        resp.text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if serialized:
+        try:
+            data = json.loads(serialized.group(1))
+        except json.JSONDecodeError:
+            data = None
+
+        def walk(value):
+            if isinstance(value, dict):
+                item_id = value.get("id", "")
+                if isinstance(item_id, str) and item_id.startswith("track-lockup - ") and value.get("title") and value.get("artistName"):
+                    yield _make_draft(value["artistName"], value["title"], source_url=url)
+                for child in value.values():
+                    yield from walk(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from walk(child)
+
+        if data:
+            found = list(walk(data))
+            if found:
+                yield from found
+                return
+
     raise RuntimeError(
         "Could not find track listing on this Apple Music page. "
         "Only public playlists are supported."
@@ -259,7 +288,7 @@ if __name__ == "__main__":
     cookies = sys.argv[2] if len(sys.argv) > 2 else None
     try:
         for draft in fetch(sys.argv[1], cookies):
-            print(json.dumps(draft, ensure_ascii=False), flush=True)
+            print(json.dumps(draft, ensure_ascii=True), flush=True)
     except Exception as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)

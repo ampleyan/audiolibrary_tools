@@ -35,6 +35,10 @@ fn log_line(message: String) {
     }
 }
 
+pub fn app_log(message: impl Into<String>) {
+    log_line(message.into());
+}
+
 fn capture<R>(reader: R)
 where R: tokio::io::AsyncRead + Unpin + Send + 'static {
     tokio::spawn(async move {
