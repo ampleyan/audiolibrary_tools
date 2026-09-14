@@ -137,7 +137,13 @@ export default function SetupView({ settings, onSaved }: Props) {
       if (!payload.spotifyClientId) delete payload.spotifyClientId;
       if (!payload.spotifyClientSecret) delete payload.spotifyClientSecret;
       if (!payload.cosineApiKey) delete payload.cosineApiKey;
+      const credentialsChanged = !!payload.sockseekUsername || !!payload.sockseekPassword;
       await api.saveSettings(payload);
+      if (credentialsChanged && daemonUp && form.sockseekPath) {
+        await api.restartSockseek();
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        setDaemonUp(await api.checkDaemon());
+      }
       if (markComplete) onSaved();
     } catch (e) {
       setError(String(e));

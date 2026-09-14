@@ -11,6 +11,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use crate::{config_store, db};
 
 static LOGS: OnceLock<Mutex<VecDeque<String>>> = OnceLock::new();
+static DAEMON_CHILD: OnceLock<tokio::sync::Mutex<Option<tokio::process::Child>>> = OnceLock::new();
 
 #[derive(Serialize)]
 pub struct LogEntry {
@@ -48,6 +49,16 @@ where R: tokio::io::AsyncRead + Unpin + Send + 'static {
     });
 }
 
+async fn stop_managed_daemon() {
+    let store = DAEMON_CHILD.get_or_init(|| tokio::sync::Mutex::new(None));
+    let child = store.lock().await.take();
+    if let Some(mut child) = child {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        log_line("[app] Sockseek daemon stopped".to_string());
+    }
+}
+
 #[tauri::command]
 pub async fn launch_sockseek(app: AppHandle) -> Result<(), String> {
     let path = config_store::get(&app, "sockseek_path")
@@ -60,6 +71,7 @@ pub async fn launch_sockseek(app: AppHandle) -> Result<(), String> {
         .filter(|s| !s.is_empty())
         .ok_or("Soulseek password not configured — set it in Setup")?;
     let prep_inbox = config_store::get(&app, "prep_inbox_dir").unwrap_or_default();
+    stop_managed_daemon().await;
 
     let mut child = tokio::process::Command::new(&path)
         .args([
@@ -79,9 +91,16 @@ pub async fn launch_sockseek(app: AppHandle) -> Result<(), String> {
 
     if let Some(stdout) = child.stdout.take() { capture(stdout); }
     if let Some(stderr) = child.stderr.take() { capture(stderr); }
+    let store = DAEMON_CHILD.get_or_init(|| tokio::sync::Mutex::new(None));
+    *store.lock().await = Some(child);
     log_line("[app] Sockseek daemon launched".to_string());
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn restart_sockseek(app: AppHandle) -> Result<(), String> {
+    launch_sockseek(app).await
 }
 
 #[tauri::command]

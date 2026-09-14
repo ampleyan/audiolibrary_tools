@@ -115,6 +115,7 @@ export const api = {
     call<{ playlistUrl: string; added: number; skipped: string[] }>("create_youtube_playlist", { videoIds, title, skipped }),
 
   launchSockseek: () => call<void>("launch_sockseek"),
+  restartSockseek: () => call<void>("restart_sockseek"),
   checkDaemon: () => call<boolean>("check_daemon"),
   validateSetup: () => call<SetupCheck[]>("validate_setup"),
   backupDatabase: () => call<string>("backup_database"),

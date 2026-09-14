@@ -49,6 +49,7 @@ pub fn run() {
             commands::youtube::get_youtube_auth_url,
             commands::youtube::create_youtube_playlist,
             commands::daemon::launch_sockseek,
+            commands::daemon::restart_sockseek,
             commands::daemon::check_daemon,
             commands::daemon::validate_setup,
             commands::daemon::backup_database,
