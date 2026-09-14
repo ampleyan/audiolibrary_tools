@@ -300,6 +300,9 @@ function DownloadCard({
           {track.state === "approved" && (
             <ActionBtn label="Start download" busy={busy} busyLabel={busyLabel} onClick={startDownload} />
           )}
+          {track.state === "failed" && track.selected_filename && (
+            <ActionBtn label="Retry download" busy={busy} busyLabel={busyLabel} onClick={startDownload} />
+          )}
           {isDownloading && (
             <ActionBtn label="Poll for completion" busy={busy} busyLabel={busyLabel} onClick={pollDownload} />
           )}
@@ -390,7 +393,7 @@ function ActionBtn({
   );
 }
 
-type BatchOp = "download" | "check" | "convert";
+type BatchOp = "download" | "retry" | "check" | "convert";
 
 export default function DownloadView() {
   const [tracks, setTracks] = useState<TrackRow[]>([]);
@@ -435,6 +438,11 @@ export default function DownloadView() {
       api.startDownload(t.id)
     );
 
+  const retryAll = () =>
+    runBatch("retry", tracks.filter((t) => t.state === "failed" && !!t.selected_filename), (t) =>
+      api.startDownload(t.id)
+    );
+
   const checkAll = () =>
     runBatch("check", tracks.filter((t) => t.state === "downloaded" || t.state === "quality_failed"), (t) =>
       api.runQualityCheck(t.id)
@@ -446,6 +454,7 @@ export default function DownloadView() {
     );
 
   const approvedCount = tracks.filter((t) => t.state === "approved").length;
+  const failedCount = tracks.filter((t) => t.state === "failed" && !!t.selected_filename).length;
   const checkableCount = tracks.filter((t) => t.state === "downloaded" || t.state === "quality_failed").length;
   const convertibleCount = tracks.filter((t) => t.state === "ready_for_conversion").length;
 
@@ -497,6 +506,7 @@ export default function DownloadView() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {batchBtn("download", "Download all", approvedCount, downloadAll)}
+          {batchBtn("retry", "Retry failed", failedCount, retryAll)}
           {batchBtn("check", "Check all", checkableCount, checkAll)}
           {batchBtn("convert", "Convert all", convertibleCount, convertAll)}
           <button
