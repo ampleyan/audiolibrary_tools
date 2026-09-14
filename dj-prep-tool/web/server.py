@@ -215,6 +215,31 @@ def youtube_video_id(url):
     match = re.search(r"(?:[?&]v=|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{6,})", url)
     return match.group(1) if match else None
 
+def telegram_request(payload):
+    api_id = setting("telegram_api_id")
+    api_hash = setting("telegram_api_hash")
+    if not api_id or not api_hash:
+        raise ValueError("Set Telegram API ID and API hash in Settings first")
+    session_path = setting("telegram_session_path", str(DATA_DIR / "telegram.session"))
+    env = os.environ.copy()
+    env["TELEGRAM_API_ID"] = api_id
+    env["TELEGRAM_API_HASH"] = api_hash
+    env["TELEGRAM_SESSION_PATH"] = session_path
+    result = subprocess.run(
+        [PYTHON, str(ROOT / "py" / "telegram_fetch.py")],
+        input=json.dumps(payload) + "\n",
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    if result.returncode:
+        raise ValueError(result.stderr.strip() or "Telegram import failed")
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    if not lines:
+        raise ValueError("Telegram helper returned no response")
+    return json.loads(lines[-1])
+
 def command(name, payload):
     if name not in {"get_logs", "list_tracks", "list_activity", "get_settings", "check_daemon", "list_backups", "search_track", "search_track_loose", "approve_candidate", "start_download", "cancel_download", "check_download_progress", "poll_download", "run_quality_check", "clear_tracks"}:
         append_log(f"[app] {name}")
@@ -223,11 +248,11 @@ def command(name, payload):
         conn = db()
         values = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM settings")}
         conn.close()
-        return {"sockseekPath": "", "sockseekDaemonUrl": values.get("sockseek_daemon_url", SOCKSEEK_URL), "prepInboxDir": str(INBOX_DIR), "picardPath": "", "ffmpegPath": "", "rekordboxImportDir": str(ARCHIVE_DIR), "pythonPath": PYTHON, "ytCookiesFile": "", "setupComplete": values.get("setup_complete") == "true", "hasSockseekCredentials": bool(values.get("sockseek_username") and values.get("sockseek_password")), "hasSpotifyCredentials": bool(values.get("spotify_client_id") and values.get("spotify_client_secret")), "hasCosineCredentials": bool(values.get("cosine_api_key"))}
+        return {"sockseekPath": "", "sockseekDaemonUrl": values.get("sockseek_daemon_url", SOCKSEEK_URL), "prepInboxDir": str(INBOX_DIR), "picardPath": "", "ffmpegPath": "", "rekordboxImportDir": str(ARCHIVE_DIR), "pythonPath": PYTHON, "ytCookiesFile": "", "setupComplete": values.get("setup_complete") == "true", "hasSockseekCredentials": bool(values.get("sockseek_username") and values.get("sockseek_password")), "hasSpotifyCredentials": bool(values.get("spotify_client_id") and values.get("spotify_client_secret")), "hasCosineCredentials": bool(values.get("cosine_api_key")), "hasTelegramCredentials": bool(values.get("telegram_api_id") and values.get("telegram_api_hash")), "hasTelegramSession": Path(values.get("telegram_session_path", str(DATA_DIR / "telegram.session"))).exists()}
     if name == "save_settings":
         payload = payload.get("payload", payload)
         conn = db()
-        mapping = {"sockseekDaemonUrl": "sockseek_daemon_url", "setupComplete": "setup_complete", "sockseekUsername": "sockseek_username", "sockseekPassword": "sockseek_password", "spotifyClientId": "spotify_client_id", "spotifyClientSecret": "spotify_client_secret", "cosineApiKey": "cosine_api_key"}
+        mapping = {"sockseekDaemonUrl": "sockseek_daemon_url", "setupComplete": "setup_complete", "sockseekUsername": "sockseek_username", "sockseekPassword": "sockseek_password", "spotifyClientId": "spotify_client_id", "spotifyClientSecret": "spotify_client_secret", "cosineApiKey": "cosine_api_key", "telegramApiId": "telegram_api_id", "telegramApiHash": "telegram_api_hash", "telegramSessionPath": "telegram_session_path"}
         for key, value in payload.items():
             if key in mapping and value is not None:
                 conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (mapping[key], str(value).lower() if isinstance(value, bool) else value))
@@ -248,6 +273,26 @@ def command(name, payload):
         result = subprocess.run(args, capture_output=True, text=True, env=env, check=False)
         if result.returncode: raise ValueError(result.stderr.strip() or "Playlist import failed")
         return [insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), draft.get("source_url"), draft.get("state", "needs_review"), draft.get("notes"))) for draft in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
+    if name == "telegram_login_start":
+        return telegram_request({"action": "login_start", "phone": payload.get("phone", "")}).get("status")
+    if name == "telegram_login_code":
+        return telegram_request({"action": "login_code", "code": payload.get("code", ""), "password": payload.get("password")}).get("status")
+    if name == "import_telegram":
+        messages = telegram_request({"action": "fetch", "channel_id": payload.get("channelId", ""), "limit": max(1, min(int(payload.get("limit", 100)), 1000))}).get("messages", [])
+        added = []
+        skipped = []
+        for message in messages:
+            url = message.get("url", "")
+            script = ROOT / "py" / "yt_fetch.py"
+            result = subprocess.run([PYTHON, str(script), url], capture_output=True, text=True, env=os.environ.copy(), check=False)
+            if result.returncode:
+                skipped.append(f"{url}: {result.stderr.strip() or 'YouTube metadata failed'}")
+                continue
+            for line in result.stdout.splitlines():
+                if line.strip():
+                    draft = json.loads(line)
+                    added.append(insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), draft.get("source_url") or url, draft.get("state", "needs_review"), draft.get("notes"))))
+        return {"tracks": added, "skipped": skipped}
     if name == "list_tracks": return tracks(payload.get("state"))
     if name == "list_activity":
         limit = max(1, min(int(payload.get("limit", 30)), 100))

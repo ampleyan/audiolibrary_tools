@@ -10,11 +10,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 COPY dj-prep-tool/py ./py
+COPY dj-prep-tool/requirements.txt ./requirements.txt
 COPY lib ./lib
 COPY dj-prep-tool/web ./web
 COPY --from=frontend /app/dist ./dist
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir requests yt-dlp numpy scipy
+RUN pip install --no-cache-dir -r requirements.txt requests yt-dlp numpy scipy
 
 ENV DJ_PREP_DATA_DIR=/data
 ENV DJ_PREP_INBOX_DIR=/music/inbox

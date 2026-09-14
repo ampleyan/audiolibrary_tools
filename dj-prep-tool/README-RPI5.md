@@ -23,6 +23,12 @@ Open `http://<raspberry-pi-ip>:8080` from a computer on the same network.
 
 The database is stored in `dj-prep-tool/data`. Downloads and converted files are stored in `music-inbox` and `music-archive`.
 
+## Telegram channel import
+
+Install the Python dependencies with `pip install -r requirements.txt`, then create an API ID and API hash at `my.telegram.org`. Enter them in Settings, save, open Add tracks → Telegram, and authorize your Telegram account with the one-time code. The session is stored in the app data directory; it is not committed or shown in logs.
+
+Use channel ID `-1002508065505` for Doug Tenner Picks. The importer reads recent channel messages, extracts YouTube links, and sends each link through the normal YouTube metadata importer. In Docker, the session and credentials are stored in the mounted `/data` volume.
+
 ## Sockseek
 
 The web container does not launch `sockseek.exe`. Run a Linux ARM64 Sockseek daemon separately, or point `SOCKSEEK_URL` at a daemon on another machine:

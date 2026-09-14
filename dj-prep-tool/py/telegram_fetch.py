@@ -48,6 +48,9 @@ def session_state_path(session_path):
 def telegram_client(api_id, api_hash, session_path):
     from telethon import TelegramClient
 
+    parent = os.path.dirname(session_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     return TelegramClient(session_path, int(api_id), api_hash)
 
 
