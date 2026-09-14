@@ -195,12 +195,16 @@ const sectionHeading = { color: "#e5e7eb", fontSize: 13, margin: "0 0 10px" };
 
 export default function PipelineView() {
   const [tracks, setTracks] = useState<TrackRow[]>([]);
+  const [activities, setActivities] = useState<Array<{ id: number; trackId: number; artist: string; title: string; fromState: string | null; toState: string; createdAt: string }>>([]);
   const [selectedTrack, setSelectedTrack] = useState<TrackRow | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = () => {
     setLoading(true);
-    api.listTracks().then(setTracks).catch(() => {}).finally(() => setLoading(false));
+    Promise.all([api.listTracks(), api.listActivity(12)]).then(([nextTracks, nextActivities]) => {
+      setTracks(nextTracks);
+      setActivities(nextActivities);
+    }).catch(() => {}).finally(() => setLoading(false));
   };
 
   useEffect(load, []);
@@ -243,6 +247,17 @@ export default function PipelineView() {
           </div>
         ))}
       </div>
+
+      {activities.length > 0 && <section style={{ background: "#111827", border: "1px solid #293548", borderRadius: 6, padding: "10px 12px", marginBottom: 18 }} aria-label="Recent activity">
+        <h3 style={{ color: "#e5e7eb", fontSize: 12, margin: "0 0 8px" }}>Recent activity</h3>
+        <div style={{ display: "grid", gap: 5 }}>
+          {activities.map((activity) => <div key={activity.id} style={{ display: "flex", gap: 8, alignItems: "baseline", color: "#9ca3af", fontSize: 11 }}>
+            <span style={{ color: "#4b5563", minWidth: 126 }}>{activity.createdAt}</span>
+            <span style={{ color: "#d1d5db", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activity.artist ? `${activity.artist} – ${activity.title}` : activity.title}</span>
+            <span style={{ color: "#60a5fa", marginLeft: "auto", whiteSpace: "nowrap" }}>{activity.fromState ? `${activity.fromState.replace(/_/g, " ")} → ` : ""}{activity.toState.replace(/_/g, " ")}</span>
+          </div>)}
+        </div>
+      </section>}
 
       {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in the Pipeline yet. Add tracks to get started.</p> : <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>{PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} onOpen={setSelectedTrack} />)}</div>}
       {selectedTrack && <TrackDrawer track={selectedTrack} onClose={() => setSelectedTrack(null)} onUpdated={updateTrack} />}

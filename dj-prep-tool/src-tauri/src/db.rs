@@ -77,6 +77,27 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS activities (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id   INTEGER NOT NULL,
+    from_state TEXT,
+    to_state   TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TRIGGER IF NOT EXISTS tracks_activity_insert
+    AFTER INSERT ON tracks
+BEGIN
+    INSERT INTO activities (track_id, to_state) VALUES (NEW.id, NEW.state);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tracks_activity_state_change
+    AFTER UPDATE OF state ON tracks
+    WHEN OLD.state <> NEW.state
+BEGIN
+    INSERT INTO activities (track_id, from_state, to_state) VALUES (NEW.id, OLD.state, NEW.state);
+END;
+
 CREATE TRIGGER IF NOT EXISTS tracks_updated_at
     AFTER UPDATE ON tracks FOR EACH ROW
 BEGIN
@@ -123,6 +144,17 @@ mod tests {
             })
             .unwrap();
         assert_eq!(state, "requested");
+    }
+
+    #[test]
+    fn activity_trigger_records_state_change() {
+        let conn = in_memory();
+        conn.execute("INSERT INTO tracks (artist, title) VALUES ('A', 'T')", []).unwrap();
+        conn.execute("UPDATE tracks SET state = 'matched' WHERE artist = 'A'", []).unwrap();
+        let event: (Option<String>, String) = conn
+            .query_row("SELECT from_state, to_state FROM activities WHERE from_state IS NOT NULL", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(event, (Some("requested".into()), "matched".into()));
     }
 
     #[test]

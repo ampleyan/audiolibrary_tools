@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::{config_store, db, import};
@@ -122,6 +122,38 @@ pub fn list_tracks(
     state: Option<String>,
 ) -> Result<Vec<import::TrackRow>, String> {
     import::list_tracks(&app, state.as_deref()).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityEntry {
+    pub id: i64,
+    pub track_id: i64,
+    pub artist: String,
+    pub title: String,
+    pub from_state: Option<String>,
+    pub to_state: String,
+    pub created_at: String,
+}
+
+#[tauri::command]
+pub fn list_activity(app: AppHandle, limit: Option<i64>) -> Result<Vec<ActivityEntry>, String> {
+    let conn = db::open(&app).map_err(|e| e.to_string())?;
+    let limit = limit.unwrap_or(30).clamp(1, 100);
+    let mut statement = conn.prepare(
+        "SELECT a.id, a.track_id, coalesce(t.artist, ''), coalesce(t.title, ''), a.from_state, a.to_state, a.created_at
+         FROM activities a LEFT JOIN tracks t ON t.id = a.track_id ORDER BY a.id DESC LIMIT ?1",
+    ).map_err(|e| e.to_string())?;
+    let rows = statement.query_map(rusqlite::params![limit], |row| Ok(ActivityEntry {
+        id: row.get(0)?,
+        track_id: row.get(1)?,
+        artist: row.get(2)?,
+        title: row.get(3)?,
+        from_state: row.get(4)?,
+        to_state: row.get(5)?,
+        created_at: row.get(6)?,
+    })).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

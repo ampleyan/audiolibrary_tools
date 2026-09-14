@@ -62,6 +62,9 @@ export const api = {
   listTracks: (state?: string) =>
     call<TrackRow[]>("list_tracks", { state: state ?? null }),
 
+  listActivity: (limit = 30) =>
+    call<Array<{ id: number; trackId: number; artist: string; title: string; fromState: string | null; toState: string; createdAt: string }>>("list_activity", { limit }),
+
   updateTrackState: (id: number, state: string) =>
     call<void>("update_track_state", { id, state }),
 

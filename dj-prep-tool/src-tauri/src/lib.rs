@@ -30,6 +30,7 @@ pub fn run() {
             commands::import::import_csv,
             commands::import::import_youtube,
             commands::import::list_tracks,
+            commands::import::list_activity,
             commands::import::update_track_state,
             commands::import::delete_track,
             commands::import::clear_tracks,
