@@ -89,10 +89,14 @@ function TrackDrawer({
   track,
   onClose,
   onUpdated,
+  onNextAttention,
+  hasNextAttention,
 }: {
   track: TrackRow;
   onClose: () => void;
   onUpdated: (trackId: number) => Promise<void>;
+  onNextAttention: (trackId: number) => void;
+  hasNextAttention: boolean;
 }) {
   const [artist, setArtist] = useState(track.artist);
   const [title, setTitle] = useState(track.title);
@@ -177,7 +181,10 @@ function TrackDrawer({
             <p style={{ color: "#6b7280", fontSize: 11, margin: "0 0 5px" }}>Track details</p>
             <h2 id="track-drawer-title" style={{ color: "#f9fafb", fontSize: 18, margin: 0 }}>{track.artist ? `${track.artist} – ${track.title}` : track.title}</h2>
           </div>
-          <button onClick={onClose} aria-label="Close track details" style={{ background: "transparent", border: "1px solid #374151", borderRadius: 5, color: "#9ca3af", cursor: "pointer", padding: "4px 8px", fontSize: 16 }}>×</button>
+          <div style={{ display: "flex", gap: 6 }}>
+            {hasNextAttention && <button onClick={() => onNextAttention(track.id)} aria-label="Open next track needing attention" style={{ background: "transparent", border: "1px solid #374151", borderRadius: 5, color: "#9ca3af", cursor: "pointer", padding: "4px 8px", fontSize: 11 }}>Next attention →</button>}
+            <button onClick={onClose} aria-label="Close track details" style={{ background: "transparent", border: "1px solid #374151", borderRadius: 5, color: "#9ca3af", cursor: "pointer", padding: "4px 8px", fontSize: 16 }}>×</button>
+          </div>
         </div>
 
         <div style={{ display: "grid", gap: 10, marginBottom: 22 }}>
@@ -239,6 +246,10 @@ export default function PipelineView() {
   };
 
   const attentionTrack = tracks.find((track) => groupForTrack(track) === "attention");
+  const nextAttention = (trackId: number) => {
+    const next = tracks.find((track) => track.id !== trackId && groupForTrack(track) === "attention");
+    if (next) setSelectedTrack(next);
+  };
   const healthStats = [
     { label: "Needs attention", value: byGroup.attention.length, color: "#f59e0b" },
     { label: "In progress", value: byGroup.progress.length, color: "#a78bfa" },
@@ -278,7 +289,7 @@ export default function PipelineView() {
       </section>}
 
       {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in the Pipeline yet. Add tracks to get started.</p> : <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>{PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} onOpen={setSelectedTrack} />)}</div>}
-      {selectedTrack && <TrackDrawer track={selectedTrack} onClose={() => setSelectedTrack(null)} onUpdated={updateTrack} />}
+      {selectedTrack && <TrackDrawer track={selectedTrack} onClose={() => setSelectedTrack(null)} onUpdated={updateTrack} onNextAttention={nextAttention} hasNextAttention={tracks.some((track) => track.id !== selectedTrack.id && groupForTrack(track) === "attention")} />}
     </div>
   );
 }
