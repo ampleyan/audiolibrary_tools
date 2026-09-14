@@ -22,10 +22,6 @@ pub async fn get_similar_tracks(
     app: AppHandle,
     track_id: i64,
 ) -> Result<Vec<SimilarTrack>, String> {
-    let api_key = config_store::get(&app, "cosine_api_key")
-        .filter(|k| !k.is_empty())
-        .ok_or_else(|| "cosine_api_key not configured — add it in Settings".to_string())?;
-
     let (artist, title) = {
         let conn = db::open(&app).map_err(|e| e.to_string())?;
         conn.query_row(
@@ -35,14 +31,26 @@ pub async fn get_similar_tracks(
         )
         .map_err(|e| format!("Track {track_id} not found: {e}"))?
     };
+    get_similar_tracks_for_query(app, artist, title).await
+}
+
+#[tauri::command]
+pub async fn get_similar_tracks_for_query(
+    app: AppHandle,
+    artist: String,
+    title: String,
+) -> Result<Vec<SimilarTrack>, String> {
+    let api_key = config_store::get(&app, "cosine_api_key")
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| "cosine_api_key not configured — add it in Settings".to_string())?;
 
     let python = resolve_python(&app);
     let script = resolve_cosine_fetch(&app);
 
     let output = tokio::process::Command::new(&python)
         .arg(&script)
-        .arg(&artist)
-        .arg(&title)
+        .arg(artist)
+        .arg(title)
         .env("COSINE_API_KEY", &api_key)
         .output()
         .await

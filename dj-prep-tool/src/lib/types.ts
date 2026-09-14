@@ -75,6 +75,14 @@ export interface RekordboxTrack {
   mixVersion: string | null;
   location: string | null;
   inLibrary: boolean;
+  album: string | null;
+  genre: string | null;
+  bpm: string | null;
+  key: string | null;
+  rating: string | null;
+  playCount: string | null;
+  dateAdded: string | null;
+  playlists: string[];
 }
 
 export interface RekordboxPreview {

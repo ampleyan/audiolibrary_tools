@@ -141,6 +141,9 @@ export const api = {
   getSimilarTracks: (trackId: number) =>
     call<SimilarTrack[]>("get_similar_tracks", { trackId }),
 
+  getSimilarTracksForQuery: (artist: string, title: string) =>
+    call<SimilarTrack[]>("get_similar_tracks_for_query", { artist, title }),
+
   getYoutubeAuthUrl: () =>
     call<{ authorized: boolean; url: string | null }>("get_youtube_auth_url"),
 

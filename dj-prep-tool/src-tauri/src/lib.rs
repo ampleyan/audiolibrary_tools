@@ -44,6 +44,7 @@ pub fn run() {
             commands::import::clear_tracks,
             commands::import::update_track,
             commands::cosine::get_similar_tracks,
+            commands::cosine::get_similar_tracks_for_query,
             commands::search::search_track,
             commands::search::search_track_loose,
             commands::search::approve_candidate,
