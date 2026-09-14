@@ -90,6 +90,9 @@ export const api = {
   checkDownloadProgress: (trackId: number) =>
     call<{ bytesOnDisk: number | null; bytesTotal: number | null }>("check_download_progress", { trackId }),
 
+  cancelDownload: (trackId: number) =>
+    call<void>("cancel_download", { trackId }),
+
   tagTrack: (trackId: number) =>
     call<TrackRow>("tag_track", { trackId }),
 

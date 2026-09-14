@@ -135,6 +135,7 @@ function DownloadCard({
 
   const startDownload = () => act("Starting…", () => api.startDownload(track.id));
   const pollDownload = () => act("Polling… (up to 10 min)", () => api.pollDownload(track.id));
+  const cancelDownload = () => act("Cancelling…", () => api.cancelDownload(track.id));
   const qualityCheck = () =>
     act("Checking…", async () => {
       const r = await api.runQualityCheck(track.id);
@@ -305,6 +306,9 @@ function DownloadCard({
           )}
           {isDownloading && (
             <ActionBtn label="Poll for completion" busy={busy} busyLabel={busyLabel} onClick={pollDownload} />
+          )}
+          {isDownloading && (
+            <ActionBtn label="Cancel download" busy={busy} busyLabel={busyLabel} onClick={cancelDownload} />
           )}
           {(track.state === "downloaded" || track.state === "quality_failed") && (
             <ActionBtn label="Quality check" busy={busy} busyLabel={busyLabel} onClick={qualityCheck} />

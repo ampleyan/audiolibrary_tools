@@ -276,6 +276,13 @@ def command(name, payload):
         result = request("POST", f'/api/jobs/{track["search_job_id"]}/downloads/files', {"files": [{"username": track["selected_username"], "filename": track["selected_filename"]}]})
         job = result[0].get("jobId", "") if isinstance(result, list) and result else ""
         return update(track["id"], "UPDATE tracks SET download_job_id=?,state='downloading' WHERE id=?", (job,))
+    if name == "cancel_download":
+        track = get_track(int(payload["trackId"]))
+        job_id = track.get("download_job_id")
+        if not job_id:
+            raise ValueError("track has no download job")
+        request("POST", f"/api/jobs/{job_id}/cancel")
+        return update(track["id"], "UPDATE tracks SET state='failed',error=? WHERE id=?", ("Download cancelled by user",))
     if name == "check_download_progress":
         track = get_track(int(payload["trackId"]))
         name_part = Path(track.get("selected_filename") or "").name
