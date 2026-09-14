@@ -275,6 +275,7 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
   const [telegramActivity, setTelegramActivity] = useState<string | null>(null);
   const [telegramLinks, setTelegramLinks] = useState<Array<{ url: string; messageUrl: string }>>([]);
   const [telegramSkipped, setTelegramSkipped] = useState<string[]>([]);
+  const [telegramImporting, setTelegramImporting] = useState(false);
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -366,6 +367,8 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
 
   const importTelegram = async () => {
     if (telegramLinks.length === 0) return;
+    telegramStopRequested.current = false;
+    setTelegramImporting(true);
     setLoading(true);
     setError(null);
     setTelegramSkipped([]);
@@ -375,6 +378,7 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
       let imported = 0;
       const importTag = `Telegram · ${new Date().toISOString().slice(0, 10)}`;
       for (let index = 0; index < telegramLinks.length; index += 1) {
+        if (telegramStopRequested.current) break;
         const link = telegramLinks[index];
         setTelegramActivity(`Fetching ${index + 1}/${telegramLinks.length}: ${link.url}`);
         try {
@@ -389,13 +393,22 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
         }
       }
       setTelegramSkipped(skipped);
-      setTelegramActivity(`Finished: imported ${imported} track${imported === 1 ? "" : "s"} from ${telegramLinks.length} previewed links.`);
+      setTelegramActivity(`${telegramStopRequested.current ? "Stopped" : "Finished"}: imported ${imported} track${imported === 1 ? "" : "s"} from ${telegramLinks.length} previewed links.`);
     } catch (e) {
       setError(String(e));
       setTelegramActivity("Telegram fetch failed.");
     } finally {
       setLoading(false);
+      setTelegramImporting(false);
     }
+  };
+
+  const telegramStopRequested = useRef(false);
+
+  const stopTelegramImport = () => {
+    if (!telegramImporting) return;
+    telegramStopRequested.current = true;
+    setTelegramActivity("Stopping after the current link…");
   };
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -550,6 +563,7 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
             <div style={{ marginTop: 10 }}>
               <button style={btn(false)} disabled={loading} onClick={previewTelegram}>{loading ? "Fetching…" : "Preview newest links"}</button>
               <button style={{ ...btn(), marginLeft: 8 }} disabled={loading || telegramLinks.length === 0} onClick={importTelegram}>{loading ? "Importing…" : `Import ${telegramLinks.length || "selected"} links`}</button>
+              {telegramImporting && <button style={{ ...btn(false), marginLeft: 8, color: "#fbbf24", borderColor: "#92400e" }} onClick={stopTelegramImport}>Stop import</button>}
             </div>
             {telegramActivity && <p aria-live="polite" style={{ color: loading ? "#60a5fa" : "#34d399", fontSize: 12, margin: "10px 0 0" }}>{telegramActivity}</p>}
             {telegramLinks.length > 0 && <div style={{ maxHeight: 180, overflowY: "auto", marginTop: 10, padding: "6px 10px", background: "#111827", border: "1px solid #374151", borderRadius: 4 }}>
