@@ -271,6 +271,7 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
   const [telegramPassword, setTelegramPassword] = useState("");
   const [telegramStatus, setTelegramStatus] = useState<string | null>(null);
   const [telegramActivity, setTelegramActivity] = useState<string | null>(null);
+  const [telegramLinks, setTelegramLinks] = useState<Array<{ url: string; messageUrl: string }>>([]);
   const [telegramSkipped, setTelegramSkipped] = useState<string[]>([]);
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -340,22 +341,39 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
     }
   };
 
-  const importTelegram = async () => {
+  const previewTelegram = async () => {
     setLoading(true);
     setError(null);
     setTelegramSkipped([]);
-    setTelegramActivity("Fetching newest Telegram posts first, then resolving YouTube links…");
+    setTelegramActivity("Fetching newest Telegram posts first…");
     try {
       const links = await api.telegramFetchLinks(telegramChannelId.trim(), telegramLimit);
+      setTelegramLinks(links);
       if (links.length === 0) {
         setTelegramActivity(`No YouTube links found in the newest ${telegramLimit} posts.`);
         return;
       }
+      setTelegramActivity(`Preview ready: ${links.length} newest YouTube link${links.length === 1 ? "" : "s"} found.`);
+    } catch (e) {
+      setError(String(e));
+      setTelegramActivity("Telegram fetch failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const importTelegram = async () => {
+    if (telegramLinks.length === 0) return;
+    setLoading(true);
+    setError(null);
+    setTelegramSkipped([]);
+    setTelegramActivity("Preparing to import previewed links…");
+    try {
       const skipped: string[] = [];
       let imported = 0;
-      for (let index = 0; index < links.length; index += 1) {
-        const link = links[index];
-        setTelegramActivity(`Fetching ${index + 1}/${links.length}: ${link.url}`);
+      for (let index = 0; index < telegramLinks.length; index += 1) {
+        const link = telegramLinks[index];
+        setTelegramActivity(`Fetching ${index + 1}/${telegramLinks.length}: ${link.url}`);
         try {
           const added = await api.importTelegramLink(link.url, link.messageUrl);
           imported += added.length;
@@ -365,7 +383,7 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
         }
       }
       setTelegramSkipped(skipped);
-      setTelegramActivity(`Finished: imported ${imported} track${imported === 1 ? "" : "s"} from the newest ${telegramLimit} posts.`);
+      setTelegramActivity(`Finished: imported ${imported} track${imported === 1 ? "" : "s"} from ${telegramLinks.length} previewed links.`);
     } catch (e) {
       setError(String(e));
       setTelegramActivity("Telegram fetch failed.");
@@ -505,26 +523,32 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
               Import YouTube links from a Telegram channel your account can access. First-time use requires Telegram API credentials in Settings and a one-time login.
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 120px", gap: 10 }}>
-              <input style={{ ...textarea, height: "auto", fontFamily: "inherit", resize: "none" }} value={telegramChannelId} onChange={(e) => setTelegramChannelId(e.target.value)} placeholder="-1002508065505" aria-label="Telegram channel ID" />
-              <input style={{ ...textarea, height: "auto", fontFamily: "inherit", resize: "none" }} type="number" min="1" max="1000" value={telegramLimit} onChange={(e) => setTelegramLimit(Math.min(1000, Math.max(1, Number(e.target.value) || 100)))} aria-label="Telegram message limit" />
+              <input style={{ ...textarea, height: "auto", fontFamily: "inherit", resize: "none" }} value={telegramChannelId} onChange={(e) => { setTelegramChannelId(e.target.value); setTelegramLinks([]); }} placeholder="-1002508065505" aria-label="Telegram channel ID" />
+              <input style={{ ...textarea, height: "auto", fontFamily: "inherit", resize: "none" }} type="number" min="1" max="1000" value={telegramLimit} onChange={(e) => { setTelegramLimit(Math.min(1000, Math.max(1, Number(e.target.value) || 100))); setTelegramLinks([]); }} aria-label="Telegram message limit" />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10, marginTop: 10 }}>
-              <input style={{ ...textarea, height: "auto", fontFamily: "inherit", resize: "none" }} value={telegramPhone} onChange={(e) => setTelegramPhone(e.target.value)} placeholder="+32…" aria-label="Telegram phone number" />
-              <button style={btn(false)} disabled={loading || !telegramPhone.trim()} onClick={startTelegramLogin}>{loading ? "Sending…" : "Send login code"}</button>
-            </div>
-            {(telegramStatus === "code_required" || telegramStatus === "password_required") && (
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto", gap: 10, marginTop: 10 }}>
-                <input style={{ ...textarea, height: "auto", fontFamily: "inherit", resize: "none" }} value={telegramCode} onChange={(e) => setTelegramCode(e.target.value)} placeholder="Telegram code" aria-label="Telegram login code" />
-                <input style={{ ...textarea, height: "auto", fontFamily: "inherit", resize: "none" }} type="password" value={telegramPassword} onChange={(e) => setTelegramPassword(e.target.value)} placeholder="2FA password (if enabled)" aria-label="Telegram two-factor password" />
-                <button style={btn()} disabled={loading || !telegramCode.trim()} onClick={finishTelegramLogin}>{loading ? "Checking…" : "Verify"}</button>
+            {telegramStatus !== "authorized" && <>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10, marginTop: 10 }}>
+                <input style={{ ...textarea, height: "auto", fontFamily: "inherit", resize: "none" }} value={telegramPhone} onChange={(e) => setTelegramPhone(e.target.value)} placeholder="+32…" aria-label="Telegram phone number" />
+                <button style={btn(false)} disabled={loading || !telegramPhone.trim()} onClick={startTelegramLogin}>{loading ? "Sending…" : "Send login code"}</button>
               </div>
-            )}
+              {(telegramStatus === "code_required" || telegramStatus === "password_required") && (
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto", gap: 10, marginTop: 10 }}>
+                  <input style={{ ...textarea, height: "auto", fontFamily: "inherit", resize: "none" }} value={telegramCode} onChange={(e) => setTelegramCode(e.target.value)} placeholder="Telegram code" aria-label="Telegram login code" />
+                  <input style={{ ...textarea, height: "auto", fontFamily: "inherit", resize: "none" }} type="password" value={telegramPassword} onChange={(e) => setTelegramPassword(e.target.value)} placeholder="2FA password (if enabled)" aria-label="Telegram two-factor password" />
+                  <button style={btn()} disabled={loading || !telegramCode.trim()} onClick={finishTelegramLogin}>{loading ? "Checking…" : "Verify"}</button>
+                </div>
+              )}
+            </>}
             {telegramStatus === "password_required" && <p style={{ color: "#fbbf24", fontSize: 12, margin: "10px 0 0" }}>Telegram requires your two-factor password. Enter it above and verify again.</p>}
             {telegramStatus === "authorized" && <p style={{ color: "#34d399", fontSize: 12, margin: "10px 0 0" }}>Telegram authorized locally — existing session will be reused.</p>}
             <div style={{ marginTop: 10 }}>
-              <button style={btn()} disabled={loading} onClick={importTelegram}>{loading ? "Fetching…" : "Import YouTube links"}</button>
+              <button style={btn(false)} disabled={loading} onClick={previewTelegram}>{loading ? "Fetching…" : "Preview newest links"}</button>
+              <button style={{ ...btn(), marginLeft: 8 }} disabled={loading || telegramLinks.length === 0} onClick={importTelegram}>{loading ? "Importing…" : `Import ${telegramLinks.length || "selected"} links`}</button>
             </div>
             {telegramActivity && <p aria-live="polite" style={{ color: loading ? "#60a5fa" : "#34d399", fontSize: 12, margin: "10px 0 0" }}>{telegramActivity}</p>}
+            {telegramLinks.length > 0 && <div style={{ maxHeight: 180, overflowY: "auto", marginTop: 10, padding: "6px 10px", background: "#111827", border: "1px solid #374151", borderRadius: 4 }}>
+              {telegramLinks.map((link, index) => <div key={`${link.url}-${index}`} style={{ display: "flex", gap: 8, fontSize: 11, padding: "3px 0", borderTop: index > 0 ? "1px solid #1f2937" : "none" }}><span style={{ color: "#6b7280", width: 24 }}>{index + 1}.</span><a href={link.url} target="_blank" rel="noreferrer" style={{ color: "#93c5fd", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{link.url}</a></div>)}
+            </div>}
             {telegramSkipped.length > 0 && <p style={{ color: "#fbbf24", fontSize: 12, margin: "10px 0 0" }}>{telegramSkipped.length} link{telegramSkipped.length === 1 ? "" : "s"} skipped. The first one: {telegramSkipped[0]}</p>}
           </div>
         )}
