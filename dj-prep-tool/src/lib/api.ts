@@ -128,6 +128,9 @@ export const api = {
   tagTrack: (trackId: number) =>
     call<TrackRow>("tag_track", { trackId }),
 
+  finishRekordbox: (trackId: number) =>
+    call<TrackRow>("finish_rekordbox", { trackId }),
+
   openFolder: (path: string) =>
     call<void>("open_folder", { path }),
 

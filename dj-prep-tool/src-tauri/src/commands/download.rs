@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 use tokio::time::{sleep, Duration};
 
-use crate::{config_store, db, quality, sockseek};
+use crate::{config_store, db, import, quality, rekordbox, sockseek};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -148,6 +148,28 @@ pub fn copy_to_rekordbox(app: AppHandle, track_id: i64) -> Result<String, String
     }
 
     Ok(dest_str)
+}
+
+#[tauri::command]
+pub fn finish_rekordbox(app: AppHandle, track_id: i64) -> Result<import::TrackRow, String> {
+    let track = import::get_track(&app, track_id).map_err(|e| e.to_string())?;
+    let existing_path = config_store::get(&app, "rekordbox_xml_path")
+        .filter(|path| !path.trim().is_empty())
+        .map(|xml_path| {
+            let xml = std::fs::read_to_string(&xml_path)
+                .map_err(|e| format!("Cannot read Rekordbox XML: {e}"))?;
+            Ok::<_, String>(rekordbox::matching_location(&xml, &track.artist, &track.title))
+        })
+        .transpose()?
+        .flatten();
+    let dj_path = existing_path.or(track.dj_path);
+    let conn = db::open(&app).map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE tracks SET dj_path = ?1, state = 'dj_ready', error = NULL WHERE id = ?2",
+        params![dj_path, track_id],
+    )
+    .map_err(|e| e.to_string())?;
+    import::get_track(&app, track_id).map_err(|e| e.to_string())
 }
 
 fn make_client(app: &AppHandle) -> sockseek::SockseekClient {

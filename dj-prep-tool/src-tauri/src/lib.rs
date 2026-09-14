@@ -52,6 +52,7 @@ pub fn run() {
             commands::download::check_download_progress,
             commands::download::cancel_download,
             commands::download::run_quality_check,
+            commands::download::finish_rekordbox,
             commands::tagging::convert_track,
             commands::tagging::tag_track,
             commands::tagging::open_folder,

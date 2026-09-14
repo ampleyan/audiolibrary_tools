@@ -177,7 +177,7 @@ function DownloadCard({
     act("Opening…", () => api.openFolder(path));
   };
   const markAsTagged = () => act("…", () => api.updateTrackState(track.id, "ready_for_rekordbox"));
-  const markImported = () => act("…", () => api.updateTrackState(track.id, "dj_ready"));
+  const markImported = () => act("…", () => api.finishRekordbox(track.id));
   const returnToStage = () =>
     act("Returning…", async () => {
       await api.updateTrackState(track.id, returnStage);
