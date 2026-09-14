@@ -281,6 +281,11 @@ function DownloadCard({
               {track.downloaded_path}
             </p>
           )}
+          {track.error && (track.state === "downloading" || track.state === "failed") && (
+            <p style={{ fontSize: 11, color: track.state === "failed" ? "#f87171" : "#facc15", margin: "4px 0 0" }}>
+              {track.error}
+            </p>
+          )}
           {qualityResult && (
             <div style={{ marginTop: 6 }}>
               <QualityBadge result={qualityResult} />

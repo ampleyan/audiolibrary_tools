@@ -65,6 +65,7 @@ button.rekordbox-row { cursor: pointer; }
 .status-known { color: #6ee7b7; }
 .status-gap { color: #fbbf24; }
 .table-empty { padding: 28px 16px; color: #82909e; text-align: center; font-size: 12px; }
+.table-load-more { width: 100%; border: 0; border-top: 1px solid #352330; background: #1b121a; color: #ff6fb5; padding: 10px; cursor: pointer; font-size: 12px; }
 .track-detail { min-width: 0; align-self: start; border: 1px solid #352330; border-radius: 8px; background: #171118; padding: 18px; }
 .empty-detail { color: #a48e9b; text-align: center; }
 .detail-kicker { margin: 0 0 8px; color: #ff6fb5; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }

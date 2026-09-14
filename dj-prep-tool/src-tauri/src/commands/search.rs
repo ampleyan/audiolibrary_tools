@@ -124,68 +124,82 @@ pub fn approve_candidate(
     Ok(())
 }
 
+async fn refresh_candidate_and_download(
+    app: &AppHandle,
+    client: &sockseek::SockseekClient,
+    track_id: i64,
+    track: &import::TrackRow,
+) -> Result<(String, String, String), String> {
+    let query_title = match track.mix_version.as_deref() {
+        Some(mv) if !mv.is_empty() => format!("{} {}", track.title, mv),
+        _ => track.title.clone(),
+    };
+    let ranked = search_with_query(
+        app,
+        track_id,
+        &track.artist,
+        &track.title,
+        &track.artist,
+        &query_title,
+        false,
+    )
+    .await?;
+    let best = ranked
+        .first()
+        .ok_or("Search results expired and no replacement candidate was found")?;
+    let username = best.candidate.username.clone();
+    let filename = best.candidate.filename.clone();
+    let refreshed = import::get_track(app, track_id).map_err(|e| e.to_string())?;
+    let job_id = refreshed
+        .search_job_id
+        .ok_or("Re-search completed without a search job")?;
+    let download_id = client
+        .download(&job_id, &username, &filename)
+        .await
+        .map_err(|e| format!("Download failed after refreshing search results: {e}"))?;
+    Ok((download_id, username, filename))
+}
+
 #[tauri::command]
 pub async fn start_download(app: AppHandle, track_id: i64) -> Result<(), String> {
     let track = import::get_track(&app, track_id).map_err(|e| e.to_string())?;
     crate::commands::daemon::app_log(format!("[download] started: {} - {}", track.artist, track.title));
 
-    let mut job_id = track
+    let job_id = track
         .search_job_id
+        .clone()
         .ok_or("track has no search job — run search first")?;
     let username = track
         .selected_username
+        .clone()
         .ok_or("no candidate approved for this track")?;
     let filename = track
         .selected_filename
+        .clone()
         .ok_or("no candidate filename for this track")?;
 
     let client = make_client(&app);
     let dl_result = client.download(&job_id, &username, &filename).await;
 
-    let dl_id = match dl_result {
-        Ok(id) => id,
-        Err(ref e) if e.status() == Some(StatusCode::NOT_FOUND) => {
-            // Search job expired (daemon restarted) — re-search silently then retry
-            let query_title = match track.mix_version.as_deref() {
-                Some(mv) if !mv.is_empty() => format!("{} {}", track.title, mv),
-                _ => track.title.clone(),
-            };
-            let new_job_id = client
-                .search(&track.artist, &query_title, None, false)
-                .await
-                .map_err(|e| format!("Re-search failed: {e}"))?;
-
-            {
-                let conn = db::open(&app).map_err(|e| e.to_string())?;
-                conn.execute(
-                    "UPDATE tracks SET search_job_id = ?1 WHERE id = ?2",
-                    params![new_job_id, track_id],
-                )
-                .map_err(|e| e.to_string())?;
-            }
-            job_id = new_job_id;
-
-            for _ in 0..10u8 {
-                sleep(Duration::from_secs(3)).await;
-                if let Ok(r) = client.results(&job_id).await {
-                    if !r.is_empty() {
-                        break;
-                    }
-                }
-            }
-
-            client
-                .download(&job_id, &username, &filename)
-                .await
-                .map_err(|e| format!("Download failed after re-search: {e}"))?
+    let (dl_id, selected_username, selected_filename, recovery_message) = match dl_result {
+        Ok(id) => (id, username, filename, None),
+        Err(ref e) if matches!(e.status(), Some(StatusCode::BAD_REQUEST) | Some(StatusCode::NOT_FOUND)) => {
+            let (id, fresh_username, fresh_filename) =
+                refresh_candidate_and_download(&app, &client, track_id, &track).await?;
+            (
+                id,
+                fresh_username,
+                fresh_filename,
+                Some("Search results expired; refreshed candidate"),
+            )
         }
         Err(e) => return Err(e.to_string()),
     };
 
     let conn = db::open(&app).map_err(|e| e.to_string())?;
     conn.execute(
-        "UPDATE tracks SET download_job_id = ?1, state = 'downloading' WHERE id = ?2",
-        params![dl_id, track_id],
+        "UPDATE tracks SET selected_username = ?1, selected_filename = ?2, download_job_id = ?3, state = 'downloading', error = ?4 WHERE id = ?5",
+        params![selected_username, selected_filename, dl_id, recovery_message, track_id],
     )
     .map_err(|e| e.to_string())?;
 

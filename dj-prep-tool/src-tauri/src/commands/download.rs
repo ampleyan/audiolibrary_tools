@@ -326,7 +326,7 @@ pub async fn poll_download(app: AppHandle, track_id: i64) -> Result<crate::impor
             };
             let conn = db::open(&app).map_err(|e| e.to_string())?;
             conn.execute(
-                "UPDATE tracks SET downloaded_path = ?1, state = ?2 WHERE id = ?3",
+                "UPDATE tracks SET downloaded_path = ?1, state = ?2, error = NULL WHERE id = ?3",
                 params![path_str, state, track_id],
             )
             .map_err(|e| e.to_string())?;
