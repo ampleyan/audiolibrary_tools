@@ -161,6 +161,13 @@ function TrackDrawer({
     await onUpdated(track.id);
   });
 
+  const markNotFound = () => update(async () => {
+    await api.updateTrackState(track.id, "not_found");
+    await onUpdated(track.id);
+  });
+
+  const noResults = track.state === "requested" && !!track.search_job_id && candidates.length === 0;
+
   return (
     <>
       <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#0008", zIndex: 10 }} />
@@ -184,7 +191,7 @@ function TrackDrawer({
 
         {track.state === "not_found" && <div style={sectionStyle}><p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 10px" }}>No matching file was found. You can retry later.</p><button onClick={searchAgain} disabled={busy} style={buttonStyle}>{busy ? "Working…" : "Search again"}</button></div>}
 
-        {(track.state === "requested" || track.state === "needs_review") && <div ref={nextStepRef} style={sectionStyle}><h3 style={sectionHeading}>Next step: find a file</h3><div style={{ display: "flex", gap: 8 }}><button onClick={() => search()} disabled={busy || !artist.trim() || !title.trim()} style={buttonStyle}>{busy ? "Searching…" : "Search"}</button>{track.search_job_id && <button onClick={() => search(true)} disabled={busy} style={secondaryButtonStyle}>Search loose</button>}</div></div>}
+        {(track.state === "requested" || track.state === "needs_review") && <div ref={nextStepRef} style={sectionStyle}><h3 style={sectionHeading}>Next step: find a file</h3><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button onClick={() => search()} disabled={busy || !artist.trim() || !title.trim()} style={buttonStyle}>{busy ? "Searching…" : "Search"}</button>{track.search_job_id && <button onClick={() => search(true)} disabled={busy} style={secondaryButtonStyle}>Search loose</button>}{noResults && <button onClick={markNotFound} disabled={busy} style={secondaryButtonStyle}>Mark not found</button>}</div>{noResults && <p style={{ color: "#9ca3af", fontSize: 11, margin: "9px 0 0" }}>No files were found. If loose search also fails, mark this track and continue.</p>}</div>}
 
         {candidates.length > 0 && (track.state === "matched" || track.state === "requested" || track.state === "needs_review") && <div style={sectionStyle}><h3 style={sectionHeading}>Candidate files</h3>{candidateQuality && <p style={{ color: candidateQuality.color, fontSize: 11, margin: "0 0 8px" }}>{candidateQuality.label}: {candidateQuality.detail}</p>}<div style={{ display: "grid", gap: 6 }}>{candidates.slice(0, 5).map((ranked) => <div key={`${ranked.candidate.username}-${ranked.candidate.filename}`} style={{ background: "#1f2937", borderRadius: 5, padding: 9 }}><p style={{ color: "#d1d5db", fontSize: 12, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ranked.candidate.filename}>{ranked.candidate.filename}</p><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}><span style={{ color: "#6b7280", fontSize: 11 }}>Score {ranked.score}</span><button onClick={() => approve(ranked.candidate)} disabled={busy} style={buttonStyle}>Approve</button></div></div>)}</div></div>}
 
