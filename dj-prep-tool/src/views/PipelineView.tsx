@@ -23,7 +23,7 @@ function groupForTrack(track: TrackRow): PipelineGroupId {
 }
 
 function nextActionFor(track: TrackRow): string {
-  if (track.state === "not_found") return "Not found";
+  if (track.state === "not_found") return "Search again";
   if (track.state === "requested" || track.state === "needs_review") return "Search for a file"
   if (track.state === "matched") return "Approve a candidate"
   if (track.state === "approved") return "Start download"
@@ -33,7 +33,7 @@ function nextActionFor(track: TrackRow): string {
   if (track.state === "tagging_review" || track.state === "picard_pending") return "Finish tagging"
   if (track.state === "ready_for_rekordbox" || track.state === "rekordbox_pending") return "Send to Rekordbox"
   if (track.state === "failed") return "Review error"
-  if (track.state === "dj_ready") return "Ready to use"
+  if (track.state === "dj_ready") return "Open DJ-ready file"
   return "Open details"
 }
 
@@ -245,6 +245,7 @@ export default function PipelineView({ heading = "Overview", onNavigate }: { hea
   const [activities, setActivities] = useState<Array<{ id: number; trackId: number; artist: string; title: string; fromState: string | null; toState: string; createdAt: string }>>([]);
   const [selectedTrack, setSelectedTrack] = useState<TrackRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -269,6 +270,30 @@ export default function PipelineView({ heading = "Overview", onNavigate }: { hea
   };
 
   const attentionTrack = tracks.find((track) => groupForTrack(track) === "attention");
+  const isLibrary = heading === "Library";
+  const continueWork = () => {
+    if (!attentionTrack) return;
+    if (isLibrary && onNavigate) onNavigate(workViewFor(attentionTrack));
+    else setSelectedTrack(attentionTrack);
+  };
+  const takeLibraryAction = async (track: TrackRow) => {
+    setActionError(null);
+    try {
+      if (track.state === "not_found") {
+        await api.updateTrackState(track.id, "requested");
+        onNavigate?.("review");
+        return;
+      }
+      if (track.state === "dj_ready") {
+        if (!track.dj_path) throw new Error("No DJ-ready file path is recorded for this track.");
+        await api.openFolder(track.dj_path);
+        return;
+      }
+      onNavigate?.(workViewFor(track));
+    } catch (e) {
+      setActionError(String(e));
+    }
+  };
   const nextAttention = (trackId: number) => {
     const next = tracks.find((track) => track.id !== trackId && groupForTrack(track) === "attention");
     if (next) setSelectedTrack(next);
@@ -280,7 +305,6 @@ export default function PipelineView({ heading = "Overview", onNavigate }: { hea
     { label: "Not found", value: byGroup.skipped.length, color: "#9ca3af" },
     { label: "Completion", value: tracks.length ? `${Math.round((byGroup.ready.length / tracks.length) * 100)}%` : "—", color: "#60a5fa" },
   ];
-  const isLibrary = heading === "Library";
 
   return (
     <div className="view pipeline-view" style={{ padding: 24, color: "#f9fafb" }}>
@@ -288,10 +312,12 @@ export default function PipelineView({ heading = "Overview", onNavigate }: { hea
         <div className="view-heading"><h2>{heading}</h2><p>{isLibrary ? "Your preparation queue. Add tracks, then follow the next step for each track." : `${tracks.length} track${tracks.length !== 1 ? "s" : ""} moving from import to DJ-ready.`}</p></div>
         <div style={{ display: "flex", gap: 8 }}>
           {onNavigate && <button onClick={() => onNavigate("import")} style={buttonStyle}>Add tracks</button>}
-          {attentionTrack && <button onClick={() => setSelectedTrack(attentionTrack)} style={buttonStyle}>Continue</button>}
+          {attentionTrack && <button onClick={continueWork} style={buttonStyle}>Continue</button>}
           <button onClick={load} style={secondaryButtonStyle}>Refresh</button>
         </div>
       </div>
+
+      {actionError && <p style={{ color: "#f87171", fontSize: 12, background: "#1a0c0c", border: "1px solid #7f1d1d", padding: 8, borderRadius: 5 }}>{actionError}</p>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, marginBottom: 18 }} aria-label="Library health summary">
         {healthStats.map((stat) => (
@@ -313,7 +339,7 @@ export default function PipelineView({ heading = "Overview", onNavigate }: { hea
         </div>
       </section>}
 
-      {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in your Library yet. Add tracks to get started.</p> : <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>{PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} onOpen={isLibrary ? undefined : setSelectedTrack} onNextAction={isLibrary ? (track) => onNavigate?.(workViewFor(track)) : undefined} />)}</div>}
+      {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in your Library yet. Add tracks to get started.</p> : <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>{PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} onOpen={isLibrary ? undefined : setSelectedTrack} onNextAction={isLibrary ? takeLibraryAction : undefined} />)}</div>}
       {!isLibrary && selectedTrack && <TrackDrawer track={selectedTrack} onClose={() => setSelectedTrack(null)} onUpdated={updateTrack} onNextAttention={nextAttention} hasNextAttention={tracks.some((track) => track.id !== selectedTrack.id && groupForTrack(track) === "attention")} />}
     </div>
   );
