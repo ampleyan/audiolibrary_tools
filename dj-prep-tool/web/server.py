@@ -357,6 +357,18 @@ def command(name, payload):
             exists = path.exists()
             checks.append({"name": name, "ok": exists or not required, "detail": "path exists" if exists else ("required" if required else "optional")})
         return checks
+    if name == "backup_database":
+        backup_dir = DATA_DIR / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        destination = backup_dir / f"dj_prep-{int(time.time())}.sqlite"
+        source = db()
+        target = sqlite3.connect(destination)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+            source.close()
+        return str(destination)
     raise ValueError(f"Unsupported web command: {name}")
 
 def youtube_callback(query):
