@@ -122,5 +122,47 @@ function TrackDetail({ track, adding, onFindRelated, onAdd }: { track: Rekordbox
 }
 
 function RelatedResults({ seed, results, finding, adding, onBack, onAdd }: { seed: { artist: string; title: string } | null; results: SimilarTrack[] | null; finding: boolean; adding: boolean; onBack: () => void; onAdd: (track: SimilarTrack) => void }) {
-  return <div className="related-view"><div className="related-heading"><div><p className="detail-kicker">Related music</p><h3>{seed ? nameOf(seed) : "Select a seed track"}</h3></div><button className="button secondary" onClick={onBack}>Back to library</button></div>{finding ? <div className="empty-state">Finding related tracks…</div> : results && <div className="similar-results">{results.map((track) => <div className="similar-row" key={track.cosineId}><div><strong>{nameOf(track)}</strong>{track.mixVersion && <small>{track.mixVersion}</small>}</div><span>{Math.round(track.score * 100)}%</span><button className="button secondary" disabled={adding} onClick={() => onAdd(track)}>Add to Pipeline</button></div>)}</div>}</div>;
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  const [creatingYoutube, setCreatingYoutube] = useState(false);
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  const [youtubeResult, setYoutubeResult] = useState<{ playlistUrl: string; added: number; skipped: string[] } | null>(null);
+  const visibleTracks = results ?? [];
+  const getVideoId = (url: string) => url.match(/[?&]v=([^&]+)/)?.[1] ?? url.match(/youtu\.be\/([^?]+)/)?.[1] ?? null;
+  const selectedTracks = [...selectedRows].sort((a, b) => a - b).map((index) => visibleTracks[index]).filter((track): track is SimilarTrack => !!track);
+  const playlistTracks = selectedTracks.length ? selectedTracks : visibleTracks;
+
+  const toggleRow = (index: number) => {
+    setSelectedRows((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index); else next.add(index);
+      return next;
+    });
+  };
+
+  const createYoutubePlaylist = async () => {
+    const skipped = playlistTracks.filter((track) => !track.videoUrl).map((track) => nameOf(track));
+    const videoIds = playlistTracks.map((track) => track.videoUrl ? getVideoId(track.videoUrl) : null).filter((id): id is string => !!id);
+    if (!videoIds.length) {
+      setYoutubeError("No selected tracks have YouTube videos");
+      return;
+    }
+    setCreatingYoutube(true);
+    setYoutubeError(null);
+    setYoutubeResult(null);
+    try {
+      const auth = await api.getYoutubeAuthUrl();
+      if (!auth.authorized && auth.url) {
+        window.location.assign(auth.url);
+        return;
+      }
+      setYoutubeResult(await api.createYoutubePlaylist(videoIds, `DJ Prep – ${seed?.title ?? "Related tracks"}`, skipped));
+    } catch (e) {
+      setYoutubeError(String(e));
+    } finally {
+      setCreatingYoutube(false);
+    }
+  };
+
+  return <div className="related-view"><div className="related-heading"><div><p className="detail-kicker">Related music</p><h3>{seed ? nameOf(seed) : "Select a seed track"}</h3></div><button className="button secondary" onClick={onBack}>Back to library</button></div>{finding ? <div className="empty-state">Finding related tracks…</div> : results && <><div className="related-actions"><span>{visibleTracks.length} tracks{selectedRows.size > 0 && ` · ${selectedRows.size} selected`}</span><button className="button secondary" onClick={() => setSelectedRows(selectedRows.size === visibleTracks.length ? new Set() : new Set(visibleTracks.map((_, index) => index)))}>{selectedRows.size === visibleTracks.length ? "Clear selection" : "Select all"}</button><button className="button primary" onClick={createYoutubePlaylist} disabled={creatingYoutube}>{creatingYoutube ? "Connecting…" : selectedRows.size ? "Create playlist from selection" : "Create YouTube playlist"}</button></div>{youtubeError && <p className="youtube-message error">{youtubeError}</p>}{youtubeResult && <p className="youtube-message success">Created playlist with {youtubeResult.added} tracks. <a href={youtubeResult.playlistUrl} target="_blank" rel="noreferrer">Open YouTube playlist</a>{youtubeResult.skipped.length > 0 && ` · Skipped ${youtubeResult.skipped.length}`}</p>}<div className="similar-results">{visibleTracks.map((track, index) => { const videoId = track.videoUrl ? getVideoId(track.videoUrl) : null; const isPlaying = playingIndex === index; return <div className={`similar-row${selectedRows.has(index) ? " selected" : ""}`} key={track.cosineId}><input type="checkbox" checked={selectedRows.has(index)} onChange={() => toggleRow(index)} aria-label={`Select ${nameOf(track)}`} /><div><strong>{nameOf(track)}</strong>{track.mixVersion && <small>{track.mixVersion}</small>}</div><span>{Math.round(track.score * 100)}%</span>{videoId && <button className="button listen" onClick={() => setPlayingIndex(isPlaying ? null : index)}>{isPlaying ? "Stop" : "Listen"}</button>}<button className="button secondary" disabled={adding} onClick={() => onAdd(track)}>Add to Pipeline</button>{isPlaying && videoId && <iframe title={`Preview ${nameOf(track)}`} src={`https://www.youtube.com/embed/${videoId}?autoplay=1`} allow="autoplay; encrypted-media" />}</div>; })}</div></>}</div>;
 }

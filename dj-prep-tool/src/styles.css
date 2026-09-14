@@ -76,8 +76,18 @@ button.rekordbox-row { cursor: pointer; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .related-view { border: 1px solid #263442; border-radius: 8px; background: #10171f; padding: 16px; }
 .related-heading { align-items: center; margin-bottom: 14px; }
+.related-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: #82909e; font-size: 11px; }
+.related-actions > span { margin-right: auto; }
 .similar-results { display: grid; gap: 1px; overflow: hidden; border: 1px solid #263442; border-radius: 6px; }
-.similar-row { display: grid; grid-template-columns: minmax(0, 1fr) 45px auto; align-items: center; gap: 12px; background: #151d26; padding: 10px 12px; font-size: 12px; }
+.similar-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 45px auto auto; align-items: center; gap: 12px; background: #151d26; padding: 10px 12px; font-size: 12px; }
+.similar-row.selected { background: #12303b; }
+.similar-row input { accent-color: #67e8f9; }
+.similar-row iframe { grid-column: 1 / -1; display: block; width: 100%; height: 160px; border: 0; border-radius: 4px; }
+.button.listen { background: transparent; color: #67e8f9; }
+.youtube-message { margin: 0 0 10px; font-size: 12px; }
+.youtube-message.error { color: #fca5a5; }
+.youtube-message.success { color: #6ee7b7; }
+.youtube-message a { color: #67e8f9; }
 .similar-row strong { display: block; overflow: hidden; color: #d5e6ef; text-overflow: ellipsis; white-space: nowrap; }
 .similar-row small { display: block; margin-top: 3px; color: #82909e; }
 .similar-row > span { color: #67e8f9; }
@@ -100,7 +110,9 @@ button.rekordbox-row { cursor: pointer; }
   .rekordbox-row > span:last-child { display: none; }
   .discovery-toolbar { flex-direction: column; }
   .pipeline-seed { align-items: stretch; flex-direction: column; }
-  .similar-row { grid-template-columns: minmax(0, 1fr) 42px; }
-  .similar-row button { grid-column: 1 / -1; justify-self: start; }
+  .similar-row { grid-template-columns: 24px minmax(0, 1fr) 42px; }
+  .similar-row button { justify-self: start; }
+  .similar-row button.secondary { grid-column: 2 / -1; }
+  .related-actions { align-items: stretch; flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }
