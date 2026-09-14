@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.request
 import urllib.parse
+import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -159,6 +160,28 @@ def track_exists(artist, title):
     conn.close()
     return bool(exists)
 
+def rekordbox_entries(xml_path):
+    try:
+        root = ET.parse(xml_path).getroot()
+    except (OSError, ET.ParseError) as error:
+        raise ValueError(f"Cannot read Rekordbox XML: {error}")
+    return [
+        {
+            "artist": " ".join((track.attrib.get("Artist") or "").split()).casefold(),
+            "title": " ".join((track.attrib.get("Name") or "").split()).casefold(),
+            "location": track.attrib.get("Location") or "",
+        }
+        for track in root.iter("TRACK")
+    ]
+
+def rekordbox_location(entries, artist, title):
+    artist_key = " ".join((artist or "").split()).casefold()
+    title_key = " ".join((title or "").split()).casefold()
+    for entry in entries:
+        if entry["artist"] == artist_key and entry["title"] == title_key:
+            return entry["location"] or None
+    return None
+
 def tracks(state=None):
     conn = db()
     if state:
@@ -258,15 +281,28 @@ def command(name, payload):
         conn = db()
         values = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM settings")}
         conn.close()
-        return {"sockseekPath": "", "sockseekDaemonUrl": values.get("sockseek_daemon_url", SOCKSEEK_URL), "prepInboxDir": str(INBOX_DIR), "picardPath": "", "ffmpegPath": "", "rekordboxImportDir": str(ARCHIVE_DIR), "pythonPath": PYTHON, "ytCookiesFile": "", "setupComplete": values.get("setup_complete") == "true", "hasSockseekCredentials": bool(values.get("sockseek_username") and values.get("sockseek_password")), "hasSpotifyCredentials": bool(values.get("spotify_client_id") and values.get("spotify_client_secret")), "hasCosineCredentials": bool(values.get("cosine_api_key")), "hasTelegramCredentials": bool(values.get("telegram_api_id") and values.get("telegram_api_hash")), "hasTelegramSession": Path(values.get("telegram_session_path", str(DATA_DIR / "telegram.session"))).exists()}
+        return {"sockseekPath": "", "sockseekDaemonUrl": values.get("sockseek_daemon_url", SOCKSEEK_URL), "prepInboxDir": str(INBOX_DIR), "picardPath": "", "ffmpegPath": "", "rekordboxImportDir": str(ARCHIVE_DIR), "rekordboxXmlPath": values.get("rekordbox_xml_path", ""), "pythonPath": PYTHON, "ytCookiesFile": "", "setupComplete": values.get("setup_complete") == "true", "hasSockseekCredentials": bool(values.get("sockseek_username") and values.get("sockseek_password")), "hasSpotifyCredentials": bool(values.get("spotify_client_id") and values.get("spotify_client_secret")), "hasCosineCredentials": bool(values.get("cosine_api_key")), "hasTelegramCredentials": bool(values.get("telegram_api_id") and values.get("telegram_api_hash")), "hasTelegramSession": Path(values.get("telegram_session_path", str(DATA_DIR / "telegram.session"))).exists()}
     if name == "save_settings":
         payload = payload.get("payload", payload)
         conn = db()
-        mapping = {"sockseekDaemonUrl": "sockseek_daemon_url", "setupComplete": "setup_complete", "sockseekUsername": "sockseek_username", "sockseekPassword": "sockseek_password", "spotifyClientId": "spotify_client_id", "spotifyClientSecret": "spotify_client_secret", "cosineApiKey": "cosine_api_key", "telegramApiId": "telegram_api_id", "telegramApiHash": "telegram_api_hash", "telegramSessionPath": "telegram_session_path"}
+        mapping = {"sockseekDaemonUrl": "sockseek_daemon_url", "rekordboxXmlPath": "rekordbox_xml_path", "setupComplete": "setup_complete", "sockseekUsername": "sockseek_username", "sockseekPassword": "sockseek_password", "spotifyClientId": "spotify_client_id", "spotifyClientSecret": "spotify_client_secret", "cosineApiKey": "cosine_api_key", "telegramApiId": "telegram_api_id", "telegramApiHash": "telegram_api_hash", "telegramSessionPath": "telegram_session_path"}
         for key, value in payload.items():
             if key in mapping and value is not None:
                 conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (mapping[key], str(value).lower() if isinstance(value, bool) else value))
         conn.commit(); conn.close(); return None
+    if name == "check_rekordbox":
+        xml_path = payload.get("xmlPath") or setting("rekordbox_xml_path")
+        if not xml_path:
+            raise ValueError("Rekordbox XML path is not configured")
+        entries = rekordbox_entries(xml_path)
+        return [track["id"] for track in tracks() if rekordbox_location(entries, track["artist"], track["title"])]
+    if name == "finish_rekordbox":
+        track = get_track(int(payload["trackId"]))
+        dj_path = track.get("dj_path")
+        xml_path = setting("rekordbox_xml_path")
+        if xml_path:
+            dj_path = rekordbox_location(rekordbox_entries(xml_path), track["artist"], track["title"]) or dj_path
+        return update(track["id"], "UPDATE tracks SET dj_path=?, state='dj_ready', error=NULL WHERE id=?", (dj_path,))
     if name in ("import_text", "import_csv"):
         content = payload.get("text", "") if name == "import_text" else payload.get("content", "")
         return [insert(draft) for draft in (parse_text(content) if name == "import_text" else parse_csv(content))]
