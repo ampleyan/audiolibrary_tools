@@ -18,6 +18,7 @@ export interface SaveSettingsPayload {
   beetsConfigDir?: string;
   ffmpegPath?: string;
   rekordboxImportDir?: string;
+  rekordboxXmlPath?: string;
   pythonPath?: string;
   ytCookiesFile?: string;
   sockseekUsername?: string;
@@ -55,6 +56,9 @@ export const api = {
 
   saveSettings: (payload: SaveSettingsPayload) =>
     call<void>("save_settings", { payload }),
+
+  checkRekordbox: (xmlPath: string) =>
+    call<number[]>("check_rekordbox", { xmlPath }),
 
   importText: (text: string) => call<TrackRow[]>("import_text", { text }),
 

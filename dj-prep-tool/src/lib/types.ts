@@ -49,6 +49,7 @@ export interface PublicSettings {
   beetsConfigDir: string;
   ffmpegPath: string;
   rekordboxImportDir: string;
+  rekordboxXmlPath: string;
   pythonPath: string;
   ytCookiesFile: string;
   setupComplete: boolean;

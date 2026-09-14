@@ -43,6 +43,7 @@ export default function SetupView({ settings, onSaved }: Props) {
     beetsConfigDir: settings.beetsConfigDir,
     ffmpegPath: settings.ffmpegPath,
     rekordboxImportDir: settings.rekordboxImportDir,
+    rekordboxXmlPath: settings.rekordboxXmlPath,
     pythonPath: settings.pythonPath,
     ytCookiesFile: settings.ytCookiesFile,
     sockseekUsername: "",
@@ -66,6 +67,7 @@ export default function SetupView({ settings, onSaved }: Props) {
   const [selectedBackup, setSelectedBackup] = useState("");
   const [restoring, setRestoring] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [rekordboxMatches, setRekordboxMatches] = useState<number | null>(null);
 
   useEffect(() => {
     api.checkDaemon().then(setDaemonUp).catch(() => setDaemonUp(false));
@@ -100,6 +102,17 @@ export default function SetupView({ settings, onSaved }: Props) {
       setError(String(e));
     } finally {
       setChecking(false);
+    }
+  };
+
+  const checkRekordbox = async () => {
+    setError(null);
+    setRekordboxMatches(null);
+    try {
+      const matches = await api.checkRekordbox(form.rekordboxXmlPath?.trim() ?? "");
+      setRekordboxMatches(matches.length);
+    } catch (e) {
+      setError(String(e));
     }
   };
 
@@ -219,6 +232,24 @@ export default function SetupView({ settings, onSaved }: Props) {
         <PathField label="Music library folder" k="musicLibraryDir" />
         <PathField label="Beets configuration folder" k="beetsConfigDir" />
         <PathField label="Rekordbox import folder" k="rekordboxImportDir" />
+        <div style={field}>
+          <span style={label}>Rekordbox XML library (optional)</span>
+          <input
+            style={input}
+            value={form.rekordboxXmlPath ?? ""}
+            onChange={set("rekordboxXmlPath")}
+            placeholder="Path to exported rekordbox.xml"
+          />
+          <button
+            onClick={checkRekordbox}
+            disabled={!form.rekordboxXmlPath?.trim()}
+            style={{ alignSelf: "flex-start", marginTop: 6, background: "transparent", color: form.rekordboxXmlPath?.trim() ? "#60a5fa" : "#4b5563", border: "1px solid #374151", borderRadius: 4, padding: "5px 10px", fontSize: 12, cursor: form.rekordboxXmlPath?.trim() ? "pointer" : "not-allowed" }}
+          >
+            Check existing tracks
+          </button>
+          {rekordboxMatches !== null && <span style={{ fontSize: 11, color: "#34d399", marginTop: 4 }}>{rekordboxMatches} library track{rekordboxMatches === 1 ? "" : "s"} already in Rekordbox.</span>}
+          <span style={{ fontSize: 11, color: "#4b5563", marginTop: 2 }}>Export XML from Rekordbox, then paste its path here. The file is only read.</span>
+        </div>
         <PathField label="ffmpeg executable" k="ffmpegPath" />
         <PathField label="Python executable (leave blank for .venv)" k="pythonPath" />
         <div style={field}>
