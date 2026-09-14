@@ -29,14 +29,18 @@ export interface SaveSettingsPayload {
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 function call<T>(name: string, payload?: Record<string, unknown>) {
-  if (isTauri) return invoke<T>(name, payload);
+  if (isTauri) {
+    return invoke<T>(name, payload).catch((error) => {
+      throw new Error(`${name} failed: ${String(error)}`);
+    });
+  }
   return fetch(`/api/invoke/${name}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload ?? {}),
   }).then(async (response) => {
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error ?? `Request failed: ${response.status}`);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`${name} failed: ${body.error ?? `request returned ${response.status}`}`);
     return body.result as T;
   });
 }
