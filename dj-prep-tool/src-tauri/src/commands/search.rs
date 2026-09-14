@@ -37,13 +37,16 @@ async fn search_with_query(
     }
 
     let mut candidates = Vec::new();
-    for _ in 0..15u8 {
-        sleep(Duration::from_secs(2)).await;
+    for _ in 0..60u8 {
+        sleep(Duration::from_millis(500)).await;
         if let Ok(c) = client.results(&job_id).await {
             if !c.is_empty() {
                 candidates = c;
                 break;
             }
+        }
+        if client.is_terminal(&job_id).await.unwrap_or(false) {
+            break;
         }
     }
 

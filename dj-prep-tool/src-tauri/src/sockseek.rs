@@ -75,6 +75,12 @@ struct JobSummary {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JobStatus {
+    lifecycle_state: String,
+}
+
+#[derive(Deserialize)]
 struct ResultsResponse {
     items: Vec<Candidate>,
 }
@@ -162,6 +168,18 @@ impl SockseekClient {
             }
         }
         Ok(items)
+    }
+
+    pub async fn is_terminal(&self, job_id: &str) -> Result<bool, reqwest::Error> {
+        let status: JobStatus = self
+            .client
+            .get(format!("{}/api/jobs/{}", self.base_url, job_id))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(status.lifecycle_state.eq_ignore_ascii_case("terminal"))
     }
 
     pub async fn download_results(
