@@ -9,6 +9,7 @@ function nameOf(track: { artist: string; title: string }) {
 export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string) => void }) {
   const [mode, setMode] = useState("library");
   const [tracks, setTracks] = useState<RekordboxTrack[]>([]);
+  const [pipeline, setPipeline] = useState<{ artist: string; title: string }[]>([]);
   const [selected, setSelected] = useState<RekordboxTrack | null>(null);
   const [results, setResults] = useState<SimilarTrack[] | null>(null);
   const [query, setQuery] = useState("");
@@ -26,8 +27,9 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
       const settings = await api.getSettings();
       const xmlPath = settings.rekordboxXmlPath.trim();
       if (!xmlPath) throw new Error("Rekordbox XML not configured. Choose the XML file in Settings.");
-      const preview = await api.checkRekordbox(xmlPath);
+      const [preview, rows] = await Promise.all([api.checkRekordbox(xmlPath), api.listTracks()]);
       setTracks(preview.tracksInXml);
+      setPipeline(rows);
       setSelected((current) => current && preview.tracksInXml.some((track) => nameOf(track) === nameOf(current)) ? current : preview.tracksInXml[0] ?? null);
     } catch (e) {
       setError(String(e));
@@ -39,11 +41,13 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
 
   useEffect(() => { load(); }, []);
 
+  const inPipeline = (track: { artist: string; title: string }) => tracks.some((item) => nameOf(item) === nameOf(track) && item.inLibrary) || pipeline.some((item) => nameOf(item) === nameOf(track));
+
   const visibleTracks = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return tracks.filter((track) => {
-      if (filter === "library" && !track.inLibrary) return false;
-      if (filter === "gap" && track.inLibrary) return false;
+      if (filter === "library" && !inPipeline(track)) return false;
+      if (filter === "gap" && inPipeline(track)) return false;
       if (!needle) return true;
       return `${track.artist} ${track.title} ${track.album ?? ""} ${track.genre ?? ""} ${track.playlists.join(" ")}`.toLowerCase().includes(needle);
     });
@@ -63,11 +67,13 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
     }
   };
 
-  const addToPipeline = async (track: { artist: string; title: string }) => {
+  const addToPipeline = async (track: { artist: string; title: string; mixVersion?: string | null }) => {
     setAdding(true);
     setError(null);
     try {
-      const rows = await api.importText(`${track.artist} - ${track.title}`);
+      const mix = track.mixVersion ? ` (${track.mixVersion})` : "";
+      const rows = await api.importText(`${track.artist} - ${track.title}${mix}`);
+      setPipeline((current) => [...current, ...rows]);
       if (selected && nameOf(selected) === nameOf(track)) setSelected({ ...selected, inLibrary: true });
       if (rows.length) setTracks((current) => current.map((item) => nameOf(item) === nameOf(track) ? { ...item, inLibrary: true } : item));
     } catch (e) {
@@ -77,7 +83,7 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
     }
   };
 
-  const gapCount = tracks.filter((track) => !track.inLibrary).length;
+  const gapCount = tracks.filter((track) => !inPipeline(track)).length;
 
   return <div className="view discovery-view">
     <div className="discovery-heading"><div className="view-heading"><h2>Discover</h2><p>Explore your Rekordbox library and find what belongs next.</p></div><button className="button secondary" onClick={() => load(true)} disabled={refreshing}>{refreshing ? "Refreshing…" : "Refresh XML"}</button></div>
