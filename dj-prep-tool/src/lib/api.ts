@@ -25,6 +25,9 @@ export interface SaveSettingsPayload {
   spotifyClientId?: string;
   spotifyClientSecret?: string;
   cosineApiKey?: string;
+  telegramApiId?: string;
+  telegramApiHash?: string;
+  telegramSessionPath?: string;
   setupComplete?: boolean;
 }
 
@@ -60,6 +63,15 @@ export const api = {
 
   importYoutube: (url: string) =>
     call<TrackRow[]>("import_youtube", { url }),
+
+  telegramLoginStart: (phone: string) =>
+    call<string>("telegram_login_start", { phone }),
+
+  telegramLoginCode: (code: string, password?: string) =>
+    call<string>("telegram_login_code", { code, password: password || null }),
+
+  importTelegram: (channelId: string, limit: number) =>
+    call<{ tracks: TrackRow[]; skipped: string[] }>("import_telegram", { channelId, limit }),
 
   listTracks: (state?: string) =>
     call<TrackRow[]>("list_tracks", { state: state ?? null }),

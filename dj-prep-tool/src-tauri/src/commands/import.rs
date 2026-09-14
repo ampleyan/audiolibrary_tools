@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use serde_json::Value;
+use tauri::{AppHandle, Manager};
+use tokio::io::AsyncWriteExt;
+use tokio::process::Command;
 
 use crate::{config_store, db, import};
 
@@ -26,6 +29,9 @@ pub struct SaveSettingsPayload {
     pub spotify_client_id: Option<String>,
     pub spotify_client_secret: Option<String>,
     pub cosine_api_key: Option<String>,
+    pub telegram_api_id: Option<String>,
+    pub telegram_api_hash: Option<String>,
+    pub telegram_session_path: Option<String>,
     pub setup_complete: Option<bool>,
 }
 
@@ -47,6 +53,9 @@ pub fn save_settings(app: AppHandle, payload: SaveSettingsPayload) -> Result<(),
         ("spotify_client_id", payload.spotify_client_id),
         ("spotify_client_secret", payload.spotify_client_secret),
         ("cosine_api_key", payload.cosine_api_key),
+        ("telegram_api_id", payload.telegram_api_id),
+        ("telegram_api_hash", payload.telegram_api_hash),
+        ("telegram_session_path", payload.telegram_session_path),
     ];
     for (key, val) in pairs {
         if let Some(v) = val {
@@ -78,15 +87,19 @@ pub fn import_csv(app: AppHandle, content: String) -> Result<Vec<import::TrackRo
 
 #[tauri::command]
 pub async fn import_youtube(app: AppHandle, url: String) -> Result<Vec<import::TrackRow>, String> {
-    let python = resolve_python(&app);
-    let script = resolve_yt_fetch(&app);
+    import_youtube_url(&app, &url).await
+}
+
+async fn import_youtube_url(app: &AppHandle, url: &str) -> Result<Vec<import::TrackRow>, String> {
+    let python = resolve_python(app);
+    let script = resolve_yt_fetch(app);
     let cookies = config_store::get(&app, "yt_cookies_file").unwrap_or_default();
 
     let spotify_id = config_store::get(&app, "spotify_client_id").unwrap_or_default();
     let spotify_secret = config_store::get(&app, "spotify_client_secret").unwrap_or_default();
 
     let mut cmd = tokio::process::Command::new(&python);
-    cmd.arg(&script).arg(&url);
+    cmd.arg(&script).arg(url);
     if !cookies.is_empty() {
         cmd.arg(&cookies);
     }
@@ -118,6 +131,127 @@ pub async fn import_youtube(app: AppHandle, url: String) -> Result<Vec<import::T
         rows.push(import::insert_track(&app, &draft).map_err(|e| e.to_string())?);
     }
     Ok(rows)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelegramImportResult {
+    pub tracks: Vec<import::TrackRow>,
+    pub skipped: Vec<String>,
+}
+
+fn telegram_session_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    if let Some(path) = config_store::get(app, "telegram_session_path").filter(|p| !p.is_empty()) {
+        return Ok(std::path::PathBuf::from(path));
+    }
+    let dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("Cannot resolve app data directory: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create app data directory: {e}"))?;
+    Ok(dir.join("telegram.session"))
+}
+
+async fn run_telegram_action(app: &AppHandle, request: Value) -> Result<Value, String> {
+    let api_id = config_store::get(app, "telegram_api_id")
+        .filter(|value| !value.is_empty())
+        .ok_or("Set Telegram API ID in Settings first")?;
+    let api_hash = config_store::get(app, "telegram_api_hash")
+        .filter(|value| !value.is_empty())
+        .ok_or("Set Telegram API hash in Settings first")?;
+    let session_path = telegram_session_path(app)?;
+    let python = resolve_python(app);
+    let script = resolve_telegram_fetch(app);
+    let mut child = Command::new(&python)
+        .arg(&script)
+        .env("TELEGRAM_API_ID", api_id)
+        .env("TELEGRAM_API_HASH", api_hash)
+        .env("TELEGRAM_SESSION_PATH", &session_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to launch Telegram helper ({python:?}): {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let request = serde_json::to_vec(&request).map_err(|e| e.to_string())?;
+        stdin.write_all(&request).await.map_err(|e| e.to_string())?;
+        stdin.write_all(b"\n").await.map_err(|e| e.to_string())?;
+    }
+    let output = child.wait_with_output().await.map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("telegram_fetch.py failed: {stderr}"));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .ok_or("Telegram helper returned no response")?;
+    serde_json::from_str(line).map_err(|e| format!("Invalid JSON from telegram_fetch.py: {e}"))
+}
+
+#[tauri::command]
+pub async fn telegram_login_start(app: AppHandle, phone: String) -> Result<String, String> {
+    let result = run_telegram_action(&app, serde_json::json!({
+        "action": "login_start",
+        "phone": phone,
+    }))
+    .await?;
+    result
+        .get("status")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or("Telegram helper returned no login status".into())
+}
+
+#[tauri::command]
+pub async fn telegram_login_code(
+    app: AppHandle,
+    code: String,
+    password: Option<String>,
+) -> Result<String, String> {
+    let result = run_telegram_action(&app, serde_json::json!({
+        "action": "login_code",
+        "code": code,
+        "password": password,
+    }))
+    .await?;
+    result
+        .get("status")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or("Telegram helper returned no login status".into())
+}
+
+#[tauri::command]
+pub async fn import_telegram(
+    app: AppHandle,
+    channel_id: String,
+    limit: Option<u32>,
+) -> Result<TelegramImportResult, String> {
+    let result = run_telegram_action(&app, serde_json::json!({
+        "action": "fetch",
+        "channel_id": channel_id,
+        "limit": limit.unwrap_or(100).clamp(1, 1000),
+    }))
+    .await?;
+    let messages = result
+        .get("messages")
+        .and_then(Value::as_array)
+        .ok_or("Telegram helper returned no messages")?;
+    let mut tracks = Vec::new();
+    let mut skipped = Vec::new();
+    for message in messages {
+        let url = message.get("url").and_then(Value::as_str).unwrap_or_default();
+        if url.is_empty() {
+            continue;
+        }
+        match import_youtube_url(&app, url).await {
+            Ok(mut rows) => tracks.append(&mut rows),
+            Err(error) => skipped.push(format!("{url}: {error}")),
+        }
+    }
+    Ok(TelegramImportResult { tracks, skipped })
 }
 
 #[tauri::command]
@@ -225,4 +359,12 @@ fn resolve_yt_fetch(_app: &AppHandle) -> std::path::PathBuf {
     }
     let exe = std::env::current_exe().unwrap_or_default();
     exe.parent().unwrap_or(std::path::Path::new(".")).join("py").join("yt_fetch.py")
+}
+
+fn resolve_telegram_fetch(_app: &AppHandle) -> std::path::PathBuf {
+    if let Some(root) = db::project_root() {
+        return root.join("dj-prep-tool").join("py").join("telegram_fetch.py");
+    }
+    let exe = std::env::current_exe().unwrap_or_default();
+    exe.parent().unwrap_or(std::path::Path::new(".")).join("py").join("telegram_fetch.py")
 }

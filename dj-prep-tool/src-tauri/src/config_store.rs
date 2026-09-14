@@ -22,6 +22,8 @@ pub struct PublicSettings {
     pub has_sockseek_credentials: bool,
     pub has_spotify_credentials: bool,
     pub has_cosine_credentials: bool,
+    pub has_telegram_credentials: bool,
+    pub has_telegram_session: bool,
 }
 
 pub fn get(app: &AppHandle, key: &str) -> Option<String> {
@@ -62,5 +64,10 @@ pub fn get_public(app: &AppHandle) -> PublicSettings {
         has_spotify_credentials: get(app, "spotify_client_id").is_some()
             && get(app, "spotify_client_secret").is_some(),
         has_cosine_credentials: get(app, "cosine_api_key").is_some(),
+        has_telegram_credentials: get(app, "telegram_api_id").is_some()
+            && get(app, "telegram_api_hash").is_some(),
+        has_telegram_session: get(app, "telegram_session_path")
+            .map(|path| std::path::Path::new(&path).exists())
+            .unwrap_or(false),
     }
 }
