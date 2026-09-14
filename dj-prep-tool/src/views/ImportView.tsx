@@ -162,9 +162,9 @@ function TrackList({
                 {t.error && (
                   <span
                     title={t.error}
-                    style={{ marginLeft: 6, color: "#ef4444", fontSize: 10 }}
+                    style={{ marginLeft: 6, color: t.state === "not_found" ? "#9ca3af" : "#ef4444", fontSize: 10 }}
                   >
-                    ⚠
+                    {t.state === "not_found" ? "ⓘ" : "⚠"}
                   </span>
                 )}
               </td>

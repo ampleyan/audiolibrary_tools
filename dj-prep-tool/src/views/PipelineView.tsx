@@ -77,7 +77,7 @@ function GroupColumn({
             </span>
             <span style={{ display: "block", fontSize: 10, color: group.color, marginTop: 3 }}>{nextActionFor(track)}</span>
             {track.mix_version && <span style={{ display: "block", fontSize: 10, color: "#6b7280", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.mix_version}</span>}
-            {track.error && <span style={{ display: "block", fontSize: 10, color: "#f87171", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={track.error}>⚠ {track.error}</span>}
+            {track.error && <span style={{ display: "block", fontSize: 10, color: track.state === "not_found" ? "#9ca3af" : "#f87171", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={track.error}>{track.state === "not_found" ? "ⓘ" : "⚠"} {track.error}</span>}
           </button>
         ))}
       </div>
