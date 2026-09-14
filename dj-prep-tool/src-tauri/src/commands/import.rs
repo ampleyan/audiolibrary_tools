@@ -12,15 +12,27 @@ pub fn get_settings(app: AppHandle) -> config_store::PublicSettings {
 }
 
 #[tauri::command]
-pub fn check_rekordbox(app: AppHandle, xml_path: String) -> Result<Vec<i64>, String> {
+pub fn check_rekordbox(app: AppHandle, xml_path: String) -> Result<RekordboxPreview, String> {
     let xml = std::fs::read_to_string(&xml_path)
         .map_err(|e| format!("Cannot read Rekordbox XML: {e}"))?;
+    let tracks_in_xml = crate::rekordbox::parse_tracks(&xml);
     let tracks = import::list_tracks(&app, None).map_err(|e| e.to_string())?;
     let candidates = tracks
         .iter()
         .map(|track| (track.id, track.artist.clone(), track.title.clone()))
         .collect::<Vec<_>>();
-    Ok(crate::rekordbox::matching_track_ids(&xml, &candidates))
+    let matching_track_ids = crate::rekordbox::matching_track_ids(&xml, &candidates);
+    Ok(RekordboxPreview {
+        tracks_in_xml,
+        matching_track_ids,
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RekordboxPreview {
+    pub tracks_in_xml: Vec<crate::rekordbox::RekordboxTrack>,
+    pub matching_track_ids: Vec<i64>,
 }
 
 #[derive(Deserialize)]

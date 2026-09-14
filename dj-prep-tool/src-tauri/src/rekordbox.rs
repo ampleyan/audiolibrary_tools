@@ -1,16 +1,49 @@
 use regex::Regex;
+use serde::Serialize;
 
-pub fn matching_track_ids(xml: &str, tracks: &[(i64, String, String)]) -> Vec<i64> {
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RekordboxTrack {
+    pub artist: String,
+    pub title: String,
+    pub mix_version: Option<String>,
+    pub location: Option<String>,
+}
+
+pub fn parse_tracks(xml: &str) -> Vec<RekordboxTrack> {
     let track_tag = Regex::new(r#"<TRACK\b[^>]*>"#).expect("valid track tag pattern");
     let artist_attr = Regex::new(r#"\bArtist\s*=\s*"([^"]*)""#).expect("valid artist pattern");
     let title_attr = Regex::new(r#"\bName\s*=\s*"([^"]*)""#).expect("valid title pattern");
-    let rekordbox_tracks: Vec<(String, String)> = track_tag
+    let mix_attr = Regex::new(r#"\bMix\s*=\s*"([^"]*)""#).expect("valid mix pattern");
+    let location_attr = Regex::new(r#"\bLocation\s*=\s*"([^"]*)""#).expect("valid location pattern");
+
+    track_tag
         .find_iter(xml)
         .filter_map(|tag| {
-            let artist = artist_attr.captures(tag.as_str())?.get(1)?.as_str();
-            let title = title_attr.captures(tag.as_str())?.get(1)?.as_str();
-            Some((normalize(artist), normalize(title)))
+            let value = |pattern: &Regex| {
+                pattern
+                    .captures(tag.as_str())
+                    .and_then(|captures| captures.get(1))
+                    .map(|capture| decode_entities(capture.as_str()))
+                    .filter(|value| !value.is_empty())
+            };
+            let artist = value(&artist_attr)?;
+            let title = value(&title_attr)?;
+            RekordboxTrack {
+                artist,
+                title,
+                mix_version: value(&mix_attr),
+                location: value(&location_attr),
+            }
+            .into()
         })
+        .collect()
+}
+
+pub fn matching_track_ids(xml: &str, tracks: &[(i64, String, String)]) -> Vec<i64> {
+    let rekordbox_tracks: Vec<(String, String)> = parse_tracks(xml)
+        .iter()
+        .map(|track| (normalize(&track.artist), normalize(&track.title)))
         .collect();
 
     tracks
@@ -27,22 +60,16 @@ pub fn matching_track_ids(xml: &str, tracks: &[(i64, String, String)]) -> Vec<i6
 }
 
 pub fn matching_location(xml: &str, artist: &str, title: &str) -> Option<String> {
-    let track_tag = Regex::new(r#"<TRACK\b[^>]*>"#).expect("valid track tag pattern");
-    let artist_attr = Regex::new(r#"\bArtist\s*=\s*"([^"]*)""#).expect("valid artist pattern");
-    let title_attr = Regex::new(r#"\bName\s*=\s*"([^"]*)""#).expect("valid title pattern");
-    let location_attr = Regex::new(r#"\bLocation\s*=\s*"([^"]*)""#).expect("valid location pattern");
     let expected_artist = normalize(artist);
     let expected_title = normalize(title);
 
-    let location = track_tag.find_iter(xml).find_map(|tag| {
-        let known_artist = normalize(artist_attr.captures(tag.as_str())?.get(1)?.as_str());
-        let known_title = normalize(title_attr.captures(tag.as_str())?.get(1)?.as_str());
-        if known_artist != expected_artist || known_title != expected_title {
-            return None;
+    parse_tracks(xml).into_iter().find_map(|track| {
+        if normalize(&track.artist) == expected_artist && normalize(&track.title) == expected_title {
+            track.location
+        } else {
+            None
         }
-        Some(decode_entities(location_attr.captures(tag.as_str())?.get(1)?.as_str()))
-    });
-    location
+    })
 }
 
 fn normalize(value: &str) -> String {
@@ -65,7 +92,21 @@ fn decode_entities(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{matching_track_ids, matching_location};
+    use super::{matching_location, matching_track_ids, parse_tracks};
+
+    #[test]
+    fn parses_rekordbox_track_rows_with_multiline_attributes() {
+        let xml = r#"<COLLECTION><TRACK TrackID="1" Name="Track &amp; One"
+            Artist="Artist &amp; One" Mix="Original Mix" Location="file://localhost/Music/track.mp3"/></COLLECTION><PLAYLISTS><NODE><TRACK Key="1"/></NODE></PLAYLISTS>"#;
+
+        let tracks = parse_tracks(xml);
+
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].artist, "Artist & One");
+        assert_eq!(tracks[0].title, "Track & One");
+        assert_eq!(tracks[0].mix_version, Some("Original Mix".to_string()));
+        assert_eq!(tracks[0].location, Some("file://localhost/Music/track.mp3".to_string()));
+    }
 
     #[test]
     fn matches_rekordbox_tracks_by_artist_and_title() {
