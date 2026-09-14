@@ -36,6 +36,7 @@ while (Get-NetTCPConnection -LocalPort $devPort -State Listen -ErrorAction Silen
 
 $env:VITE_PORT = $devPort
 $frontendRoot = $PSScriptRoot.Replace('\', '/')
-$tauriDevConfig = @{ build = @{ devUrl = "http://localhost:$devPort"; beforeDevCommand = "npm --prefix $frontendRoot run dev" } } | ConvertTo-Json -Compress
+$viteEntry = "$frontendRoot/node_modules/vite/bin/vite.js"
+$tauriDevConfig = @{ build = @{ devUrl = "http://localhost:$devPort"; beforeDevCommand = "node $viteEntry" } } | ConvertTo-Json -Compress
 Write-Host "Starting DJ Prep Tool on port $devPort"
 npm run tauri dev -- --config $tauriDevConfig
