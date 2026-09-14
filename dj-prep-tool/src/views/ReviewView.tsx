@@ -99,7 +99,7 @@ const editInput: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-export function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
+export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; onOpenLibrary?: () => void }) {
   const [sourceIds, setSourceIds] = useState<number[]>(tracks[0] ? [tracks[0].id] : []);
   const [similarTracks, setSimilarTracks] = useState<SimilarTrack[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -108,6 +108,7 @@ export function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importedCount, setImportedCount] = useState<number | null>(null);
   const [maxResults, setMaxResults] = useState(25);
   const [minimumScore, setMinimumScore] = useState(0);
   const [sourceProgress, setSourceProgress] = useState<string | null>(null);
@@ -138,6 +139,7 @@ export function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
     if (selectedSources.length === 0) return;
     setLoading(true);
     setError(null);
+    setImportedCount(null);
     setSimilarTracks(null);
     setSourceLabels({});
     setSelected(new Set());
@@ -182,6 +184,7 @@ export function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
     if (!similarTracks || selected.size === 0) return;
     setImporting(true);
     setImportError(null);
+    setImportedCount(null);
     try {
       const text = [...selected]
         .sort((a, b) => a - b)
@@ -191,8 +194,9 @@ export function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
         })
         .filter((line): line is string => line !== null)
         .join("\n");
-      await api.importText(text);
+      const added = await api.importText(text);
       setSelected(new Set());
+      setImportedCount(added.length);
     } catch (e) {
       setImportError(String(e));
     } finally {
@@ -280,6 +284,7 @@ export function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
       </div>
       {error && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{error}</p>}
       {importError && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{importError}</p>}
+      {importedCount !== null && <p aria-live="polite" style={{ color: "#34d399", fontSize: 12, margin: "0 0 8px" }}>Added {importedCount} track{importedCount === 1 ? "" : "s"} to Library.{onOpenLibrary && <button onClick={onOpenLibrary} style={{ background: "transparent", color: "#93c5fd", border: "1px solid #1e40af", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", marginLeft: 8 }}>View Library</button>}</p>}
       {youtubeError && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{youtubeError}</p>}
       {youtubeResult && <p style={{ color: "#34d399", fontSize: 12, margin: "0 0 8px" }}>Created playlist with {youtubeResult.added} tracks. <a href={youtubeResult.playlistUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa" }}>Open YouTube playlist</a>{youtubeResult.skipped.length > 0 && ` · Skipped ${youtubeResult.skipped.length} unavailable or rejected`}</p>}
       {similarTracks === null && !loading && !error && <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>Choose a track and find related music.</p>}
@@ -288,9 +293,9 @@ export function SimilarPanel({ tracks }: { tracks: TrackRow[] }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ color: "#6b7280", fontSize: 11 }}>{visibleTracks?.length ?? 0} of {similarTracks.length} similar tracks{selected.size > 0 && <span style={{ color: "#a78bfa" }}> · {selected.size} selected</span>}</span>
             <div style={{ display: "flex", gap: 6 }}>
-              {selected.size > 0 && <button onClick={addToQueue} disabled={importing} style={{ background: importing ? "#1f2937" : "#065f46", color: importing ? "#4b5563" : "#34d399", border: "none", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: importing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{importing ? "Adding…" : `Add ${selected.size} to queue`}</button>}
+              {selected.size > 0 && <button onClick={addToQueue} disabled={importing} style={{ background: importing ? "#1f2937" : "#065f46", color: importing ? "#4b5563" : "#34d399", border: "none", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: importing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{importing ? "Adding…" : `Add ${selected.size} to Library`}</button>}
               <button onClick={savePlaylist} style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{selected.size > 0 ? `Download ${selected.size}` : "Download all"} as text playlist</button>
-              <button onClick={createYoutubePlaylist} disabled={creatingYoutube} title="Create a private YouTube playlist" style={{ background: creatingYoutube ? "#1f2937" : "#991b1b", color: creatingYoutube ? "#4b5563" : "#fecaca", border: "1px solid #b91c1c", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: creatingYoutube ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{creatingYoutube ? "Connecting…" : "Create YouTube playlist"}</button>
+              <button onClick={createYoutubePlaylist} disabled={creatingYoutube} title="Create a private YouTube playlist" style={{ background: "transparent", color: creatingYoutube ? "#4b5563" : "#9ca3af", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: creatingYoutube ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{creatingYoutube ? "Connecting…" : "Create YouTube playlist"}</button>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>

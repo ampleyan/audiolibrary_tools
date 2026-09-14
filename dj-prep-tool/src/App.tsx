@@ -143,7 +143,7 @@ export default function App() {
         {tab === "downloads" && <DownloadView />}
         {tab === "pipeline" && <PipelineView onNavigate={navigate} />}
         {tab === "library" && <PipelineView heading="Library" onNavigate={navigate} />}
-        {tab === "discover" && <DiscoveryView />}
+        {tab === "discover" && <DiscoveryView onNavigate={navigate} />}
         {tab === "setup" && (
           <SetupView
             settings={settings}
