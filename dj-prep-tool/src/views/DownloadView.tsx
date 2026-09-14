@@ -156,7 +156,8 @@ function DownloadCard({
   const qualityPassed =
     qualityResult?.isRealFlac === true ||
     track.state === "ready_for_conversion" ||
-    track.state === "tagging_review";
+    track.state === "tagging_review" ||
+    track.state === "picard_pending";
 
   const rekordboxReady =
     track.state === "ready_for_rekordbox" || track.state === "dj_ready";
@@ -262,9 +263,9 @@ function DownloadCard({
               {track.quality_notes && ` — ${track.quality_notes}`}
             </p>
           )}
-          {track.state === "tagging_review" && (
+          {(track.state === "tagging_review" || track.state === "picard_pending") && (
             <p style={{ fontSize: 12, color: "#fb923c", margin: "4px 0 0" }}>
-              {track.error ?? "Weak match — tag manually with Picard, then mark as tagged."}
+              {track.error ?? "Beets needs a manual match review before this can continue."}
             </p>
           )}
           {track.state === "ready_for_rekordbox" && track.archive_path && (
@@ -298,7 +299,7 @@ function DownloadCard({
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 160 }}>
           <span style={{ fontSize: 10, color: stateColor, textAlign: "right", letterSpacing: "0.04em" }}>
-            {track.state.replace(/_/g, " ")}
+            {track.state === "picard_pending" ? "tagging review" : track.state.replace(/_/g, " ")}
           </span>
           {track.state === "approved" && (
             <ActionBtn label="Start download" busy={busy} busyLabel={busyLabel} onClick={startDownload} />
@@ -315,52 +316,21 @@ function DownloadCard({
           {(track.state === "downloaded" || track.state === "quality_failed") && (
             <ActionBtn label="Quality check" busy={busy} busyLabel={busyLabel} onClick={qualityCheck} />
           )}
-          {track.downloaded_path && (
-            <ActionBtn label="Convert" busy={busy} busyLabel={busyLabel} onClick={tagTrack} />
+          {track.state === "ready_for_conversion" && (
+            <ActionBtn label="Run Beets tagging" busy={busy} busyLabel={busyLabel} onClick={tagTrack} />
           )}
-          {track.state === "tagging_review" && (
+          {(track.state === "tagging_review" || track.state === "picard_pending") && (
             <ActionBtn label="Open folder" busy={busy} busyLabel={busyLabel} onClick={() => openFolder(track.downloaded_path)} />
           )}
           {track.state === "ready_for_rekordbox" && (
             <ActionBtn label="Open folder" busy={busy} busyLabel={busyLabel} onClick={() => openFolder(track.archive_path)} />
           )}
-          {(track.state === "tagging_review" || track.state === "ready_for_conversion") && (
-            <ActionBtn label="Mark as ready" busy={busy} busyLabel={busyLabel} onClick={markAsTagged} />
+          {(track.state === "tagging_review" || track.state === "picard_pending") && (
+            <ActionBtn label="Mark ready for Rekordbox" busy={busy} busyLabel={busyLabel} onClick={markAsTagged} />
           )}
           {track.state === "ready_for_rekordbox" && (
             <ActionBtn label="Mark imported" busy={busy} busyLabel={busyLabel} onClick={markImported} />
           )}
-          <select
-            disabled={busy}
-            value=""
-            onChange={(e) => {
-              const s = e.target.value;
-              if (s) act("…", () => api.updateTrackState(track.id, s));
-            }}
-            style={{
-              marginTop: 4,
-              background: "#111827",
-              color: "#4b5563",
-              border: "1px solid #1f2937",
-              borderRadius: 4,
-              padding: "4px 6px",
-              fontSize: 11,
-              cursor: busy ? "not-allowed" : "pointer",
-              fontFamily: "inherit",
-              width: "100%",
-            }}
-          >
-            <option value="">set state…</option>
-            <option value="approved">approved</option>
-            <option value="downloading">downloading</option>
-            <option value="downloaded">downloaded</option>
-            <option value="quality_failed">quality failed</option>
-            <option value="ready_for_conversion">ready for conversion</option>
-            <option value="tagging_review">tagging review</option>
-            <option value="ready_for_rekordbox">ready for rekordbox</option>
-            <option value="dj_ready">dj ready</option>
-            <option value="failed">failed</option>
-          </select>
         </div>
       </div>
     </div>
@@ -399,9 +369,9 @@ function ActionBtn({
   );
 }
 
-type BatchOp = "download" | "retry" | "check" | "convert";
+type BatchOp = "download" | "retry" | "check" | "tag";
 
-export default function DownloadView({ states = DOWNLOAD_STATES, embedded = false, emptyMessage = "No tracks in the download pipeline. Approve candidates in Review first." }: { states?: TrackState[]; embedded?: boolean; emptyMessage?: string }) {
+export default function DownloadView({ states = DOWNLOAD_STATES, embedded = false, selectedTrackId, emptyMessage = "No tracks in the download pipeline. Approve candidates in Review first." }: { states?: TrackState[]; embedded?: boolean; selectedTrackId?: number; emptyMessage?: string }) {
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [batchOp, setBatchOp] = useState<BatchOp | null>(null);
@@ -455,7 +425,7 @@ export default function DownloadView({ states = DOWNLOAD_STATES, embedded = fals
     );
 
   const convertAll = () =>
-    runBatch("convert", tracks.filter((t) => t.state === "ready_for_conversion"), (t) =>
+    runBatch("tag", tracks.filter((t) => t.state === "ready_for_conversion"), (t) =>
       api.tagTrack(t.id)
     );
 
@@ -514,7 +484,7 @@ export default function DownloadView({ states = DOWNLOAD_STATES, embedded = fals
           {batchBtn("download", "Download all", approvedCount, downloadAll)}
           {batchBtn("retry", "Retry failed", failedCount, retryAll)}
           {batchBtn("check", "Check all", checkableCount, checkAll)}
-          {batchBtn("convert", "Convert all", convertibleCount, convertAll)}
+          {batchBtn("tag", "Tag all with Beets", convertibleCount, convertAll)}
           <button
             onClick={() => load(true)}
             style={{
@@ -559,7 +529,7 @@ export default function DownloadView({ states = DOWNLOAD_STATES, embedded = fals
           {emptyMessage}
         </p>
       ) : (
-        tracks.map((t) => (
+        [...tracks].sort((a, b) => Number(b.id === selectedTrackId) - Number(a.id === selectedTrackId)).map((t) => (
           <DownloadCard
             key={t.id}
             track={t}

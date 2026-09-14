@@ -61,7 +61,7 @@ Place the downloaded Google OAuth JSON at `dj-prep-tool/client_secret.json` and 
 
 ## Desktop-only actions
 
-Picard launching, opening local folders, and Rekordbox handoff are not available from a remote browser. The web flow converts approved downloads to 320 kbps MP3 and marks them ready for Rekordbox; copy the resulting file to the desktop manually.
+Beets tagging, opening local folders, and Rekordbox handoff are not available from a remote browser. The web flow converts approved downloads to 320 kbps MP3 and marks them ready for Rekordbox; copy the resulting file to the desktop manually.
 
 ## Stop and update
 

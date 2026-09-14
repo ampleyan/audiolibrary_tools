@@ -28,7 +28,7 @@ function nextActionFor(track: TrackRow): string {
   if (track.state === "approved") return "Start download"
   if (track.state === "downloading") return "Download in progress"
   if (track.state === "downloaded" || track.state === "quality_failed") return "Run quality check"
-  if (track.state === "ready_for_conversion") return "Tag in Picard"
+  if (track.state === "ready_for_conversion") return "Run Beets tagging"
   if (track.state === "tagging_review" || track.state === "picard_pending") return "Finish tagging"
   if (track.state === "ready_for_rekordbox" || track.state === "rekordbox_pending") return "Send to Rekordbox"
   if (track.state === "failed") return "Review error"

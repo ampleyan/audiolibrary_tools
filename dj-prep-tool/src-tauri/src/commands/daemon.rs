@@ -130,7 +130,9 @@ pub async fn validate_setup(app: AppHandle) -> Vec<SetupCheck> {
         ("Sockseek credentials", "sockseek_username", true),
         ("Prep inbox", "prep_inbox_dir", true),
         ("Rekordbox folder", "rekordbox_import_dir", false),
-        ("Picard executable", "picard_path", false),
+        ("Beets executable", "beets_path", false),
+        ("Music library", "music_library_dir", false),
+        ("Beets configuration", "beets_config_dir", false),
         ("ffmpeg executable", "ffmpeg_path", false),
     ] {
         let value = config_store::get(&app, key).unwrap_or_default();
