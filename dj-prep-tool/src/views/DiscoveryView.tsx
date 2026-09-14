@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
+import { SimilarPanel } from "./ReviewView";
 import type { RekordboxTrack, SimilarTrack, TrackRow } from "../lib/types";
 
 function nameOf(track: { artist: string; title: string }) {
@@ -10,7 +11,7 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
   const [mode, setMode] = useState("library");
   const [tracks, setTracks] = useState<RekordboxTrack[]>([]);
   const [pipeline, setPipeline] = useState<TrackRow[]>([]);
-  const [pipelineSeedId, setPipelineSeedId] = useState<number | null>(null);
+  const [relatedSource, setRelatedSource] = useState("rekordbox");
   const [selected, setSelected] = useState<RekordboxTrack | null>(null);
   const [relatedSeed, setRelatedSeed] = useState<{ artist: string; title: string } | null>(null);
   const [results, setResults] = useState<SimilarTrack[] | null>(null);
@@ -30,7 +31,6 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
       const xmlPath = settings.rekordboxXmlPath.trim();
       const rows = await api.listTracks();
       setPipeline(rows);
-      setPipelineSeedId((current) => current && rows.some((track) => track.id === current) ? current : rows[0]?.id ?? null);
       if (!xmlPath) {
         setTracks([]);
         throw new Error("Rekordbox XML not configured. Choose the XML file in Settings.");
@@ -79,9 +79,11 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
     }
   };
 
-  const findPipelineRelated = async () => {
-    const seed = pipeline.find((track) => track.id === pipelineSeedId);
-    if (seed) await findRelatedFor(seed.artist, seed.title);
+  const openPipelineRelated = () => {
+    setRelatedSource("pipeline");
+    setMode("related");
+    setResults(null);
+    setError(null);
   };
 
   const addToPipeline = async (track: { artist: string; title: string; mixVersion?: string | null }) => {
@@ -104,12 +106,12 @@ export default function DiscoveryView({ onNavigate }: { onNavigate: (tab: string
 
   return <div className="view discovery-view">
     <div className="discovery-heading"><div className="view-heading"><h2>Discover</h2><p>Explore your Rekordbox library and find what belongs next.</p></div><button className="button secondary" onClick={() => load(true)} disabled={refreshing}>{refreshing ? "Refreshing…" : "Refresh XML"}</button></div>
-    <div className="discovery-tabs" role="tablist" aria-label="Discovery modes"><button role="tab" aria-selected={mode === "library"} onClick={() => setMode("library")}>Rekordbox library</button><button role="tab" aria-selected={mode === "related"} onClick={() => setMode("related")} disabled={!selected && !pipeline.length}>Related music</button></div>
-    {pipeline.length > 0 && <div className="pipeline-seed"><label htmlFor="pipeline-seed">Find related from Pipeline</label><select id="pipeline-seed" value={pipelineSeedId ?? ""} onChange={(event) => setPipelineSeedId(Number(event.target.value))}>{pipeline.map((track) => <option key={track.id} value={track.id}>{nameOf(track)} · {track.state.replace(/_/g, " ")}</option>)}</select><button className="button primary" onClick={findPipelineRelated} disabled={!pipelineSeedId || finding}>{finding ? "Finding…" : "Find related"}</button></div>}
+    <div className="discovery-tabs" role="tablist" aria-label="Discovery modes"><button role="tab" aria-selected={mode === "library"} onClick={() => setMode("library")}>Rekordbox library</button><button role="tab" aria-selected={mode === "related"} onClick={() => { setMode("related"); setRelatedSource("pipeline"); }} disabled={!selected && !pipeline.length}>Related music</button></div>
+    {pipeline.length > 0 && <div className="pipeline-seed"><label>Explore Pipeline tracks</label><span>Choose multiple seeds and build a playlist.</span><button className="button primary" onClick={openPipelineRelated}>Choose tracks</button></div>}
     {error && <div className="inline-error" role="alert"><span>{error}</span><button onClick={() => onNavigate("setup")}>Open Settings</button></div>}
     {loading ? <div className="empty-state">Loading Rekordbox library…</div> : !error && !tracks.length ? <div className="empty-state">No tracks were found in this Rekordbox XML.</div> : <>
       {mode === "library" && <><div className="discovery-toolbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search artist, title, genre, playlist" aria-label="Search Rekordbox library" /><select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Filter Rekordbox library"><option value="all">All tracks · {tracks.length}</option><option value="library">In Pipeline · {tracks.length - gapCount}</option><option value="gap">Library gaps · {gapCount}</option></select></div><div className="discovery-browser"><div className="rekordbox-table" role="table" aria-label="Rekordbox tracks"><div className="rekordbox-row rekordbox-header" role="row"><span>Artist</span><span>Title</span><span>BPM</span><span>Key</span><span>Status</span></div>{visibleTracks.map((track) => <button className={`rekordbox-row${selected && nameOf(selected) === nameOf(track) ? " selected" : ""}`} key={`${track.artist}-${track.title}-${track.location}`} onClick={() => { setSelected(track); setResults(null); }} role="row"><span title={track.artist}>{track.artist || "Unknown artist"}</span><span title={track.title}>{track.title}</span><span>{track.bpm ? Math.round(Number(track.bpm)) : "—"}</span><span>{track.key || "—"}</span><span className={track.inLibrary ? "status-known" : "status-gap"}>{track.inLibrary ? "In Pipeline" : "Library gap"}</span></button>)}{!visibleTracks.length && <div className="table-empty">No tracks match this search.</div>}</div><TrackDetail track={selected} adding={adding} onFindRelated={findRelated} onAdd={addToPipeline} /></div></>}
-      {mode === "related" && <RelatedResults seed={relatedSeed} results={results} finding={finding} adding={adding} onBack={() => setMode("library")} onAdd={addToPipeline} />}
+      {mode === "related" && (relatedSource === "pipeline" ? <SimilarPanel tracks={pipeline} onOpenLibrary={() => onNavigate("library")} /> : <RelatedResults seed={relatedSeed} results={results} finding={finding} adding={adding} onBack={() => setMode("library")} onAdd={addToPipeline} />)}
     </>}
   </div>;
 }
