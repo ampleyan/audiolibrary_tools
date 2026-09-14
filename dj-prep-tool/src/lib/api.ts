@@ -3,6 +3,7 @@ import type {
   PublicSettings,
   QualityResult,
   RankedCandidate,
+  RekordboxPreview,
   SimilarTrack,
   SetupCheck,
   TrackRow,
@@ -58,7 +59,7 @@ export const api = {
     call<void>("save_settings", { payload }),
 
   checkRekordbox: (xmlPath: string) =>
-    call<number[]>("check_rekordbox", { xmlPath }),
+    call<RekordboxPreview>("check_rekordbox", { xmlPath }),
 
   importText: (text: string) => call<TrackRow[]>("import_text", { text }),
 

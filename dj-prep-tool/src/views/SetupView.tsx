@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, SaveSettingsPayload } from "../lib/api";
-import type { PublicSettings } from "../lib/types";
+import type { PublicSettings, RekordboxPreview } from "../lib/types";
 
 interface Props {
   settings: PublicSettings;
@@ -67,7 +67,8 @@ export default function SetupView({ settings, onSaved }: Props) {
   const [selectedBackup, setSelectedBackup] = useState("");
   const [restoring, setRestoring] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [rekordboxMatches, setRekordboxMatches] = useState<number | null>(null);
+  const [rekordboxPreview, setRekordboxPreview] = useState<RekordboxPreview | null>(null);
+  const [rekordboxQuery, setRekordboxQuery] = useState("");
 
   useEffect(() => {
     api.checkDaemon().then(setDaemonUp).catch(() => setDaemonUp(false));
@@ -107,14 +108,21 @@ export default function SetupView({ settings, onSaved }: Props) {
 
   const checkRekordbox = async () => {
     setError(null);
-    setRekordboxMatches(null);
+    setRekordboxPreview(null);
     try {
-      const matches = await api.checkRekordbox(form.rekordboxXmlPath?.trim() ?? "");
-      setRekordboxMatches(matches.length);
+      setRekordboxPreview(await api.checkRekordbox(form.rekordboxXmlPath?.trim() ?? ""));
     } catch (e) {
       setError(String(e));
     }
   };
+
+  const filteredRekordboxTracks = useMemo(() => {
+    if (!rekordboxPreview) return [];
+    const query = rekordboxQuery.trim().toLowerCase();
+    return rekordboxPreview.tracksInXml
+      .filter((track) => !query || `${track.artist} ${track.title} ${track.mixVersion ?? ""}`.toLowerCase().includes(query))
+      .slice(0, 250);
+  }, [rekordboxPreview, rekordboxQuery]);
 
   const backup = async () => {
     setBackingUp(true);
@@ -245,9 +253,47 @@ export default function SetupView({ settings, onSaved }: Props) {
             disabled={!form.rekordboxXmlPath?.trim()}
             style={{ alignSelf: "flex-start", marginTop: 6, background: "transparent", color: form.rekordboxXmlPath?.trim() ? "#60a5fa" : "#4b5563", border: "1px solid #374151", borderRadius: 4, padding: "5px 10px", fontSize: 12, cursor: form.rekordboxXmlPath?.trim() ? "pointer" : "not-allowed" }}
           >
-            Check existing tracks
+            Preview XML
           </button>
-          {rekordboxMatches !== null && <span style={{ fontSize: 11, color: "#34d399", marginTop: 4 }}>{rekordboxMatches} library track{rekordboxMatches === 1 ? "" : "s"} already in Rekordbox.</span>}
+          {rekordboxPreview && (
+            <div style={{ marginTop: 10, border: "1px solid #293548", borderRadius: 5, padding: 10 }}>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11, marginBottom: 8 }}>
+                <span style={{ color: "#34d399" }}>{rekordboxPreview.tracksInXml.length} tracks parsed from XML</span>
+                <span style={{ color: "#93c5fd" }}>{rekordboxPreview.matchingTrackIds.length} already in library</span>
+              </div>
+              <input
+                style={{ ...input, marginBottom: 8 }}
+                value={rekordboxQuery}
+                onChange={(event) => setRekordboxQuery(event.target.value)}
+                placeholder="Filter parsed tracks…"
+                aria-label="Filter parsed Rekordbox tracks"
+              />
+              <div style={{ maxHeight: 360, overflow: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ color: "#6b7280", textAlign: "left" }}>
+                      <th style={{ padding: "4px 6px 4px 0" }}>Artist</th>
+                      <th style={{ padding: 4 }}>Title</th>
+                      <th style={{ padding: 4 }}>Mix</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRekordboxTracks.map((track, index) => (
+                      <tr key={`${track.artist}-${track.title}-${index}`} style={{ borderTop: "1px solid #1f2937" }}>
+                        <td style={{ padding: "5px 6px 5px 0", color: "#e5e7eb" }}>{track.artist}</td>
+                        <td style={{ padding: 5, color: "#e5e7eb" }}>{track.title}</td>
+                        <td style={{ padding: 5, color: "#9ca3af" }}>{track.mixVersion ?? ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {filteredRekordboxTracks.length < rekordboxPreview.tracksInXml.filter((track) => {
+                const query = rekordboxQuery.trim().toLowerCase();
+                return !query || `${track.artist} ${track.title} ${track.mixVersion ?? ""}`.toLowerCase().includes(query);
+              }).length && <span style={{ display: "block", color: "#6b7280", fontSize: 11, marginTop: 8 }}>Showing the first 250 matching tracks.</span>}
+            </div>
+          )}
           <span style={{ fontSize: 11, color: "#4b5563", marginTop: 2 }}>Export XML from Rekordbox, then paste its path here. The file is only read.</span>
         </div>
         <PathField label="ffmpeg executable" k="ffmpegPath" />

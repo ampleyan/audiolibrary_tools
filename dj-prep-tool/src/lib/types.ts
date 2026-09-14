@@ -69,6 +69,18 @@ export interface SimilarTrack {
   score: number;
 }
 
+export interface RekordboxTrack {
+  artist: string;
+  title: string;
+  mixVersion: string | null;
+  location: string | null;
+}
+
+export interface RekordboxPreview {
+  tracksInXml: RekordboxTrack[];
+  matchingTrackIds: number[];
+}
+
 export interface Candidate {
   username: string;
   filename: string;
