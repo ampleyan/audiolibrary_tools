@@ -13,26 +13,28 @@ pub fn get_settings(app: AppHandle) -> config_store::PublicSettings {
 
 #[tauri::command]
 pub fn check_rekordbox(app: AppHandle, xml_path: String) -> Result<RekordboxPreview, String> {
+    use std::collections::HashSet;
     let xml = std::fs::read_to_string(&xml_path)
         .map_err(|e| format!("Cannot read Rekordbox XML: {e}"))?;
-    let tracks_in_xml = crate::rekordbox::parse_tracks(&xml);
-    let tracks = import::list_tracks(&app, None).map_err(|e| e.to_string())?;
-    let candidates = tracks
+    let mut tracks_in_xml = crate::rekordbox::parse_tracks(&xml);
+    let library = import::list_tracks(&app, None).map_err(|e| e.to_string())?;
+    let known: HashSet<(String, String)> = library
         .iter()
-        .map(|track| (track.id, track.artist.clone(), track.title.clone()))
-        .collect::<Vec<_>>();
-    let matching_track_ids = crate::rekordbox::matching_track_ids(&xml, &candidates);
-    Ok(RekordboxPreview {
-        tracks_in_xml,
-        matching_track_ids,
-    })
+        .map(|t| (crate::rekordbox::normalize(&t.artist), crate::rekordbox::normalize(&t.title)))
+        .collect();
+    for track in &mut tracks_in_xml {
+        track.in_library = known.contains(&(
+            crate::rekordbox::normalize(&track.artist),
+            crate::rekordbox::normalize(&track.title),
+        ));
+    }
+    Ok(RekordboxPreview { tracks_in_xml })
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RekordboxPreview {
     pub tracks_in_xml: Vec<crate::rekordbox::RekordboxTrack>,
-    pub matching_track_ids: Vec<i64>,
 }
 
 #[derive(Deserialize)]

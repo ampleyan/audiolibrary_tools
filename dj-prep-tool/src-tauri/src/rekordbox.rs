@@ -8,6 +8,7 @@ pub struct RekordboxTrack {
     pub title: String,
     pub mix_version: Option<String>,
     pub location: Option<String>,
+    pub in_library: bool,
 }
 
 pub fn parse_tracks(xml: &str) -> Vec<RekordboxTrack> {
@@ -34,6 +35,7 @@ pub fn parse_tracks(xml: &str) -> Vec<RekordboxTrack> {
                 title,
                 mix_version: value(&mix_attr),
                 location: value(&location_attr),
+                in_library: false,
             }
             .into()
         })
@@ -72,7 +74,7 @@ pub fn matching_location(xml: &str, artist: &str, title: &str) -> Option<String>
     })
 }
 
-fn normalize(value: &str) -> String {
+pub fn normalize(value: &str) -> String {
     decode_entities(value)
         .split_whitespace()
         .collect::<Vec<_>>()

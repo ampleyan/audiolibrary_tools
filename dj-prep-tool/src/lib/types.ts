@@ -74,11 +74,11 @@ export interface RekordboxTrack {
   title: string;
   mixVersion: string | null;
   location: string | null;
+  inLibrary: boolean;
 }
 
 export interface RekordboxPreview {
   tracksInXml: RekordboxTrack[];
-  matchingTrackIds: number[];
 }
 
 export interface Candidate {

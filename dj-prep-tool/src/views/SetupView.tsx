@@ -259,7 +259,7 @@ export default function SetupView({ settings, onSaved }: Props) {
             <div style={{ marginTop: 10, border: "1px solid #293548", borderRadius: 5, padding: 10 }}>
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11, marginBottom: 8 }}>
                 <span style={{ color: "#34d399" }}>{rekordboxPreview.tracksInXml.length} tracks parsed from XML</span>
-                <span style={{ color: "#93c5fd" }}>{rekordboxPreview.matchingTrackIds.length} already in library</span>
+                <span style={{ color: "#93c5fd" }}>{rekordboxPreview.tracksInXml.filter((t) => t.inLibrary).length} already in library</span>
               </div>
               <input
                 style={{ ...input, marginBottom: 8 }}
@@ -275,14 +275,16 @@ export default function SetupView({ settings, onSaved }: Props) {
                       <th style={{ padding: "4px 6px 4px 0" }}>Artist</th>
                       <th style={{ padding: 4 }}>Title</th>
                       <th style={{ padding: 4 }}>Mix</th>
+                      <th style={{ padding: 4, width: 24 }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredRekordboxTracks.map((track, index) => (
-                      <tr key={`${track.artist}-${track.title}-${index}`} style={{ borderTop: "1px solid #1f2937" }}>
+                      <tr key={`${track.artist}-${track.title}-${index}`} style={{ borderTop: "1px solid #1f2937", opacity: track.inLibrary ? 0.45 : 1 }}>
                         <td style={{ padding: "5px 6px 5px 0", color: "#e5e7eb" }}>{track.artist}</td>
                         <td style={{ padding: 5, color: "#e5e7eb" }}>{track.title}</td>
                         <td style={{ padding: 5, color: "#9ca3af" }}>{track.mixVersion ?? ""}</td>
+                        <td style={{ padding: 5, color: "#34d399", textAlign: "right" }}>{track.inLibrary ? "✓" : ""}</td>
                       </tr>
                     ))}
                   </tbody>
