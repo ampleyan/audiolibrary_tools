@@ -4,6 +4,7 @@ import type {
   QualityResult,
   RankedCandidate,
   SimilarTrack,
+  SetupCheck,
   TrackRow,
   LogEntry,
 } from "./types";
@@ -105,5 +106,6 @@ export const api = {
 
   launchSockseek: () => call<void>("launch_sockseek"),
   checkDaemon: () => call<boolean>("check_daemon"),
+  validateSetup: () => call<SetupCheck[]>("validate_setup"),
   getLogs: () => call<LogEntry[]>("get_logs"),
 };

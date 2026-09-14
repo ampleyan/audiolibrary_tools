@@ -89,3 +89,9 @@ export interface LogEntry {
   timestamp: string;
   message: string;
 }
+
+export interface SetupCheck {
+  name: string;
+  ok: boolean;
+  detail: string;
+}

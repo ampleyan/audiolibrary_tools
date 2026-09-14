@@ -53,6 +53,8 @@ export default function SetupView({ settings, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [daemonUp, setDaemonUp] = useState<boolean | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [checks, setChecks] = useState<{ name: string; ok: boolean; detail: string }[] | null>(null);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     api.checkDaemon().then(setDaemonUp).catch(() => setDaemonUp(false));
@@ -76,6 +78,18 @@ export default function SetupView({ settings, onSaved }: Props) {
   const set = (key: keyof SaveSettingsPayload) =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const validate = async () => {
+    setChecking(true);
+    setError(null);
+    try {
+      setChecks(await api.validateSetup());
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const save = async (markComplete: boolean) => {
     setSaving(true);
@@ -318,7 +332,25 @@ export default function SetupView({ settings, onSaved }: Props) {
         <p style={{ color: "#f87171", fontSize: 13, marginBottom: 16 }}>{error}</p>
       )}
 
+      {checks && (
+        <div style={{ marginBottom: 16, border: "1px solid #293548", borderRadius: 5, padding: "8px 10px" }}>
+          {checks.map((check) => (
+            <div key={check.name} style={{ display: "flex", gap: 8, justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
+              <span style={{ color: check.ok ? "#4ade80" : "#f87171" }}>{check.ok ? "✓" : "!"} {check.name}</span>
+              <span style={{ color: "#6b7280" }}>{check.detail}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 10 }}>
+        <button
+          style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 5, padding: "8px 16px", fontSize: 14, cursor: checking ? "not-allowed" : "pointer" }}
+          disabled={checking}
+          onClick={validate}
+        >
+          {checking ? "Checking…" : "Validate setup"}
+        </button>
         <button
           style={{
             background: "#2563eb",

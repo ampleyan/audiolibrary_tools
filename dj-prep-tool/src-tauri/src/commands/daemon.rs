@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::{Mutex, OnceLock};
 use serde::Serialize;
@@ -13,6 +14,14 @@ static LOGS: OnceLock<Mutex<VecDeque<String>>> = OnceLock::new();
 pub struct LogEntry {
     timestamp: String,
     message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupCheck {
+    pub name: String,
+    pub ok: bool,
+    pub detail: String,
 }
 
 fn log_line(message: String) {
@@ -83,4 +92,45 @@ pub async fn check_daemon(app: AppHandle) -> bool {
     let url = config_store::get(&app, "sockseek_daemon_url")
         .unwrap_or_else(|| "http://127.0.0.1:5030".to_string());
     reqwest::get(&url).await.is_ok()
+}
+
+#[tauri::command]
+pub async fn validate_setup(app: AppHandle) -> Vec<SetupCheck> {
+    let mut checks = Vec::new();
+    let daemon_url = config_store::get(&app, "sockseek_daemon_url")
+        .unwrap_or_else(|| "http://127.0.0.1:5030".to_string());
+    checks.push(SetupCheck {
+        name: "Sockseek daemon".into(),
+        ok: reqwest::get(&daemon_url).await.is_ok(),
+        detail: daemon_url,
+    });
+
+    for (name, key, required) in [
+        ("Sockseek credentials", "sockseek_username", true),
+        ("Prep inbox", "prep_inbox_dir", true),
+        ("Rekordbox folder", "rekordbox_import_dir", false),
+        ("Picard executable", "picard_path", false),
+        ("ffmpeg executable", "ffmpeg_path", false),
+    ] {
+        let value = config_store::get(&app, key).unwrap_or_default();
+        let present = !value.trim().is_empty();
+        let ok = if key == "sockseek_username" {
+            present && config_store::get(&app, "sockseek_password").is_some()
+        } else if present {
+            Path::new(&value).exists()
+        } else {
+            !required
+        };
+        let detail = if key == "sockseek_username" {
+            if ok { "credentials saved" } else { "username and password required" }.into()
+        } else if present {
+            if ok { "path exists" } else { "path not found" }.into()
+        } else if required {
+            "required".into()
+        } else {
+            "optional".into()
+        };
+        checks.push(SetupCheck { name: name.into(), ok, detail });
+    }
+    checks
 }
