@@ -337,10 +337,12 @@ function TrackCard({
   track,
   onRefresh,
   onDelete,
+  onTrackChanged,
 }: {
   track: TrackRow;
-  onRefresh: () => void;
+  onRefresh: () => Promise<void>;
   onDelete: (id: number) => void;
+  onTrackChanged?: (track: TrackRow) => void;
 }) {
   const [searching, setSearching] = useState(false);
   const [expanded, setExpanded] = useState(track.state === "matched");
@@ -360,7 +362,7 @@ function TrackCard({
     setErr(null);
     try {
       await api.searchTrack(track.id);
-      onRefresh();
+      await onRefresh();
       setExpanded(true);
     } catch (e) {
       setErr(String(e));
@@ -374,7 +376,7 @@ function TrackCard({
     setErr(null);
     try {
       await api.searchTrackLoose(track.id);
-      onRefresh();
+      await onRefresh();
       setExpanded(true);
     } catch (e) {
       setErr(String(e));
@@ -388,7 +390,8 @@ function TrackCard({
     setErr(null);
     try {
       await api.approveCandidate(track.id, rc.candidate.username, rc.candidate.filename);
-      onRefresh();
+      onTrackChanged?.({ ...track, state: "approved", selected_username: rc.candidate.username, selected_filename: rc.candidate.filename });
+      await onRefresh();
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -686,6 +689,12 @@ function TrackCard({
         </div>
       )}
 
+      {isMatched && candidates.length > 0 && (
+        <div style={{ borderTop: "1px solid #064e3b", borderBottom: "1px solid #064e3b", background: "#062e2b", padding: "9px 14px", color: "#6ee7b7", fontSize: 12 }}>
+          Match found. Choose a file below to move this track to Download.
+        </div>
+      )}
+
       {err && (
         <p style={{ color: "#f87171", fontSize: 12, padding: "0 14px 10px" }}>
           {err}
@@ -723,7 +732,7 @@ function TrackCard({
   );
 }
 
-export default function ReviewView() {
+export default function ReviewView({ onTrackChanged }: { onTrackChanged?: (track: TrackRow) => void }) {
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchingAll, setSearchingAll] = useState(false);
@@ -796,6 +805,7 @@ export default function ReviewView() {
       const best = [...parseCandidates(track)].sort((a, b) => b.score - a.score)[0];
       try {
         await api.approveCandidate(track.id, best.candidate.username, best.candidate.filename);
+        onTrackChanged?.({ ...track, state: "approved", selected_username: best.candidate.username, selected_filename: best.candidate.filename });
       } catch (e) {
         failures.push(`${track.artist} – ${track.title}: ${String(e)}`);
       }
@@ -907,7 +917,7 @@ export default function ReviewView() {
         </p>
       ) : (
         tracks.map((t) => (
-          <TrackCard key={t.id} track={t} onRefresh={load} onDelete={removeTrack} />
+          <TrackCard key={t.id} track={t} onRefresh={load} onDelete={removeTrack} onTrackChanged={onTrackChanged} />
         ))
       )}
     </div>
