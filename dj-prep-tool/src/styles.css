@@ -114,6 +114,16 @@ button.rekordbox-row { cursor: pointer; }
 .similar-player-meta strong { min-width: 0; flex: 1; overflow: hidden; color: #fff0f7; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .similar-player-meta button { border: 1px solid #6b3152; border-radius: 5px; background: transparent; color: #d9b8c9; padding: 4px 8px; cursor: pointer; font-size: 11px; }
 .similar-player iframe { display: block; width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; border-radius: 6px; }
+.persistent-player { position: fixed; right: 18px; bottom: 18px; z-index: 15; width: min(440px, calc(100vw - 36px)); padding: 10px; border: 1px solid #ff4fa3; border-radius: 9px; background: #20101b; box-shadow: 0 12px 32px rgba(0, 0, 0, .45); }
+.persistent-player-info { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 8px; }
+.persistent-player-info span { color: #ff6fb5; font-size: 10px; white-space: nowrap; }
+.persistent-player-info strong { min-width: 0; flex: 1; overflow: hidden; color: #fff0f7; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.persistent-player-info small { color: #a48e9b; font-size: 10px; white-space: nowrap; }
+.persistent-player-info em { color: #6ee7b7; font-size: 10px; font-style: normal; white-space: nowrap; }
+.persistent-player-actions { display: flex; gap: 6px; margin-bottom: 8px; }
+.persistent-player-actions button { border: 1px solid #6b3152; border-radius: 5px; background: #1b121a; color: #d9b8c9; padding: 5px 8px; cursor: pointer; font-size: 11px; }
+.persistent-player-actions button:disabled { opacity: .4; cursor: not-allowed; }
+.persistent-player iframe { display: block; width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; border-radius: 6px; }
 .button.listen { background: transparent; color: #ff6fb5; }
 .youtube-message { margin: 0 0 10px; font-size: 12px; }
 .youtube-message.error { color: #fca5a5; }

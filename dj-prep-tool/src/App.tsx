@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
-import type { LogEntry, PublicSettings } from "./lib/types";
+import type { LogEntry, PublicSettings, SimilarTrack } from "./lib/types";
 import DiscoveryView from "./views/DiscoveryView";
 import ImportView from "./views/ImportView";
 import LibraryView from "./views/LibraryView";
@@ -9,6 +9,10 @@ import PrepareView, { type PrepareStage } from "./views/PrepareView";
 import SetupView from "./views/SetupView";
 
 type Tab = "import" | "pipeline" | "library" | "prepare" | "discover" | "setup";
+
+function getVideoId(url: string) {
+  return url.match(/[?&]v=([^&]+)/)?.[1] ?? url.match(/youtu\.be\/([^?]+)/)?.[1] ?? null;
+}
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "pipeline", label: "Overview" },
@@ -25,6 +29,8 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [player, setPlayer] = useState<{ tracks: SimilarTrack[]; index: number } | null>(null);
+  const [playerMessage, setPlayerMessage] = useState<string | null>(null);
   const navigate = (nextTab: string) => {
     if (nextTab === "review") {
       setPrepareStage("find");
@@ -149,7 +155,7 @@ export default function App() {
         {tab === "pipeline" && <PipelineView onNavigate={navigate} />}
         {tab === "library" && <LibraryView onNavigate={navigate} />}
         {tab === "prepare" && <PrepareView stage={prepareStage} onStageChange={setPrepareStage} />}
-        {tab === "discover" && <DiscoveryView onNavigate={navigate} />}
+        {tab === "discover" && <DiscoveryView onNavigate={navigate} onPlayTrack={(tracks, index) => { setPlayer({ tracks, index }); setPlayerMessage(null); }} />}
         {tab === "setup" && (
           <SetupView
             settings={settings}
@@ -160,10 +166,34 @@ export default function App() {
           />
         )}
       </main>
+      {player && <PersistentPlayer player={player} onChange={setPlayer} onStop={() => setPlayer(null)} message={playerMessage} onAdd={async () => {
+        const track = player.tracks[player.index];
+        if (!track) return;
+        try {
+          const mix = track.mixVersion ? ` (${track.mixVersion})` : "";
+          const added = await api.importText(`${track.artist} - ${track.title}${mix}`);
+          setPlayerMessage(added.length ? "Added to Library" : "Already in Library");
+        } catch (e) {
+          setPlayerMessage(String(e));
+        }
+      }} />}
       {showLogs && <section aria-label="Application logs" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 20, background: "#0d131a", borderTop: "1px solid #344454", padding: "10px 18px", boxShadow: "0 -8px 24px #0008" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><strong style={{ color: "#d5e6ef", fontSize: 12 }}>Logs</strong><span style={{ color: "#6f8293", fontSize: 11 }}>{logs.length} recent entries</span></div>
         <pre style={{ maxHeight: 180, overflow: "auto", margin: 0, color: "#9fb2bf", font: "11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace", whiteSpace: "pre-wrap" }}>{logs.length ? logs.map((entry, index) => <div key={`${index}-${entry.message}`}>{entry.timestamp && `${entry.timestamp} `}{entry.message}</div>) : "No logs yet."}</pre>
       </section>}
     </div>
   );
+}
+
+function PersistentPlayer({ player, onChange, onStop, message, onAdd }: { player: { tracks: SimilarTrack[]; index: number }; onChange: (player: { tracks: SimilarTrack[]; index: number }) => void; onStop: () => void; message: string | null; onAdd: () => Promise<void> }) {
+  const track = player.tracks[player.index];
+  const videoId = track?.videoUrl ? getVideoId(track.videoUrl) : null;
+  if (!track || !videoId) return null;
+  const hasPrevious = player.index > 0;
+  const hasNext = player.index < player.tracks.length - 1;
+  return <section className="persistent-player" aria-label={`Previewing ${track.artist} ${track.title}`}>
+    <div className="persistent-player-info"><span>Previewing now</span><strong>{track.artist} – {track.title}</strong><small>{player.index + 1} of {player.tracks.length}</small>{message && <em aria-live="polite">{message}</em>}</div>
+    <div className="persistent-player-actions"><button type="button" onClick={() => onChange({ ...player, index: player.index - 1 })} disabled={!hasPrevious} aria-label="Play previous similar track">Previous</button><button type="button" onClick={() => onChange({ ...player, index: player.index + 1 })} disabled={!hasNext} aria-label="Play next similar track">Next</button><button type="button" onClick={onAdd}>Add to Library</button><button type="button" onClick={onStop}>Stop</button></div>
+    <iframe title={`Preview ${track.artist} ${track.title}`} src={`https://www.youtube.com/embed/${videoId}?autoplay=1`} allow="autoplay; encrypted-media" />
+  </section>;
 }

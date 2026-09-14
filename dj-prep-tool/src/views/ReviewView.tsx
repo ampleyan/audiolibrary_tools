@@ -109,13 +109,12 @@ const editInput: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; onOpenLibrary?: () => void }) {
+export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: TrackRow[]; onOpenLibrary?: () => void; onPlayTrack: (tracks: SimilarTrack[], index: number) => void }) {
   const [sourceIds, setSourceIds] = useState<number[]>(tracks[0] ? [tracks[0].id] : []);
   const [similarTracks, setSimilarTracks] = useState<SimilarTrack[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importedCount, setImportedCount] = useState<number | null>(null);
@@ -133,8 +132,6 @@ export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; on
   const visibleTracks = similarTracks
     ?.filter((track) => track.score >= minimumScore)
     .slice(0, maxResults);
-  const playingTrack = playingIndex === null ? null : visibleTracks?.[playingIndex] ?? null;
-  const playingVideoId = playingTrack?.videoUrl ? getVideoId(playingTrack.videoUrl) : null;
 
   useEffect(() => {
     const validIds = sourceIds.filter((id) => tracks.some((track) => track.id === id));
@@ -145,7 +142,6 @@ export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; on
 
   useEffect(() => {
     setSelected(new Set());
-    setPlayingIndex(null);
   }, [maxResults, minimumScore]);
 
   const load = async () => {
@@ -156,7 +152,6 @@ export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; on
     setSimilarTracks(null);
     setSourceLabels({});
     setSelected(new Set());
-    setPlayingIndex(null);
     try {
       const combined = new Map<string, SimilarTrack>();
       const labels: Record<string, string[]> = {};
@@ -271,7 +266,6 @@ export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; on
             setSimilarTracks(null);
             setSourceLabels({});
             setSelected(new Set());
-            setPlayingIndex(null);
             setError(null);
           }} />
           <button onClick={load} disabled={selectedSources.length === 0 || loading} style={{ background: loading ? "#1f2937" : "#4c1d95", color: loading ? "#4b5563" : "#ddd6fe", border: "1px solid #6d28d9", borderRadius: 5, padding: "6px 12px", fontSize: 12, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
@@ -309,21 +303,16 @@ export function SimilarPanel({ tracks, onOpenLibrary }: { tracks: TrackRow[]; on
             </label>
             {visibleTracks?.length === 0 && <span style={{ color: "#f59e0b", fontSize: 11 }}>No tracks match these filters.</span>}
           </div>
-          {playingTrack && playingVideoId && <div className="similar-player" aria-label={`Previewing ${playingTrack.artist} ${playingTrack.title}`}>
-            <div className="similar-player-meta"><span>Previewing now</span><strong>{playingTrack.artist} – {playingTrack.title}</strong><button type="button" onClick={() => setPlayingIndex(null)}>Stop</button></div>
-            <iframe title={`Preview ${playingTrack.artist} ${playingTrack.title}`} src={`https://www.youtube.com/embed/${playingVideoId}?autoplay=1`} allow="autoplay; encrypted-media" />
-          </div>}
           <div style={{ maxHeight: 320, overflowY: "auto" }}>
             {visibleTracks?.map((track, index) => {
               const videoId = track.videoUrl ? getVideoId(track.videoUrl) : null;
-              const isPlaying = playingIndex === index;
               const key = track.cosineId || `${track.artist}\u0000${track.title}`;
               return <div key={`${track.cosineId}-${index}`} style={{ borderTop: index > 0 ? "1px solid #1f2937" : "none" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 12 }}>
                   <input type="checkbox" checked={selected.has(index)} onChange={() => toggleSelect(index)} aria-label={`Select ${track.artist} ${track.title}`} style={{ flexShrink: 0, accentColor: "#a78bfa", cursor: "pointer" }} />
                   <span style={{ color: "#6b7280", width: 34, textAlign: "right", flexShrink: 0 }}>{track.score.toFixed(3)}</span>
                   <span style={{ flex: "0 1 auto", minWidth: 0, maxWidth: "calc(100% - 96px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#d1d5db" }}>{track.artist} – {track.title}{track.mixVersion && <span style={{ color: "#6b7280", marginLeft: 6 }}>{track.mixVersion}</span>}</span>
-                  {videoId && <button onClick={() => setPlayingIndex(isPlaying ? null : index)} aria-label={isPlaying ? "Stop preview" : "Play preview"} style={{ flexShrink: 0, background: isPlaying ? "#1e3a5f" : "transparent", color: isPlaying ? "#60a5fa" : "#4b5563", border: isPlaying ? "1px solid #1e40af" : "none", borderRadius: 4, padding: "2px 7px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{isPlaying ? "⏹" : "▶"}</button>}
+                {videoId && <button onClick={() => onPlayTrack(visibleTracks ?? [], index)} aria-label="Play preview" style={{ flexShrink: 0, background: "transparent", color: "#4b5563", border: "none", borderRadius: 4, padding: "2px 7px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>▶</button>}
                 </div>
                 <div style={{ color: "#4b5563", fontSize: 10, padding: "0 0 5px 78px" }}>From {sourceLabels[key]?.join(", ")}</div>
               </div>;
