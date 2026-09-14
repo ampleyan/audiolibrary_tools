@@ -75,9 +75,13 @@ fn resolve_python(app: &AppHandle) -> std::path::PathBuf {
         }
     }
     if let Some(root) = db::project_root() {
-        let venv = root.join(".venv").join("Scripts").join("python.exe");
-        if venv.exists() {
-            return venv;
+        for venv in [
+            root.join("dj-prep-tool").join(".venv").join("Scripts").join("python.exe"),
+            root.join(".venv").join("Scripts").join("python.exe"),
+        ] {
+            if venv.exists() {
+                return venv;
+            }
         }
     }
     std::path::PathBuf::from("python")
