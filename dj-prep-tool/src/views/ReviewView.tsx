@@ -424,6 +424,19 @@ function TrackCard({
     }
   };
 
+  const markNotFound = async () => {
+    setSearching(true);
+    setErr(null);
+    try {
+      await api.updateTrackState(track.id, "not_found");
+      onRefresh();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setSearching(false);
+    }
+  };
+
   const noResults = track.state === "requested" && !!track.search_job_id;
   const canSearch = track.state === "requested" || track.state === "needs_review";
   const isMatched = track.state === "matched";
@@ -601,6 +614,25 @@ function TrackCard({
                 }}
               >
                 {searching ? "Searching…" : "Search loose"}
+              </button>
+            )}
+            {noResults && (
+              <button
+                onClick={markNotFound}
+                disabled={searching}
+                style={{
+                  background: "transparent",
+                  color: searching ? "#4b5563" : "#d1d5db",
+                  border: "1px solid #4b5563",
+                  borderRadius: 4,
+                  padding: "4px 10px",
+                  fontSize: 12,
+                  cursor: searching ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  flexShrink: 0,
+                }}
+              >
+                Mark not found
               </button>
             )}
             {isMatched && (

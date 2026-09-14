@@ -5,6 +5,7 @@ import type { TrackRow, TrackState } from "../lib/types";
 const STATE_COLOR: Record<TrackState, string> = {
   requested: "#60a5fa",
   needs_review: "#fb923c",
+  not_found: "#9ca3af",
   matched: "#c084fc",
   approved: "#34d399",
   downloading: "#facc15",

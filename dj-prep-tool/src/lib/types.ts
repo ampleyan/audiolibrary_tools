@@ -1,6 +1,7 @@
 export type TrackState =
   | "requested"
   | "needs_review"
+  | "not_found"
   | "matched"
   | "approved"
   | "downloading"

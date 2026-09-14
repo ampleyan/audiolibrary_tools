@@ -3,16 +3,18 @@ import { api } from "../lib/api";
 import type { Candidate, QualityResult, RankedCandidate, TrackRow } from "../lib/types";
 import { matchQuality } from "../lib/matchQuality";
 
-type PipelineGroupId = "inbox" | "attention" | "progress" | "ready";
+type PipelineGroupId = "inbox" | "attention" | "progress" | "ready" | "skipped";
 
 const PIPELINE_GROUPS: { id: PipelineGroupId; label: string; description: string; color: string }[] = [
   { id: "inbox", label: "Inbox", description: "New tracks waiting to be reviewed", color: "#60a5fa" },
   { id: "attention", label: "Needs attention", description: "Tracks blocked or needing a fix", color: "#f59e0b" },
   { id: "progress", label: "In progress", description: "Tracks moving through preparation", color: "#a78bfa" },
   { id: "ready", label: "Ready", description: "Tracks ready for DJ use", color: "#34d399" },
+  { id: "skipped", label: "Not found", description: "Tracks with no available file", color: "#9ca3af" },
 ];
 
 function groupForTrack(track: TrackRow): PipelineGroupId {
+  if (track.state === "not_found") return "skipped";
   if (track.state === "dj_ready") return "ready";
   if (track.state === "requested" && !track.search_job_id) return "inbox";
   if (track.state === "needs_review" || track.state === "quality_failed" || track.state === "failed") return "attention";
@@ -21,6 +23,7 @@ function groupForTrack(track: TrackRow): PipelineGroupId {
 }
 
 function nextActionFor(track: TrackRow): string {
+  if (track.state === "not_found") return "Not found";
   if (track.state === "requested" || track.state === "needs_review") return "Search for a file"
   if (track.state === "matched") return "Approve a candidate"
   if (track.state === "approved") return "Start download"
@@ -35,7 +38,7 @@ function nextActionFor(track: TrackRow): string {
 }
 
 function emptyGroups(): Record<PipelineGroupId, TrackRow[]> {
-  return { inbox: [], attention: [], progress: [], ready: [] };
+  return { inbox: [], attention: [], progress: [], ready: [], skipped: [] };
 }
 
 function candidatesFor(track: TrackRow): RankedCandidate[] {
@@ -226,6 +229,7 @@ export default function PipelineView() {
     { label: "Needs attention", value: byGroup.attention.length, color: "#f59e0b" },
     { label: "In progress", value: byGroup.progress.length, color: "#a78bfa" },
     { label: "DJ-ready", value: byGroup.ready.length, color: "#34d399" },
+    { label: "Not found", value: byGroup.skipped.length, color: "#9ca3af" },
     { label: "Completion", value: tracks.length ? `${Math.round((byGroup.ready.length / tracks.length) * 100)}%` : "—", color: "#60a5fa" },
   ];
 

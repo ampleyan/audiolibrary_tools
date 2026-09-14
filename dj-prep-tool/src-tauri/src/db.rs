@@ -181,6 +181,7 @@ mod tests {
         let states = [
             "requested",
             "needs_review",
+            "not_found",
             "matched",
             "approved",
             "downloading",
