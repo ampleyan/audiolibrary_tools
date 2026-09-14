@@ -380,6 +380,26 @@ def command(name, payload):
             target.close()
             source.close()
         return str(destination)
+    if name == "list_backups":
+        backup_dir = DATA_DIR / "backups"
+        if not backup_dir.exists():
+            return []
+        return sorted((path.name for path in backup_dir.iterdir() if path.is_file() and path.name.startswith("dj_prep-") and path.suffix == ".sqlite"), reverse=True)
+    if name == "restore_database":
+        backup_name = payload.get("backupName", "")
+        if Path(backup_name).name != backup_name or not backup_name.startswith("dj_prep-") or not backup_name.endswith(".sqlite"):
+            raise ValueError("invalid backup name")
+        source_path = DATA_DIR / "backups" / backup_name
+        if not source_path.is_file():
+            raise ValueError("backup not found")
+        source = sqlite3.connect(source_path)
+        destination = sqlite3.connect(DB_PATH)
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+            source.close()
+        return None
     raise ValueError(f"Unsupported web command: {name}")
 
 def youtube_callback(query):
