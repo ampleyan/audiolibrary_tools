@@ -54,6 +54,8 @@ export interface PublicSettings {
   hasSockseekCredentials: boolean;
   hasSpotifyCredentials: boolean;
   hasCosineCredentials: boolean;
+  hasTelegramCredentials: boolean;
+  hasTelegramSession: boolean;
 }
 
 export interface SimilarTrack {

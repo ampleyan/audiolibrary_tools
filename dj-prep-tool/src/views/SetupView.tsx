@@ -50,6 +50,9 @@ export default function SetupView({ settings, onSaved }: Props) {
     spotifyClientId: "",
     spotifyClientSecret: "",
     cosineApiKey: "",
+    telegramApiId: "",
+    telegramApiHash: "",
+    telegramSessionPath: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,6 +158,9 @@ export default function SetupView({ settings, onSaved }: Props) {
       if (!payload.spotifyClientId) delete payload.spotifyClientId;
       if (!payload.spotifyClientSecret) delete payload.spotifyClientSecret;
       if (!payload.cosineApiKey) delete payload.cosineApiKey;
+      if (!payload.telegramApiId) delete payload.telegramApiId;
+      if (!payload.telegramApiHash) delete payload.telegramApiHash;
+      if (!payload.telegramSessionPath) delete payload.telegramSessionPath;
       const credentialsChanged = !!payload.sockseekUsername || !!payload.sockseekPassword;
       await api.saveSettings(payload);
       if (credentialsChanged && daemonUp && form.sockseekPath) {
@@ -237,6 +243,30 @@ export default function SetupView({ settings, onSaved }: Props) {
             onChange={set("sockseekDaemonUrl")}
           />
         </div>
+      </section>
+
+      <section style={{ marginBottom: 28 }}>
+        <h3 style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>
+          TELEGRAM (optional)
+        </h3>
+        <p style={{ fontSize: 12, color: "#4b5563", marginBottom: 16 }}>
+          Used to import YouTube links from channels your Telegram account can access. Create API credentials at{" "}
+          <span style={{ color: "#6b7280" }}>my.telegram.org</span>.{" "}
+          {settings.hasTelegramCredentials && <span style={{ color: "#34d399" }}>✓ API credentials saved</span>}
+        </p>
+        <div style={field}>
+          <span style={label}>API ID</span>
+          <input style={input} value={form.telegramApiId ?? ""} onChange={set("telegramApiId")} placeholder={settings.hasTelegramCredentials ? "(leave blank to keep existing)" : "123456"} />
+        </div>
+        <div style={field}>
+          <span style={label}>API hash</span>
+          <input style={input} type="password" autoComplete="new-password" value={form.telegramApiHash ?? ""} onChange={set("telegramApiHash")} placeholder={settings.hasTelegramCredentials ? "(leave blank to keep existing)" : "api hash"} />
+        </div>
+        <div style={field}>
+          <span style={label}>Session path (optional)</span>
+          <input style={input} value={form.telegramSessionPath ?? ""} onChange={set("telegramSessionPath")} placeholder="Leave blank for app data directory" />
+        </div>
+        {settings.hasTelegramSession && <span style={{ fontSize: 11, color: "#34d399" }}>✓ Telegram session saved locally</span>}
       </section>
 
       <section style={{ marginBottom: 28 }}>
