@@ -75,8 +75,13 @@ button.rekordbox-row { cursor: pointer; }
 .detail-grid dd { overflow: hidden; margin: 0; color: #d5e6ef; text-overflow: ellipsis; white-space: nowrap; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .related-view { border: 1px solid #352330; border-radius: 8px; background: #120d14; padding: 16px; }
-.similar-panel > div:first-child { flex-wrap: wrap; align-items: end !important; }
-.similar-panel > div:first-child > div:nth-child(2) { display: grid !important; grid-template-columns: minmax(360px, 1fr) auto; flex: 1; min-width: min(100%, 560px); align-items: end !important; gap: 10px; }
+.similar-panel-layout { display: grid; grid-template-columns: minmax(280px, .9fr) minmax(0, 1.6fr); gap: 18px; align-items: start; }
+.similar-seed-column { display: flex; min-width: 0; flex-direction: column; gap: 10px; }
+.similar-seed-column > button { width: 100%; }
+.similar-results-column { min-width: 0; }
+.similar-column-heading { margin-bottom: 10px; }
+.similar-column-heading h3 { margin: 0; color: #fff7fb; font-size: 15px; }
+.similar-column-heading p { margin: 4px 0 0; color: #a48e9b; font-size: 12px; }
 .seed-picker { width: 100%; min-width: 280px; border: 1px solid #6b3152; border-radius: 9px; background: #0d0a0f; box-shadow: 0 8px 24px rgba(0, 0, 0, .2); overflow: hidden; text-align: left; }
 .seed-picker-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 13px; border-bottom: 1px solid #352330; background: #1a1018; }
 .seed-picker-header div { min-width: 0; }
@@ -132,7 +137,7 @@ button.rekordbox-row { cursor: pointer; }
   .discovery-toolbar { flex-direction: column; }
   .pipeline-seed { align-items: stretch; flex-direction: column; }
   .seed-picker { width: 100%; min-width: 0; }
-  .similar-panel > div:first-child > div:nth-child(2) { grid-template-columns: 1fr; min-width: 0; }
+  .similar-panel-layout { grid-template-columns: 1fr; }
   .similar-row { grid-template-columns: 24px minmax(0, 1fr) 42px; }
   .similar-row button { justify-self: start; }
   .similar-row button.secondary { grid-column: 2 / -1; }
