@@ -18,6 +18,14 @@ pub struct RankedCandidate {
     pub score: u32,
 }
 
+fn acceptable_candidate(c: &Candidate) -> bool {
+    match c.extension.to_lowercase().as_str() {
+        "flac" | "wav" | "aiff" | "aif" => true,
+        "mp3" => c.bit_rate.is_some_and(|bit_rate| bit_rate >= 320),
+        _ => false,
+    }
+}
+
 pub fn score_candidate(c: &Candidate, artist: &str, title: &str, expected_secs: Option<u32>) -> u32 {
     let mut pts = 0u32;
 
@@ -80,6 +88,7 @@ pub fn rank(
 ) -> Vec<RankedCandidate> {
     let mut ranked: Vec<RankedCandidate> = candidates
         .into_iter()
+        .filter(acceptable_candidate)
         .map(|c| {
             let s = score_candidate(&c, artist, title, expected_secs);
             RankedCandidate { candidate: c, score: s }
@@ -159,6 +168,19 @@ mod tests {
         ];
         let ranked = rank(candidates, "Surgeon", "Magneze", Some(300));
         assert_eq!(ranked[0].candidate.extension, "flac");
+    }
+
+    #[test]
+    fn rank_excludes_lossy_candidates_below_320_kbps() {
+        let candidates = vec![
+            make("mp3", Some(128), "surgeon - magneze.mp3", None),
+            make("mp3", Some(320), "surgeon - magneze.mp3", None),
+            make("wav", None, "surgeon - magneze.wav", None),
+            make("aiff", None, "surgeon - magneze.aiff", None),
+        ];
+        let ranked = rank(candidates, "Surgeon", "Magneze", None);
+        assert_eq!(ranked.len(), 3);
+        assert!(ranked.iter().all(|rc| rc.candidate.bit_rate != Some(128)));
     }
 
     #[test]

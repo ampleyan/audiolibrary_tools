@@ -67,6 +67,10 @@ def _extract_mix_version(title):
     return title, None
 
 
+def serialize_track(track):
+    return json.dumps(track, ensure_ascii=True)
+
+
 def fetch(artist, title, api_key):
     import urllib.request
     import urllib.parse
@@ -130,7 +134,7 @@ def main():
     artist, title = sys.argv[1], sys.argv[2]
     try:
         for track in fetch(artist, title, api_key):
-            print(json.dumps(track, ensure_ascii=False), flush=True)
+            print(serialize_track(track), flush=True)
     except Exception as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)

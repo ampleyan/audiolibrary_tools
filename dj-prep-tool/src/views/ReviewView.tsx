@@ -10,6 +10,15 @@ const EXT_COLOR: Record<string, string> = {
   ogg: "#c084fc",
 };
 
+function parseCandidates(track: TrackRow): RankedCandidate[] {
+  if (!track.candidate_json) return [];
+  try {
+    return JSON.parse(track.candidate_json);
+  } catch {
+    return [];
+  }
+}
+
 function ExtBadge({ ext }: { ext: string }) {
   const color = EXT_COLOR[ext.toLowerCase()] ?? "#6b7280";
   return (
@@ -354,14 +363,7 @@ function TrackCard({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const candidates: RankedCandidate[] = (() => {
-    if (!track.candidate_json) return [];
-    try {
-      return JSON.parse(track.candidate_json);
-    } catch {
-      return [];
-    }
-  })();
+  const candidates = parseCandidates(track);
 
   const search = async () => {
     setSearching(true);
@@ -737,21 +739,27 @@ export default function ReviewView() {
   const [searchingAll, setSearchingAll] = useState(false);
   const [searchProgress, setSearchProgress] = useState<{ done: number; total: number } | null>(null);
   const [searchBatchErrors, setSearchBatchErrors] = useState<string[]>([]);
+  const [approvingAll, setApprovingAll] = useState(false);
+  const [approvalProgress, setApprovalProgress] = useState<{ done: number; total: number } | null>(null);
+  const [approvalErrors, setApprovalErrors] = useState<string[]>([]);
 
-  const load = () => {
-    setLoading(true);
-    Promise.all([
-      api.listTracks("requested"),
-      api.listTracks("needs_review"),
-      api.listTracks("matched"),
-      api.listTracks("not_found"),
-    ])
-      .then(([a, b, c, d]) => setTracks([...a, ...b, ...c, ...d]))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const load = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const [a, b, c, d] = await Promise.all([
+        api.listTracks("requested"),
+        api.listTracks("needs_review"),
+        api.listTracks("matched"),
+        api.listTracks("not_found"),
+      ]);
+      setTracks([...a, ...b, ...c, ...d]);
+    } catch {
+    } finally {
+      if (showLoading) setLoading(false);
+    }
   };
 
-  useEffect(load, []);
+  useEffect(() => { void load(); }, []);
 
   const removeTrack = (id: number) =>
     setTracks((prev) => prev.filter((t) => t.id !== id));
@@ -772,18 +780,43 @@ export default function ReviewView() {
       } catch (e) {
         failures.push(`${searchable[i].artist} – ${searchable[i].title}: ${String(e)}`);
       }
+      await load(false);
       setSearchProgress({ done: i + 1, total: searchable.length });
     }
     setSearchingAll(false);
     setSearchProgress(null);
     setSearchBatchErrors(failures);
-    load();
+    await load(false);
   };
 
   const searchableCount = tracks.filter(
     (t) => t.state === "requested" || t.state === "needs_review"
   ).length;
   const looseSearchCount = tracks.filter((t) => t.state === "requested" && !!t.search_job_id).length;
+  const approveableTracks = tracks.filter((track) => track.state === "matched" && parseCandidates(track).length > 0);
+
+  const approveAll = async () => {
+    if (approveableTracks.length === 0) return;
+    setApprovingAll(true);
+    setApprovalErrors([]);
+    setApprovalProgress({ done: 0, total: approveableTracks.length });
+    const failures: string[] = [];
+    for (let i = 0; i < approveableTracks.length; i++) {
+      const track = approveableTracks[i];
+      const best = [...parseCandidates(track)].sort((a, b) => b.score - a.score)[0];
+      try {
+        await api.approveCandidate(track.id, best.candidate.username, best.candidate.filename);
+      } catch (e) {
+        failures.push(`${track.artist} – ${track.title}: ${String(e)}`);
+      }
+      await load(false);
+      setApprovalProgress({ done: i + 1, total: approveableTracks.length });
+    }
+    setApprovingAll(false);
+    setApprovalProgress(null);
+    setApprovalErrors(failures);
+    await load(false);
+  };
 
   return (
     <div className="view review-view" style={{ padding: 24, color: "#f9fafb" }}>
@@ -805,10 +838,24 @@ export default function ReviewView() {
               {searchProgress.done}/{searchProgress.total}
             </span>
           )}
+          {approvalProgress && (
+            <span style={{ fontSize: 12, color: "#6b7280" }}>
+              {approvalProgress.done}/{approvalProgress.total}
+            </span>
+          )}
+          {approveableTracks.length > 0 && (
+            <button
+              onClick={() => void approveAll()}
+              disabled={searchingAll || approvingAll}
+              style={{ background: searchingAll || approvingAll ? "#1f2937" : "#065f46", color: searchingAll || approvingAll ? "#4b5563" : "#34d399", border: "1px solid #047857", borderRadius: 5, padding: "6px 14px", fontSize: 13, cursor: searchingAll || approvingAll ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+            >
+              {approvingAll ? "Approving…" : `Approve all (${approveableTracks.length})`}
+            </button>
+          )}
           {searchableCount > 0 && (
             <button
               onClick={() => searchAll()}
-              disabled={searchingAll}
+              disabled={searchingAll || approvingAll}
               style={{
                 background: searchingAll ? "#1f2937" : "#1e3a5f",
                 color: searchingAll ? "#4b5563" : "#60a5fa",
@@ -826,14 +873,14 @@ export default function ReviewView() {
           {looseSearchCount > 0 && (
             <button
               onClick={() => searchAll(true)}
-              disabled={searchingAll}
+              disabled={searchingAll || approvingAll}
               style={{ background: "transparent", color: searchingAll ? "#4b5563" : "#fbbf24", border: "1px solid #92400e", borderRadius: 5, padding: "6px 14px", fontSize: 13, cursor: searchingAll ? "not-allowed" : "pointer", fontFamily: "inherit" }}
             >
               {searchingAll ? "Searching…" : `Retry loose (${looseSearchCount})`}
             </button>
           )}
           <button
-            onClick={load}
+            onClick={() => void load()}
             style={{
               background: "transparent",
               color: "#6b7280",
@@ -853,6 +900,12 @@ export default function ReviewView() {
       {searchBatchErrors.length > 0 && (
         <div style={{ marginBottom: 14, padding: "8px 10px", border: "1px solid #7f1d1d", borderRadius: 5, background: "#1a0c0c", color: "#fca5a5", fontSize: 12 }}>
           {searchBatchErrors.length} search{searchBatchErrors.length === 1 ? "" : "es"} failed. Open the affected track to retry.
+        </div>
+      )}
+
+      {approvalErrors.length > 0 && (
+        <div style={{ marginBottom: 14, padding: "8px 10px", border: "1px solid #7f1d1d", borderRadius: 5, background: "#1a0c0c", color: "#fca5a5", fontSize: 12 }}>
+          {approvalErrors.length} approval{approvalErrors.length === 1 ? "" : "s"} failed. Open the affected track to retry.
         </div>
       )}
 
