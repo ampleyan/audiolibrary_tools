@@ -216,6 +216,12 @@ export default function PipelineView() {
   };
 
   const attentionTrack = tracks.find((track) => groupForTrack(track) === "attention");
+  const healthStats = [
+    { label: "Needs attention", value: byGroup.attention.length, color: "#f59e0b" },
+    { label: "In progress", value: byGroup.progress.length, color: "#a78bfa" },
+    { label: "DJ-ready", value: byGroup.ready.length, color: "#34d399" },
+    { label: "Completion", value: tracks.length ? `${Math.round((byGroup.ready.length / tracks.length) * 100)}%` : "—", color: "#60a5fa" },
+  ];
 
   return (
     <div className="view pipeline-view" style={{ padding: 24, color: "#f9fafb" }}>
@@ -225,6 +231,15 @@ export default function PipelineView() {
           {attentionTrack && <button onClick={() => setSelectedTrack(attentionTrack)} style={buttonStyle}>Continue</button>}
           <button onClick={load} style={secondaryButtonStyle}>Refresh</button>
         </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, marginBottom: 18 }} aria-label="Library health summary">
+        {healthStats.map((stat) => (
+          <div key={stat.label} style={{ background: "#111827", border: "1px solid #293548", borderRadius: 6, padding: "10px 12px" }}>
+            <div style={{ color: "#6b7280", fontSize: 11 }}>{stat.label}</div>
+            <div style={{ color: stat.color, fontSize: 20, fontWeight: 600, marginTop: 3 }}>{stat.value}</div>
+          </div>
+        ))}
       </div>
 
       {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in the Pipeline yet. Add tracks to get started.</p> : <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>{PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} onOpen={setSelectedTrack} />)}</div>}
