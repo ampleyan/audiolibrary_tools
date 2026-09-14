@@ -127,7 +127,11 @@ def parse_csv(content):
 
 def insert(draft):
     conn = db()
-    cur = conn.execute("INSERT INTO tracks (artist,title,mix_version,source_url,state,error) VALUES (?,?,?,?,?,?)", draft)
+    artist, title, mix_version, source_url, state, error = draft
+    exists = conn.execute("SELECT EXISTS(SELECT 1 FROM tracks WHERE lower(trim(artist))=lower(trim(?)) AND lower(trim(title))=lower(trim(?)))", (artist, title)).fetchone()[0]
+    if exists:
+        error = f"{error}; duplicate of existing track" if error else "duplicate of existing track"
+    cur = conn.execute("INSERT INTO tracks (artist,title,mix_version,source_url,state,error) VALUES (?,?,?,?,?,?)", (artist, title, mix_version, source_url, state, error))
     row = conn.execute("SELECT * FROM tracks WHERE id=?", (cur.lastrowid,)).fetchone()
     conn.commit()
     conn.close()

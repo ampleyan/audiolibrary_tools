@@ -357,6 +357,19 @@ const SELECT_COLS: &str =
 
 pub fn insert_track(app: &AppHandle, draft: &TrackDraft) -> Result<TrackRow, rusqlite::Error> {
     let conn = db::open(app)?;
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM tracks WHERE lower(trim(artist)) = lower(trim(?1)) AND lower(trim(title)) = lower(trim(?2)))",
+        params![draft.artist, draft.title],
+        |r| r.get(0),
+    )?;
+    let error = if exists {
+        Some(match draft.notes.as_deref() {
+            Some(notes) => format!("{notes}; duplicate of existing track"),
+            None => "duplicate of existing track".to_string(),
+        })
+    } else {
+        draft.notes.clone()
+    };
     conn.execute(
         "INSERT INTO tracks (artist, title, mix_version, source_url, state, error)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -366,7 +379,7 @@ pub fn insert_track(app: &AppHandle, draft: &TrackDraft) -> Result<TrackRow, rus
             draft.mix_version,
             draft.source_url,
             draft.state,
-            draft.notes
+            error
         ],
     )?;
     let id = conn.last_insert_rowid();
