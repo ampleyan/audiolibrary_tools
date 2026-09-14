@@ -395,6 +395,15 @@ pub fn insert_track(app: &AppHandle, draft: &TrackDraft) -> Result<TrackRow, rus
     )
 }
 
+pub fn track_exists(app: &AppHandle, artist: &str, title: &str) -> Result<bool, rusqlite::Error> {
+    let conn = db::open(app)?;
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM tracks WHERE lower(trim(artist)) = lower(trim(?1)) AND lower(trim(title)) = lower(trim(?2)))",
+        params![artist, title],
+        |row| row.get(0),
+    )
+}
+
 pub fn list_tracks(
     app: &AppHandle,
     state_filter: Option<&str>,

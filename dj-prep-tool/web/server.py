@@ -153,6 +153,12 @@ def insert(draft):
     conn.close()
     return row_json(row)
 
+def track_exists(artist, title):
+    conn = db()
+    exists = conn.execute("SELECT EXISTS(SELECT 1 FROM tracks WHERE lower(trim(artist))=lower(trim(?)) AND lower(trim(title))=lower(trim(?)))", (artist, title)).fetchone()[0]
+    conn.close()
+    return bool(exists)
+
 def tracks(state=None):
     conn = db()
     if state:
@@ -291,7 +297,16 @@ def command(name, payload):
         if result.returncode:
             raise ValueError(result.stderr.strip() or "YouTube metadata failed")
         message_url = payload.get("messageUrl") or url
-        rows = [insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), message_url, draft.get("state", "needs_review"), draft.get("notes"))) for draft in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
+        rows = []
+        for line in result.stdout.splitlines():
+            if not line.strip():
+                continue
+            draft = json.loads(line)
+            artist = draft.get("artist", "")
+            title = draft.get("title", "")
+            if track_exists(artist, title):
+                continue
+            rows.append(insert((artist, title, draft.get("mix_version"), message_url, draft.get("state", "needs_review"), draft.get("notes"))))
         import_tag = payload.get("importTag") or "Telegram"
         conn = db()
         for row in rows:
@@ -313,7 +328,12 @@ def command(name, payload):
             for line in result.stdout.splitlines():
                 if line.strip():
                     draft = json.loads(line)
-                    added.append(insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), message.get("message_url") or draft.get("source_url") or url, draft.get("state", "needs_review"), draft.get("notes"))))
+                    artist = draft.get("artist", "")
+                    title = draft.get("title", "")
+                    if track_exists(artist, title):
+                        skipped.append(f"{artist} - {title}: already in library")
+                        continue
+                    added.append(insert((artist, title, draft.get("mix_version"), message.get("message_url") or draft.get("source_url") or url, draft.get("state", "needs_review"), draft.get("notes"))))
         return {"tracks": added, "skipped": skipped}
     if name == "list_tracks": return tracks(payload.get("state"))
     if name == "list_activity":

@@ -87,13 +87,14 @@ pub fn import_csv(app: AppHandle, content: String) -> Result<Vec<import::TrackRo
 
 #[tauri::command]
 pub async fn import_youtube(app: AppHandle, url: String) -> Result<Vec<import::TrackRow>, String> {
-    import_youtube_url(&app, &url, None).await
+    import_youtube_url(&app, &url, None, false).await
 }
 
 async fn import_youtube_url(
     app: &AppHandle,
     url: &str,
     source_override: Option<&str>,
+    skip_duplicates: bool,
 ) -> Result<Vec<import::TrackRow>, String> {
     let python = resolve_python(app);
     let script = resolve_yt_fetch(app);
@@ -134,6 +135,11 @@ async fn import_youtube_url(
             .map_err(|e| format!("Invalid JSON from yt_fetch.py: {e}\nLine: {line}"))?;
         if let Some(source) = source_override {
             draft.source_url = Some(source.to_string());
+        }
+        if skip_duplicates
+            && import::track_exists(app, &draft.artist, &draft.title).map_err(|e| e.to_string())?
+        {
+            continue;
         }
         rows.push(import::insert_track(&app, &draft).map_err(|e| e.to_string())?);
     }
@@ -288,7 +294,7 @@ pub async fn import_telegram_link(
     message_url: String,
     import_tag: String,
 ) -> Result<Vec<import::TrackRow>, String> {
-    let rows = import_youtube_url(&app, &url, Some(&message_url)).await?;
+    let rows = import_youtube_url(&app, &url, Some(&message_url), true).await?;
     let conn = db::open(&app).map_err(|e| e.to_string())?;
     for row in &rows {
         conn.execute(

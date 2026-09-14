@@ -380,6 +380,9 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
         try {
           const added = await api.importTelegramLink(link.url, link.messageUrl, importTag);
           imported += added.length;
+          if (added.length === 0) {
+            skipped.push(`${link.url}: already in library`);
+          }
           await refresh();
         } catch (e) {
           skipped.push(`${link.url}: ${String(e)}`);
