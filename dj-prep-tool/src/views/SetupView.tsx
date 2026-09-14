@@ -38,7 +38,9 @@ export default function SetupView({ settings, onSaved }: Props) {
     sockseekPath: settings.sockseekPath,
     sockseekDaemonUrl: settings.sockseekDaemonUrl || "http://127.0.0.1:5030",
     prepInboxDir: settings.prepInboxDir,
-    picardPath: settings.picardPath,
+    beetsPath: settings.beetsPath,
+    musicLibraryDir: settings.musicLibraryDir,
+    beetsConfigDir: settings.beetsConfigDir,
     ffmpegPath: settings.ffmpegPath,
     rekordboxImportDir: settings.rekordboxImportDir,
     pythonPath: settings.pythonPath,
@@ -191,8 +193,10 @@ export default function SetupView({ settings, onSaved }: Props) {
         </h3>
         <PathField label="Sockseek.exe" k="sockseekPath" />
         <PathField label="Prep inbox folder" k="prepInboxDir" />
+        <PathField label="Beets executable" k="beetsPath" />
+        <PathField label="Music library folder" k="musicLibraryDir" />
+        <PathField label="Beets configuration folder" k="beetsConfigDir" />
         <PathField label="Rekordbox import folder" k="rekordboxImportDir" />
-        <PathField label="Picard executable" k="picardPath" />
         <PathField label="ffmpeg executable" k="ffmpegPath" />
         <PathField label="Python executable (leave blank for .venv)" k="pythonPath" />
         <div style={field}>

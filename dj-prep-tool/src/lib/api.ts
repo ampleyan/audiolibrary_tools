@@ -13,7 +13,9 @@ export interface SaveSettingsPayload {
   sockseekPath?: string;
   sockseekDaemonUrl?: string;
   prepInboxDir?: string;
-  picardPath?: string;
+  beetsPath?: string;
+  musicLibraryDir?: string;
+  beetsConfigDir?: string;
   ffmpegPath?: string;
   rekordboxImportDir?: string;
   pythonPath?: string;
