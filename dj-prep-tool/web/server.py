@@ -399,7 +399,21 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(value, ensure_ascii=False).encode()
         self.send_response(status); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
     def do_GET(self):
-        if self.path == "/api/health": self.send_json(200, {"ok": True}); return
+        if self.path == "/api/health":
+            try:
+                conn = db()
+                conn.execute("SELECT 1")
+                conn.close()
+                database_ok = True
+            except Exception:
+                database_ok = False
+            try:
+                request("GET", "")
+                sockseek_ok = True
+            except Exception:
+                sockseek_ok = False
+            self.send_json(200, {"ok": database_ok, "database": database_ok, "sockseek": sockseek_ok})
+            return
         if self.path.startswith("/api/youtube/callback"):
             query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             self.send_response(302); self.send_header("Location", f"/?{youtube_callback(query)}"); self.end_headers(); return
