@@ -125,7 +125,7 @@ def fetch_channel(request, api_id, api_hash, session_path):
         entity = await client.get_entity(int(request["channel_id"]))
         results = []
         seen = set()
-        async for message in client.iter_messages(entity, limit=int(request.get("limit", 100))):
+        async for message in client.iter_messages(entity, limit=int(request.get("limit", 100)), reverse=False):
             urls = extract_youtube_urls(message.message or "")
             for url in urls:
                 if url in seen:
@@ -137,6 +137,19 @@ def fetch_channel(request, api_id, api_hash, session_path):
                 })
         await client.disconnect()
         return results
+
+    return asyncio.run(run())
+
+
+def check_session(api_id, api_hash, session_path):
+    import asyncio
+
+    async def run():
+        client = telegram_client(api_id, api_hash, session_path)
+        await client.connect()
+        authorized = await client.is_user_authorized()
+        await client.disconnect()
+        return {"status": "authorized" if authorized else "not_authorized"}
 
     return asyncio.run(run())
 
@@ -161,6 +174,8 @@ def main():
                 result = login_code(request, api_id, api_hash, session_path)
             elif action == "fetch":
                 result = {"messages": fetch_channel(request, api_id, api_hash, session_path)}
+            elif action == "check":
+                result = check_session(api_id, api_hash, session_path)
             else:
                 raise ValueError("unsupported action")
         print(json.dumps(result, ensure_ascii=True), flush=True)

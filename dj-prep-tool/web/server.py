@@ -277,6 +277,8 @@ def command(name, payload):
         return telegram_request({"action": "login_start", "phone": payload.get("phone", "")}).get("status")
     if name == "telegram_login_code":
         return telegram_request({"action": "login_code", "code": payload.get("code", ""), "password": payload.get("password")}).get("status")
+    if name == "telegram_check":
+        return telegram_request({"action": "check"}).get("status")
     if name == "import_telegram":
         messages = telegram_request({"action": "fetch", "channel_id": payload.get("channelId", ""), "limit": max(1, min(int(payload.get("limit", 100)), 1000))}).get("messages", [])
         added = []
@@ -291,7 +293,7 @@ def command(name, payload):
             for line in result.stdout.splitlines():
                 if line.strip():
                     draft = json.loads(line)
-                    added.append(insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), draft.get("source_url") or url, draft.get("state", "needs_review"), draft.get("notes"))))
+                    added.append(insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), message.get("message_url") or draft.get("source_url") or url, draft.get("state", "needs_review"), draft.get("notes"))))
         return {"tracks": added, "skipped": skipped}
     if name == "list_tracks": return tracks(payload.get("state"))
     if name == "list_activity":

@@ -87,10 +87,14 @@ pub fn import_csv(app: AppHandle, content: String) -> Result<Vec<import::TrackRo
 
 #[tauri::command]
 pub async fn import_youtube(app: AppHandle, url: String) -> Result<Vec<import::TrackRow>, String> {
-    import_youtube_url(&app, &url).await
+    import_youtube_url(&app, &url, None).await
 }
 
-async fn import_youtube_url(app: &AppHandle, url: &str) -> Result<Vec<import::TrackRow>, String> {
+async fn import_youtube_url(
+    app: &AppHandle,
+    url: &str,
+    source_override: Option<&str>,
+) -> Result<Vec<import::TrackRow>, String> {
     let python = resolve_python(app);
     let script = resolve_yt_fetch(app);
     let cookies = config_store::get(&app, "yt_cookies_file").unwrap_or_default();
@@ -126,8 +130,11 @@ async fn import_youtube_url(app: &AppHandle, url: &str) -> Result<Vec<import::Tr
         if line.is_empty() {
             continue;
         }
-        let draft: import::TrackDraft = serde_json::from_str(line)
+        let mut draft: import::TrackDraft = serde_json::from_str(line)
             .map_err(|e| format!("Invalid JSON from yt_fetch.py: {e}\nLine: {line}"))?;
+        if let Some(source) = source_override {
+            draft.source_url = Some(source.to_string());
+        }
         rows.push(import::insert_track(&app, &draft).map_err(|e| e.to_string())?);
     }
     Ok(rows)
@@ -224,6 +231,16 @@ pub async fn telegram_login_code(
 }
 
 #[tauri::command]
+pub async fn telegram_check(app: AppHandle) -> Result<String, String> {
+    let result = run_telegram_action(&app, serde_json::json!({ "action": "check" })).await?;
+    result
+        .get("status")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or("Telegram helper returned no session status".into())
+}
+
+#[tauri::command]
 pub async fn import_telegram(
     app: AppHandle,
     channel_id: String,
@@ -246,7 +263,8 @@ pub async fn import_telegram(
         if url.is_empty() {
             continue;
         }
-        match import_youtube_url(&app, url).await {
+        let source = message.get("message_url").and_then(Value::as_str);
+        match import_youtube_url(&app, url, source).await {
             Ok(mut rows) => tracks.append(&mut rows),
             Err(error) => skipped.push(format!("{url}: {error}")),
         }

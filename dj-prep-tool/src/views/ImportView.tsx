@@ -43,6 +43,16 @@ function StateBadge({ state }: { state: TrackState }) {
   );
 }
 
+function sourceLabel(sourceUrl: string | null) {
+  if (!sourceUrl) return "—";
+  const value = sourceUrl.toLowerCase();
+  if (value.includes("t.me/")) return "Telegram";
+  if (value.includes("youtube.com") || value.includes("youtu.be")) return "YouTube";
+  if (value.includes("spotify.com")) return "Spotify";
+  if (value.includes("apple.com")) return "Apple Music";
+  return "Link";
+}
+
 function TrackList({
   tracks,
   onDelete,
@@ -128,6 +138,7 @@ function TrackList({
             <th style={{ padding: "6px 10px", fontWeight: 500 }}>Artist</th>
             <th style={{ padding: "6px 10px", fontWeight: 500 }}>Title</th>
             <th style={{ padding: "6px 10px", fontWeight: 500 }}>Mix</th>
+            <th style={{ padding: "6px 10px", fontWeight: 500 }}>Source</th>
             <th style={{ padding: "6px 10px", fontWeight: 500 }}>State</th>
             <th style={{ padding: "6px 0", fontWeight: 500 }} />
           </tr>
@@ -158,6 +169,13 @@ function TrackList({
               </td>
               <td style={{ padding: "7px 10px", color: "#6b7280" }}>
                 {t.mix_version || ""}
+              </td>
+              <td style={{ padding: "7px 10px" }}>
+                {t.source_url ? (
+                  <a href={t.source_url} target="_blank" rel="noreferrer" title={t.source_url} style={{ color: "#60a5fa", fontSize: 12 }}>
+                    {sourceLabel(t.source_url)}
+                  </a>
+                ) : "—"}
               </td>
               <td style={{ padding: "7px 10px" }}>
                 <StateBadge state={t.state} />
@@ -252,6 +270,7 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
   const [telegramCode, setTelegramCode] = useState("");
   const [telegramPassword, setTelegramPassword] = useState("");
   const [telegramStatus, setTelegramStatus] = useState<string | null>(null);
+  const [telegramActivity, setTelegramActivity] = useState<string | null>(null);
   const [telegramSkipped, setTelegramSkipped] = useState<string[]>([]);
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -262,6 +281,11 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
   useEffect(() => {
     api.listTracks().then(setTracks).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (mode !== "telegram") return;
+    api.telegramCheck().then(setTelegramStatus).catch(() => setTelegramStatus(null));
+  }, [mode]);
 
   const refresh = () => api.listTracks().then(setTracks).catch(() => {});
 
@@ -290,12 +314,14 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
     setLoading(true);
     setError(null);
     setTelegramStatus(null);
+    setTelegramActivity("Sending a Telegram login code…");
     try {
       setTelegramStatus(await api.telegramLoginStart(telegramPhone.trim()));
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
+      setTelegramActivity(null);
     }
   };
 
@@ -303,12 +329,14 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
     setLoading(true);
     setError(null);
     setTelegramStatus(null);
+    setTelegramActivity("Verifying Telegram login…");
     try {
       setTelegramStatus(await api.telegramLoginCode(telegramCode.trim(), telegramPassword || undefined));
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
+      setTelegramActivity(null);
     }
   };
 
@@ -316,6 +344,7 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
     setLoading(true);
     setError(null);
     setTelegramSkipped([]);
+    setTelegramActivity("Fetching newest Telegram posts first, then resolving YouTube links…");
     try {
       const result = await api.importTelegram(telegramChannelId.trim(), telegramLimit);
       setTracks((prev) => {
@@ -323,8 +352,10 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
         return [...result.tracks, ...prev.filter((track) => !ids.has(track.id))];
       });
       setTelegramSkipped(result.skipped);
+      setTelegramActivity(`Finished: imported ${result.tracks.length} track${result.tracks.length === 1 ? "" : "s"} from the newest ${telegramLimit} posts.`);
     } catch (e) {
       setError(String(e));
+      setTelegramActivity("Telegram fetch failed.");
     } finally {
       setLoading(false);
     }
@@ -476,10 +507,11 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
               </div>
             )}
             {telegramStatus === "password_required" && <p style={{ color: "#fbbf24", fontSize: 12, margin: "10px 0 0" }}>Telegram requires your two-factor password. Enter it above and verify again.</p>}
-            {telegramStatus === "authorized" && <p style={{ color: "#34d399", fontSize: 12, margin: "10px 0 0" }}>Telegram authorized locally.</p>}
+            {telegramStatus === "authorized" && <p style={{ color: "#34d399", fontSize: 12, margin: "10px 0 0" }}>Telegram authorized locally — existing session will be reused.</p>}
             <div style={{ marginTop: 10 }}>
               <button style={btn()} disabled={loading} onClick={importTelegram}>{loading ? "Fetching…" : "Import YouTube links"}</button>
             </div>
+            {telegramActivity && <p aria-live="polite" style={{ color: loading ? "#60a5fa" : "#34d399", fontSize: 12, margin: "10px 0 0" }}>{telegramActivity}</p>}
             {telegramSkipped.length > 0 && <p style={{ color: "#fbbf24", fontSize: 12, margin: "10px 0 0" }}>{telegramSkipped.length} link{telegramSkipped.length === 1 ? "" : "s"} skipped. The first one: {telegramSkipped[0]}</p>}
           </div>
         )}

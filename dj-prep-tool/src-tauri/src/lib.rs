@@ -31,6 +31,7 @@ pub fn run() {
             commands::import::import_youtube,
             commands::import::telegram_login_start,
             commands::import::telegram_login_code,
+            commands::import::telegram_check,
             commands::import::import_telegram,
             commands::import::list_tracks,
             commands::import::list_activity,

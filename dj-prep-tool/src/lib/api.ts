@@ -70,6 +70,8 @@ export const api = {
   telegramLoginCode: (code: string, password?: string) =>
     call<string>("telegram_login_code", { code, password: password || null }),
 
+  telegramCheck: () => call<string>("telegram_check"),
+
   importTelegram: (channelId: string, limit: number) =>
     call<{ tracks: TrackRow[]; skipped: string[] }>("import_telegram", { channelId, limit }),
 
