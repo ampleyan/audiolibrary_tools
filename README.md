@@ -2,7 +2,7 @@
 
 Music library automation toolkit. Two separate tools:
 
-- **DJ Prep Tool** — Windows desktop app (Tauri + React) for building DJ sets: import tracklists → search Soulseek → download → quality-check → Picard → Rekordbox.
+- **DJ Prep Tool** — Windows desktop app (Tauri + React) and Docker web edition for building DJ sets: import tracklists → search Soulseek → download → quality-check → Beets tagging → Rekordbox.
 - **Python scripts** — Library organiser, Redacted cross-seeder, YouTube→Soulseek batch downloader.
 
 ---
@@ -46,7 +46,7 @@ The app opens to a **Setup** screen. Fill in:
 | Sockseek.exe | Path to `tools/sockseek/sockseek.exe` |
 | Prep inbox folder | Where downloaded files land (sockseek output dir) |
 | Rekordbox import folder | Folder Rekordbox watches for new tracks |
-| Picard executable | Path to `picard.exe` |
+| Rekordbox XML library | Optional exported `rekordbox.xml` used to detect existing tracks |
 | ffmpeg executable | Path to `ffmpeg.exe` (if not on PATH) |
 | Python executable | Leave blank to use `.venv\Scripts\python.exe` automatically |
 | Sockseek daemon URL | `http://127.0.0.1:5030` (default) |
@@ -62,8 +62,18 @@ Import → Review → Downloads → Pipeline
 
 1. **Import** — paste a tracklist, drop a CSV, or enter a YouTube URL.
 2. **Review** — click **Search** on each track; ranked candidates appear (FLAC scored highest, then bitrate). Click **Approve** on the best match.
-3. **Downloads** — click **Start download**, then **Poll for completion** (waits up to 10 min). When done, click **Quality check** to run FFT fake-FLAC detection.
-4. **Pipeline** — kanban board showing every track across all 12 states.
+3. **Downloads** — click **Start download**, then **Poll for completion** (waits up to 10 min). Convert lossless files when needed, run **Quality check**, and run **Beets tagging**.
+4. **Pipeline** — kanban board showing every track across all preparation stages. The Rekordbox handoff checks the configured XML first and does not copy a track already present there.
+
+### Telegram imports
+
+Open **Add tracks → Telegram**, authorize once with Telegram API credentials, preview the newest posts, and import the displayed YouTube links. Existing tracks are skipped using a case-insensitive trimmed Artist + Title match, including duplicates within the same import. **Stop import** finishes the current metadata request and prevents the next link from starting.
+
+The Telegram session is reused locally and stored in the app data directory. Credentials and session files are never committed or displayed in logs.
+
+### Rekordbox duplicate detection
+
+In **Settings**, paste the path to an XML export from Rekordbox and click **Check existing tracks**. Matching uses normalized Artist + Title values and reads the XML without modifying it. When a track is marked imported, a match is recorded as already present and no duplicate file is copied.
 
 ### Track states
 
@@ -71,7 +81,7 @@ Import → Review → Downloads → Pipeline
 requested → matched → approved → downloading → downloaded
                                                      ↓
                                              quality_failed
-                                             picard_pending → ready_for_conversion → dj_ready → rekordbox_pending
+                                             ready_for_conversion → tagging_review → ready_for_rekordbox → dj_ready
 ```
 
 ### Build for production
@@ -149,7 +159,8 @@ audiolibrary_tools/
 │   │   ├── import.rs          ← Title parsing, CSV/text import, DB helpers
 │   │   ├── scoring.rs         ← Candidate ranking (FLAC > MP3, bitrate, filename match)
 │   │   ├── sockseek.rs        ← REST client for Sockseek daemon
-│   │   ├── quality.rs         ← FFT fake-FLAC check via audio_check.py
+│   │   ├── quality.rs         ← Audio quality checks via audio_check.py
+│   │   ├── rekordbox.rs       ← Read-only Rekordbox XML matching
 │   │   ├── config_store.rs    ← Settings CRUD (credentials write-only, never returned)
 │   │   └── commands/          ← Tauri command handlers
 │   └── py/                    ← Python bridge scripts
@@ -177,4 +188,6 @@ audiolibrary_tools/
 - `tools/sockseek/sockseek.conf` is gitignored — contains Soulseek credentials.
 - `data/dj_prep.sqlite` is gitignored — settings table stores Soulseek credentials entered via the Setup UI.
 - The DJ Prep Tool backend never returns credentials to the frontend; the UI only sees `hasSockseekCredentials: bool`.
+- Telegram API credentials and the local Telegram session remain in the ignored app data directory.
+- Rekordbox XML is read-only; the app does not modify Rekordbox's internal database.
 - `config.py` — if it contains API keys, do not commit it. Add it to `.gitignore` or use environment variables.
