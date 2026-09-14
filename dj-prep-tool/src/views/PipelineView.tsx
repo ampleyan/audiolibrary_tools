@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { Candidate, QualityResult, RankedCandidate, TrackRow } from "../lib/types";
+import { matchQuality } from "../lib/matchQuality";
 
 type PipelineGroupId = "inbox" | "attention" | "progress" | "ready";
 
@@ -97,6 +98,7 @@ function TrackDrawer({
   const [error, setError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState(() => candidatesFor(track));
   const [quality, setQuality] = useState<QualityResult | null>(null);
+  const candidateQuality = matchQuality(candidates);
   const nextStepRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -174,7 +176,7 @@ function TrackDrawer({
 
         {(track.state === "requested" || track.state === "needs_review") && <div ref={nextStepRef} style={sectionStyle}><h3 style={sectionHeading}>Next step: find a file</h3><div style={{ display: "flex", gap: 8 }}><button onClick={() => search()} disabled={busy || !artist.trim() || !title.trim()} style={buttonStyle}>{busy ? "Searching…" : "Search"}</button>{track.search_job_id && <button onClick={() => search(true)} disabled={busy} style={secondaryButtonStyle}>Search loose</button>}</div></div>}
 
-        {candidates.length > 0 && (track.state === "matched" || track.state === "requested" || track.state === "needs_review") && <div style={sectionStyle}><h3 style={sectionHeading}>Candidate files</h3><div style={{ display: "grid", gap: 6 }}>{candidates.slice(0, 5).map((ranked) => <div key={`${ranked.candidate.username}-${ranked.candidate.filename}`} style={{ background: "#1f2937", borderRadius: 5, padding: 9 }}><p style={{ color: "#d1d5db", fontSize: 12, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ranked.candidate.filename}>{ranked.candidate.filename}</p><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}><span style={{ color: "#6b7280", fontSize: 11 }}>Score {ranked.score}</span><button onClick={() => approve(ranked.candidate)} disabled={busy} style={buttonStyle}>Approve</button></div></div>)}</div></div>}
+        {candidates.length > 0 && (track.state === "matched" || track.state === "requested" || track.state === "needs_review") && <div style={sectionStyle}><h3 style={sectionHeading}>Candidate files</h3>{candidateQuality && <p style={{ color: candidateQuality.color, fontSize: 11, margin: "0 0 8px" }}>{candidateQuality.label}: {candidateQuality.detail}</p>}<div style={{ display: "grid", gap: 6 }}>{candidates.slice(0, 5).map((ranked) => <div key={`${ranked.candidate.username}-${ranked.candidate.filename}`} style={{ background: "#1f2937", borderRadius: 5, padding: 9 }}><p style={{ color: "#d1d5db", fontSize: 12, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ranked.candidate.filename}>{ranked.candidate.filename}</p><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}><span style={{ color: "#6b7280", fontSize: 11 }}>Score {ranked.score}</span><button onClick={() => approve(ranked.candidate)} disabled={busy} style={buttonStyle}>Approve</button></div></div>)}</div></div>}
 
         {track.state === "approved" && <div style={sectionStyle}><h3 style={sectionHeading}>Download</h3><button onClick={startDownload} disabled={busy} style={buttonStyle}>{busy ? "Starting…" : "Start download"}</button></div>}
         {track.state === "downloading" && <div style={sectionStyle}><h3 style={sectionHeading}>Download</h3><p style={{ color: "#facc15", fontSize: 13, margin: 0 }}>Download in progress. Check the Download & check view for live progress.</p></div>}

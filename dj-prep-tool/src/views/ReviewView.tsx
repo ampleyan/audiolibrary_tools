@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { RankedCandidate, SimilarTrack, TrackRow } from "../lib/types";
+import { matchQuality } from "../lib/matchQuality";
 
 const EXT_COLOR: Record<string, string> = {
   flac: "#4ade80",
@@ -427,6 +428,7 @@ function TrackCard({
   const canSearch = track.state === "requested" || track.state === "needs_review";
   const isMatched = track.state === "matched";
   const needsReview = track.state === "needs_review";
+  const quality = matchQuality(candidates);
 
   return (
     <div
@@ -495,6 +497,7 @@ function TrackCard({
         >
           {noResults ? "no results" : track.state.replace(/_/g, " ")}
         </span>
+        {quality && <span title={quality.detail} style={{ color: quality.color, fontSize: 10, flexShrink: 0 }}>{quality.label}</span>}
 
         {editing ? (
           <>
@@ -662,6 +665,7 @@ function TrackCard({
 
       {isMatched && expanded && candidates.length > 0 && (
         <div style={{ borderTop: "1px solid #111827", padding: "0 14px 10px" }}>
+          {quality && <p style={{ color: quality.color, fontSize: 11, margin: "8px 0 2px" }}>{quality.label}: {quality.detail}</p>}
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ color: "#4b5563", fontSize: 11 }}>
