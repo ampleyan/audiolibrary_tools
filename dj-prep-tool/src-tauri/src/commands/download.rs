@@ -173,6 +173,8 @@ fn find_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
         let fname_str = fname.to_string_lossy();
         if fname_str.to_lowercase() == name_lower {
             Some(entry.path())
+        } else if entry.file_type().ok()?.is_dir() {
+            find_in_dir(&entry.path(), name)
         } else {
             None
         }
@@ -278,7 +280,7 @@ async fn advance_candidate(
 /// downloaded and return the local path.  Timeout: 10 minutes.
 /// Automatically retries the next ranked candidate if Sockseek reports failure.
 #[tauri::command]
-pub async fn poll_download(app: AppHandle, track_id: i64) -> Result<String, String> {
+pub async fn poll_download(app: AppHandle, track_id: i64) -> Result<crate::import::TrackRow, String> {
     let prep_inbox = config_store::get(&app, "prep_inbox_dir")
         .ok_or("prep_inbox_dir not configured")?;
     let inbox_path = PathBuf::from(&prep_inbox);
@@ -291,14 +293,23 @@ pub async fn poll_download(app: AppHandle, track_id: i64) -> Result<String, Stri
 
         if let Some(found) = find_in_dir(&inbox_path, &active.expected_name) {
             let path_str = found.to_string_lossy().to_string();
+            let state = if found
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("mp3"))
+            {
+                "downloaded"
+            } else {
+                "conversion_pending"
+            };
             let conn = db::open(&app).map_err(|e| e.to_string())?;
             conn.execute(
-                "UPDATE tracks SET downloaded_path = ?1, state = 'downloaded' WHERE id = ?2",
-                params![path_str, track_id],
+                "UPDATE tracks SET downloaded_path = ?1, state = ?2 WHERE id = ?3",
+                params![path_str, state, track_id],
             )
             .map_err(|e| e.to_string())?;
             crate::commands::daemon::app_log(format!("[download] completed: track {}", track_id));
-            return Ok(path_str);
+            return crate::import::get_track(&app, track_id).map_err(|e| e.to_string());
         }
 
         if let Ok(files) = client.download_results(&active.dl_job_id).await {

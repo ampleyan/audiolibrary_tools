@@ -3,6 +3,14 @@ use std::path::Path;
 use rusqlite::params;
 use rustfft::{num_complex::Complex, FftPlanner};
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use symphonia::core::audio::SampleBuffer;
+use symphonia::core::codecs::DecoderOptions;
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::probe::Hint;
+use symphonia::default::{get_codecs, get_probe};
 use tauri::AppHandle;
 
 use crate::db;
@@ -16,6 +24,7 @@ pub struct QualityResult {
     pub channels: Option<u32>,
     pub duration_secs: Option<f64>,
     pub spectral_cutoff_hz: Option<u32>,
+    pub spectral_passed: Option<bool>,
     pub notes: String,
 }
 
@@ -31,9 +40,12 @@ pub async fn check_file(
         .map_err(|e| format!("Analysis task panicked: {e}"))?
         .map_err(|e| e)?;
 
-    let (new_state, quality_str) = match result.is_real_flac {
-        Some(false) => ("quality_failed", "fake_flac"),
-        _ => ("ready_for_conversion", "ok"),
+    let (new_state, quality_str) = if result.is_real_flac == Some(false) {
+        ("quality_failed", "fake_flac")
+    } else if result.spectral_passed == Some(false) {
+        ("quality_failed", "low_spectral_cutoff")
+    } else {
+        ("ready_for_conversion", "ok")
     };
 
     let conn = db::open(app).map_err(|e| e.to_string())?;
@@ -55,6 +67,7 @@ fn analyze(path: &str) -> Result<QualityResult, String> {
 
     match ext.as_str() {
         "flac" => analyze_flac(path),
+        "mp3" => analyze_mp3(path),
         other => Ok(QualityResult {
             is_real_flac: None,
             sample_rate: None,
@@ -62,12 +75,122 @@ fn analyze(path: &str) -> Result<QualityResult, String> {
             channels: None,
             duration_secs: None,
             spectral_cutoff_hz: None,
+            spectral_passed: None,
             notes: format!(
                 "{} file — spectral check not applicable",
                 other.to_uppercase()
             ),
         }),
     }
+}
+
+fn analyze_mp3(path: &str) -> Result<QualityResult, String> {
+    let file = File::open(path).map_err(|e| format!("Cannot open MP3: {e}"))?;
+    let mut hint = Hint::new();
+    hint.with_extension("mp3");
+    let source = MediaSourceStream::new(Box::new(file), Default::default());
+    let probed = get_probe()
+        .format(
+            &hint,
+            source,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
+        .map_err(|e| format!("Cannot decode MP3: {e}"))?;
+    let mut format = probed.format;
+    let track = format
+        .default_track()
+        .ok_or_else(|| "MP3 has no audio track".to_string())?;
+    let track_id = track.id;
+    let sample_rate = track
+        .codec_params
+        .sample_rate
+        .ok_or_else(|| "MP3 has no sample rate".to_string())?;
+    let channels = track
+        .codec_params
+        .channels
+        .map(|value| value.count() as u32)
+        .unwrap_or(2);
+    let bit_depth = track.codec_params.bits_per_sample.unwrap_or(0);
+    let total_frames = track.codec_params.n_frames.unwrap_or(0);
+    let duration_secs = track
+        .codec_params
+        .time_base
+        .and_then(|time_base| track.codec_params.n_frames.map(|frames| time_base.calc_time(frames).seconds as f64 + time_base.calc_time(frames).frac))
+        .or_else(|| {
+            if total_frames > 0 {
+                Some(total_frames as f64 / sample_rate as f64)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0.0);
+    let target_frames = (5 * sample_rate) as usize;
+    let start_frame = if total_frames > target_frames as u64 {
+        (45 * sample_rate as u64).min(total_frames - target_frames as u64)
+    } else {
+        0
+    };
+    let mut decoder = get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|e| format!("Cannot decode MP3: {e}"))?;
+    let mut mono_buf = Vec::with_capacity(target_frames);
+    let mut frames_seen = 0_u64;
+
+    while let Ok(packet) = format.next_packet() {
+        if packet.track_id() != track_id {
+            continue;
+        }
+        let decoded = decoder
+            .decode(&packet)
+            .map_err(|e| format!("MP3 decode error: {e}"))?;
+        let mut sample_buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+        sample_buf.copy_interleaved_ref(decoded);
+        let samples = sample_buf.samples();
+        let packet_frames = samples.len() / channels as usize;
+        let packet_end = frames_seen + packet_frames as u64;
+        if packet_end > start_frame {
+            let first_frame = start_frame.saturating_sub(frames_seen) as usize;
+            for frame in first_frame..packet_frames {
+                let offset = frame * channels as usize;
+                let sum: f32 = samples[offset..offset + channels as usize].iter().sum();
+                mono_buf.push(sum / channels as f32);
+                if mono_buf.len() >= target_frames {
+                    break;
+                }
+            }
+        }
+        frames_seen = packet_end;
+        if mono_buf.len() >= target_frames {
+            break;
+        }
+    }
+
+    let (spectral_passed, cutoff_hz) = if mono_buf.len() < 1024 {
+        (None, None)
+    } else {
+        let (passed, cutoff) = run_fft(&mono_buf, sample_rate);
+        (Some(passed), cutoff)
+    };
+    let cutoff_label = cutoff_hz
+        .map(|hz| format!(" — cutoff ~{}kHz", hz / 1000))
+        .unwrap_or_default();
+    let notes = match spectral_passed {
+        Some(true) => format!("MP3 / {}Hz / {}ch — {:.0}s{}", sample_rate, channels, duration_secs, cutoff_label),
+        Some(false) => format!("MP3 / {}Hz / {}ch — {:.0}s — suspicious high-frequency cutoff{}", sample_rate, channels, duration_secs, cutoff_label),
+        None => format!("MP3 / {}Hz / {}ch — spectral sample unavailable", sample_rate, channels),
+    };
+
+    Ok(QualityResult {
+        is_real_flac: None,
+        sample_rate: Some(sample_rate),
+        bit_depth: (bit_depth > 0).then_some(bit_depth),
+        channels: Some(channels),
+        duration_secs: Some(duration_secs),
+        spectral_cutoff_hz: cutoff_hz,
+        spectral_passed,
+        notes,
+    })
 }
 
 fn analyze_flac(path: &str) -> Result<QualityResult, String> {
@@ -167,6 +290,7 @@ fn analyze_flac(path: &str) -> Result<QualityResult, String> {
         channels: Some(channels),
         duration_secs: Some(duration_secs),
         spectral_cutoff_hz: cutoff_hz,
+        spectral_passed: Some(is_real),
         notes,
     })
 }
@@ -234,6 +358,7 @@ mod tests {
             channels: Some(2),
             duration_secs: Some(240.0),
             spectral_cutoff_hz: Some(21000),
+            spectral_passed: Some(true),
             notes: String::new(),
         };
         let j = serde_json::to_string(&r).unwrap();
@@ -243,9 +368,10 @@ mod tests {
     }
 
     #[test]
-    fn non_flac_returns_null() {
-        let r = analyze("/some/file.mp3").unwrap();
+    fn unsupported_format_returns_null() {
+        let r = analyze("/some/file.wav").unwrap();
         assert!(r.is_real_flac.is_none());
-        assert!(r.notes.contains("MP3"));
+        assert!(r.spectral_passed.is_none());
+        assert!(r.notes.contains("WAV"));
     }
 }

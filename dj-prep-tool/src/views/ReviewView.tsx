@@ -443,7 +443,7 @@ function TrackCard({
   };
 
   const noResults = track.state === "requested" && !!track.search_job_id;
-  const canSearch = track.state === "requested" || track.state === "needs_review";
+  const canSearch = track.state === "requested" || track.state === "needs_review" || track.state === "not_found";
   const isMatched = track.state === "matched";
   const needsReview = track.state === "needs_review";
   const quality = matchQuality(candidates);
@@ -744,8 +744,9 @@ export default function ReviewView() {
       api.listTracks("requested"),
       api.listTracks("needs_review"),
       api.listTracks("matched"),
+      api.listTracks("not_found"),
     ])
-      .then(([a, b, c]) => setTracks([...a, ...b, ...c]))
+      .then(([a, b, c, d]) => setTracks([...a, ...b, ...c, ...d]))
       .catch(() => {})
       .finally(() => setLoading(false));
   };

@@ -4,13 +4,14 @@ import type { TrackRow, TrackState } from "../lib/types";
 import DownloadView from "./DownloadView";
 import ReviewView from "./ReviewView";
 
-export type PrepareStage = "find" | "download" | "quality" | "tag" | "rekordbox";
+export type PrepareStage = "find" | "download" | "convert" | "quality" | "tag" | "rekordbox";
 type PreparationBucket = "needsAction" | "running" | "blocked" | "done";
 
 const STAGES: { id: PrepareStage; label: string; description: string; primaryAction: string; states: TrackState[] }[] = [
   { id: "find", label: "Find files", description: "Search Soulseek, compare candidates, and approve the right file.", primaryAction: "Search for a file", states: ["requested", "needs_review", "matched", "not_found"] },
   { id: "download", label: "Download", description: "Start an approved download and monitor it to completion.", primaryAction: "Start download", states: ["approved", "downloading", "failed"] },
-  { id: "quality", label: "Quality", description: "Check downloaded files before Beets tagging.", primaryAction: "Run quality check", states: ["downloaded", "quality_failed"] },
+  { id: "convert", label: "Convert", description: "Convert FLAC and other lossless files to MP3 before quality checking.", primaryAction: "Convert to MP3", states: ["conversion_pending"] },
+  { id: "quality", label: "Quality", description: "Check MP3 files before Beets tagging.", primaryAction: "Run quality check", states: ["downloaded", "converted", "quality_failed"] },
   { id: "tag", label: "Tag", description: "Run Beets after a file passes the quality check.", primaryAction: "Run Beets tagging", states: ["ready_for_conversion", "tagging_review", "picard_pending"] },
   { id: "rekordbox", label: "Rekordbox", description: "Complete the Rekordbox handoff after tagging.", primaryAction: "Mark imported", states: ["ready_for_rekordbox", "rekordbox_pending", "dj_ready"] },
 ];
@@ -25,7 +26,8 @@ const BUCKETS: { id: PreparationBucket; label: string; color: string }[] = [
 function stageForTrack(track: TrackRow): PrepareStage {
   if (["requested", "needs_review", "matched", "not_found"].includes(track.state)) return "find";
   if (["approved", "downloading", "failed"].includes(track.state)) return "download";
-  if (["downloaded", "quality_failed"].includes(track.state)) return "quality";
+  if (track.state === "conversion_pending") return "convert";
+  if (["downloaded", "converted", "quality_failed"].includes(track.state)) return "quality";
   if (["ready_for_conversion", "tagging_review", "picard_pending"].includes(track.state)) return "tag";
   return "rekordbox";
 }
@@ -131,7 +133,7 @@ export default function PrepareView({ stage, onStageChange }: { stage: PrepareSt
         </div>
         <p style={{ color: "#6b7280", fontSize: 12, margin: "0 0 4px" }}>{activeStage.description}</p>
         <p style={{ color: "#93c5fd", fontSize: 12, margin: "0 0 8px" }}>Primary action: {activeStage.primaryAction}</p>
-        {stage === "find" ? <ReviewView /> : <DownloadView states={activeStage.states} embedded selectedTrackId={continuedTrack?.id} emptyMessage={`No tracks are ready for ${activeStage.label.toLowerCase()} yet.`} />}
+        {stage === "find" ? <ReviewView /> : <DownloadView states={activeStage.states} embedded selectedTrackId={continuedTrack?.id} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} emptyMessage={`No tracks are ready for ${activeStage.label.toLowerCase()} yet.`} />}
       </section>
     </div>
   );

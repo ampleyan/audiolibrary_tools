@@ -27,6 +27,8 @@ function nextActionFor(track: TrackRow): string {
   if (track.state === "matched") return "Approve a candidate"
   if (track.state === "approved") return "Start download"
   if (track.state === "downloading") return "Download in progress"
+  if (track.state === "conversion_pending") return "Convert to MP3"
+  if (track.state === "converted") return "Run quality check"
   if (track.state === "downloaded" || track.state === "quality_failed") return "Run quality check"
   if (track.state === "ready_for_conversion") return "Run Beets tagging"
   if (track.state === "tagging_review" || track.state === "picard_pending") return "Finish tagging"

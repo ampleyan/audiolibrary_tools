@@ -46,6 +46,10 @@ pub fn open(app: &AppHandle) -> Result<Connection, rusqlite::Error> {
 pub fn init(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let conn = open(app)?;
     conn.execute_batch(SCHEMA)?;
+    conn.execute(
+        "UPDATE tracks SET state = 'conversion_pending' WHERE state = 'downloaded' AND downloaded_path IS NOT NULL AND lower(downloaded_path) NOT LIKE '%.mp3'",
+        [],
+    )?;
     Ok(())
 }
 

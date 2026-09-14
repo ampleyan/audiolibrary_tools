@@ -90,13 +90,16 @@ export const api = {
     call<void>("start_download", { trackId }),
 
   pollDownload: (trackId: number) =>
-    call<string>("poll_download", { trackId }),
+    call<TrackRow>("poll_download", { trackId }),
 
   checkDownloadProgress: (trackId: number) =>
     call<{ bytesOnDisk: number | null; bytesTotal: number | null }>("check_download_progress", { trackId }),
 
   cancelDownload: (trackId: number) =>
     call<void>("cancel_download", { trackId }),
+
+  convertTrack: (trackId: number) =>
+    call<TrackRow>("convert_track", { trackId }),
 
   tagTrack: (trackId: number) =>
     call<TrackRow>("tag_track", { trackId }),

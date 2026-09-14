@@ -10,6 +10,8 @@ const STATE_COLOR: Record<TrackState, string> = {
   approved: "#34d399",
   downloading: "#facc15",
   downloaded: "#22d3ee",
+  conversion_pending: "#f97316",
+  converted: "#2dd4bf",
   quality_failed: "#f87171",
   picard_pending: "#818cf8",
   ready_for_conversion: "#a3e635",

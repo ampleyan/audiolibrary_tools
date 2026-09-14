@@ -6,6 +6,8 @@ const DOWNLOAD_STATES: TrackState[] = [
   "approved",
   "downloading",
   "downloaded",
+  "conversion_pending",
+  "converted",
   "quality_failed",
   "picard_pending",
   "ready_for_conversion",
@@ -19,7 +21,8 @@ const DOWNLOAD_STATES: TrackState[] = [
 const RETURN_STAGES: { state: TrackState; label: string }[] = [
   { state: "requested", label: "Find files" },
   { state: "approved", label: "Download" },
-  { state: "downloaded", label: "Quality check" },
+  { state: "conversion_pending", label: "Convert" },
+  { state: "converted", label: "Quality check" },
   { state: "ready_for_conversion", label: "Beets tagging" },
   { state: "ready_for_rekordbox", label: "Rekordbox" },
 ];
@@ -30,10 +33,6 @@ function fmt(bytes: number) {
 }
 
 function QualityBadge({ result }: { result: QualityResult }) {
-  if (result.isRealFlac === null) {
-    return <span style={{ color: "#6b7280", fontSize: 12 }}>⊘ {result.notes}</span>;
-  }
-
   const meta = [
     result.sampleRate ? `${(result.sampleRate / 1000).toFixed(1)}kHz` : null,
     result.bitDepth ? `${result.bitDepth}-bit` : null,
@@ -45,6 +44,18 @@ function QualityBadge({ result }: { result: QualityResult }) {
   ]
     .filter(Boolean)
     .join(" · ");
+
+  if (result.isRealFlac === null) {
+    if (result.spectralPassed === null) {
+      return <span style={{ color: "#6b7280", fontSize: 12 }}>⊘ {result.notes}</span>;
+    }
+    return (
+      <span style={{ color: result.spectralPassed ? "#4ade80" : "#f87171", fontSize: 12 }}>
+        {result.spectralPassed ? "✓ MP3 spectral check passed" : "✗ MP3 spectral check failed"}
+        {meta && <span style={{ color: "#374151", marginLeft: 6 }}>{meta}</span>}
+      </span>
+    );
+  }
 
   if (result.isRealFlac) {
     return (
@@ -138,6 +149,7 @@ function DownloadCard({
       if (refresh) onRefresh();
     } catch (e) {
       setErr(String(e));
+      if (refresh) onRefresh();
     } finally {
       setBusy(false);
       setBusyLabel("");
@@ -147,14 +159,15 @@ function DownloadCard({
   const startDownload = () => act("Starting…", () => api.startDownload(track.id));
   const pollDownload = () => act("Polling… (up to 10 min)", () => api.pollDownload(track.id));
   const cancelDownload = () => act("Cancelling…", () => api.cancelDownload(track.id));
+  const convertTrack = () => act("Converting…", () => api.convertTrack(track.id));
   const qualityCheck = () =>
     act("Checking…", async () => {
       const r = await api.runQualityCheck(track.id);
       setQualityResult(r);
       onUpdate({
         ...track,
-        state: r.isRealFlac === false ? "quality_failed" : "ready_for_conversion",
-        quality_result: r.isRealFlac === false ? "fake_flac" : "ok",
+        state: r.isRealFlac === false || r.spectralPassed === false ? "quality_failed" : "ready_for_conversion",
+        quality_result: r.isRealFlac === false ? "fake_flac" : r.spectralPassed === false ? "low_spectral_cutoff" : "ok",
         quality_notes: r.notes,
       });
     }, false);
@@ -168,6 +181,7 @@ function DownloadCard({
   const returnToStage = () =>
     act("Returning…", async () => {
       await api.updateTrackState(track.id, returnStage);
+      onUpdate({ ...track, state: returnStage, quality_result: null, quality_notes: null, error: null });
       setQualityResult(null);
     });
 
@@ -183,7 +197,7 @@ function DownloadCard({
     track.state === "ready_for_rekordbox" || track.state === "dj_ready";
 
   const qualityFailed =
-    qualityResult?.isRealFlac === false || track.state === "quality_failed";
+    qualityResult?.isRealFlac === false || qualityResult?.spectralPassed === false || track.state === "quality_failed";
 
   const cardBg = isDownloading
     ? "#1c1a0f"
@@ -339,12 +353,15 @@ function DownloadCard({
           {isDownloading && (
             <ActionBtn label="Cancel download" busy={busy} busyLabel={busyLabel} onClick={cancelDownload} />
           )}
-          {(track.state === "downloaded" || track.state === "quality_failed") && !qualityResult && (
+          {track.state === "conversion_pending" && (
+            <ActionBtn label="Convert to MP3" busy={busy} busyLabel={busyLabel} onClick={convertTrack} />
+          )}
+          {(track.state === "downloaded" || track.state === "converted" || track.state === "quality_failed") && !qualityResult && (
             <ActionBtn label="Quality check" busy={busy} busyLabel={busyLabel} onClick={qualityCheck} />
           )}
           {qualityResult && (
-            <span style={{ color: "#4ade80", fontSize: 12, textAlign: "right" }}>
-              {qualityResult.isRealFlac === null ? "✓ Quality complete" : "✓ Quality passed"}
+            <span style={{ color: qualityResult.spectralPassed === false || qualityResult.isRealFlac === false ? "#f87171" : "#4ade80", fontSize: 12, textAlign: "right" }}>
+              {qualityResult.spectralPassed === false || qualityResult.isRealFlac === false ? "✗ Quality failed" : qualityResult.isRealFlac === null ? "✓ Quality complete" : "✓ Quality passed"}
             </span>
           )}
           {track.state === "ready_for_conversion" && (
@@ -414,9 +431,9 @@ function ActionBtn({
   );
 }
 
-type BatchOp = "download" | "retry" | "check" | "tag";
+type BatchOp = "download" | "retry" | "convert" | "check" | "tag";
 
-export default function DownloadView({ states = DOWNLOAD_STATES, embedded = false, selectedTrackId, emptyMessage = "No tracks in the download pipeline. Approve candidates in Review first." }: { states?: TrackState[]; embedded?: boolean; selectedTrackId?: number; emptyMessage?: string }) {
+export default function DownloadView({ states = DOWNLOAD_STATES, embedded = false, selectedTrackId, emptyMessage = "No tracks in the download pipeline. Approve candidates in Review first.", onTrackChanged }: { states?: TrackState[]; embedded?: boolean; selectedTrackId?: number; emptyMessage?: string; onTrackChanged?: (track: TrackRow) => void }) {
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [batchOp, setBatchOp] = useState<BatchOp | null>(null);
@@ -464,19 +481,24 @@ export default function DownloadView({ states = DOWNLOAD_STATES, embedded = fals
       api.startDownload(t.id)
     );
 
+  const convertAll = () =>
+    runBatch("convert", tracks.filter((t) => t.state === "conversion_pending"), (t) =>
+      api.convertTrack(t.id)
+    );
+
   const checkAll = () =>
-    runBatch("check", tracks.filter((t) => t.state === "downloaded" || t.state === "quality_failed"), (t) =>
+    runBatch("check", tracks.filter((t) => t.state === "downloaded" || t.state === "converted" || t.state === "quality_failed"), (t) =>
       api.runQualityCheck(t.id)
     );
 
-  const convertAll = () =>
+  const tagAll = () =>
     runBatch("tag", tracks.filter((t) => t.state === "ready_for_conversion"), (t) =>
       api.tagTrack(t.id)
     );
 
   const approvedCount = tracks.filter((t) => t.state === "approved").length;
   const failedCount = tracks.filter((t) => t.state === "failed" && !!t.selected_filename).length;
-  const checkableCount = tracks.filter((t) => t.state === "downloaded" || t.state === "quality_failed").length;
+  const checkableCount = tracks.filter((t) => t.state === "downloaded" || t.state === "converted" || t.state === "quality_failed").length;
   const convertibleCount = tracks.filter((t) => t.state === "ready_for_conversion").length;
 
   const isBusy = batchOp !== null;
@@ -528,8 +550,9 @@ export default function DownloadView({ states = DOWNLOAD_STATES, embedded = fals
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {batchBtn("download", "Download all", approvedCount, downloadAll)}
           {batchBtn("retry", "Retry failed", failedCount, retryAll)}
+          {batchBtn("convert", "Convert all", tracks.filter((t) => t.state === "conversion_pending").length, convertAll)}
           {batchBtn("check", "Check all", checkableCount, checkAll)}
-          {batchBtn("tag", "Tag all with Beets", convertibleCount, convertAll)}
+          {batchBtn("tag", "Tag all with Beets", convertibleCount, tagAll)}
           <button
             onClick={() => load(true)}
             style={{
@@ -578,7 +601,10 @@ export default function DownloadView({ states = DOWNLOAD_STATES, embedded = fals
           <DownloadCard
             key={t.id}
             track={t}
-            onUpdate={(updated) => setTracks((ts) => ts.map((x) => (x.id === updated.id ? updated : x)))}
+            onUpdate={(updated) => {
+              setTracks((ts) => ts.map((x) => (x.id === updated.id ? updated : x)));
+              onTrackChanged?.(updated);
+            }}
             onRefresh={load}
           />
         ))

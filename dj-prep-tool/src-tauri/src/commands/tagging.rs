@@ -78,15 +78,72 @@ fn append_log(app: &AppHandle, content: &str) {
     }
 }
 
-async fn convert_to_mp3(app: &AppHandle, source_path: &str) -> Result<String, String> {
-    let ffmpeg = find_ffmpeg(app);
-    let input = Path::new(source_path);
-    if input.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("mp3")) {
-        crate::commands::daemon::app_log(format!("[tag] source already MP3; skipped conversion: {}", source_path));
+fn clean_filename_part(value: &str) -> String {
+    let cleaned: String = value
+        .chars()
+        .map(|character| {
+            if "<>:\"/\\|?*".contains(character) || character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect();
+    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn canonical_audio_path(source_path: &Path, artist: &str, title: &str, extension: &str) -> PathBuf {
+    let artist = clean_filename_part(artist);
+    let title = clean_filename_part(title);
+    let stem = match (artist.is_empty(), title.is_empty()) {
+        (false, false) => format!("{artist} - {title}"),
+        (false, true) => artist,
+        (true, false) => title,
+        (true, true) => "untitled".to_string(),
+    };
+    source_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join(format!("{stem}.{extension}"))
+}
+
+fn normalize_existing_audio_path(
+    source_path: &str,
+    artist: &str,
+    title: &str,
+) -> Result<String, String> {
+    let source = Path::new(source_path);
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("mp3");
+    let target = canonical_audio_path(source, artist, title, extension);
+    if target == source {
         return Ok(source_path.to_string());
     }
-    let output = input.with_extension("mp3");
+    if target.exists() {
+        return Ok(target.to_string_lossy().to_string());
+    }
+    std::fs::rename(source, &target)
+        .map_err(|error| format!("Could not rename audio file to {}: {error}", target.display()))?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+async fn convert_to_mp3(
+    app: &AppHandle,
+    source_path: &str,
+    artist: &str,
+    title: &str,
+) -> Result<String, String> {
+    let ffmpeg = find_ffmpeg(app);
+    let input = Path::new(source_path);
+    let output = canonical_audio_path(input, artist, title, "mp3");
     let output_str = output.to_string_lossy().to_string();
+    if input.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("mp3")) {
+        let normalized = normalize_existing_audio_path(source_path, artist, title)?;
+        crate::commands::daemon::app_log(format!("[tag] source already MP3; skipped conversion: {}", normalized));
+        return Ok(normalized);
+    }
 
     let cmd_display = format!(
         "{} -i {:?} -b:a 320k -y {:?}",
@@ -113,6 +170,24 @@ async fn convert_to_mp3(app: &AppHandle, source_path: &str) -> Result<String, St
 }
 
 #[tauri::command]
+pub async fn convert_track(app: AppHandle, track_id: i64) -> Result<TrackRow, String> {
+    let track = crate::import::get_track(&app, track_id)
+        .map_err(|_| "Track not found".to_string())?;
+    let source_path = track
+        .downloaded_path
+        .ok_or("No downloaded file — poll_download first")?;
+    let mp3_path = convert_to_mp3(&app, &source_path, &track.artist, &track.title).await?;
+    let conn = db::open(&app).map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE tracks SET downloaded_path = ?1, state = 'converted', quality_result = NULL, quality_notes = NULL, error = NULL WHERE id = ?2",
+        params![mp3_path, track_id],
+    )
+    .map_err(|e| e.to_string())?;
+    crate::commands::daemon::app_log(format!("[convert] completed: track {}", track_id));
+    crate::import::get_track(&app, track_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn tag_track(app: AppHandle, track_id: i64) -> Result<TrackRow, String> {
     let track =
         crate::import::get_track(&app, track_id).map_err(|_| "Track not found".to_string())?;
@@ -122,8 +197,7 @@ pub async fn tag_track(app: AppHandle, track_id: i64) -> Result<TrackRow, String
         .downloaded_path
         .ok_or("No downloaded file — run poll_download first")?;
 
-    // Always convert to MP3 320 first.
-    let mp3_path = convert_to_mp3(&app, &source_path).await?;
+    let mp3_path = convert_to_mp3(&app, &source_path, &track.artist, &track.title).await?;
 
     let beets_path = config_store::get(&app, "beets_path").filter(|v| !v.trim().is_empty());
     let target_directory = config_store::get(&app, "music_library_dir").filter(|v| !v.trim().is_empty());
@@ -163,10 +237,11 @@ pub async fn tag_track(app: AppHandle, track_id: i64) -> Result<TrackRow, String
 
     let (state, error) = tag_state(&result.status);
     let archive_path = if state == "ready_for_rekordbox" {
-        result
+        let output_path = result
             .output_path
             .filter(|p| !p.trim().is_empty())
-            .ok_or("Tagging script returned no output path")?
+            .ok_or("Tagging script returned no output path")?;
+        normalize_existing_audio_path(&output_path, &track.artist, &track.title)?
     } else {
         String::new()
     };

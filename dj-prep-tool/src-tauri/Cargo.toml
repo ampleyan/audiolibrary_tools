@@ -18,6 +18,7 @@ regex = "1"
 csv = "1"
 reqwest = { version = "0.12", features = ["json"] }
 claxon = "0.4"
+symphonia = { version = "0.5", features = ["mp3"] }
 rustfft = "6"
 tracing = "0.1"
 fs2 = "0.4"

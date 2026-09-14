@@ -6,6 +6,8 @@ export type TrackState =
   | "approved"
   | "downloading"
   | "downloaded"
+  | "conversion_pending"
+  | "converted"
   | "quality_failed"
   | "picard_pending"
   | "ready_for_conversion"
@@ -85,6 +87,7 @@ export interface QualityResult {
   channels: number | null;
   durationSecs: number | null;
   spectralCutoffHz: number | null;
+  spectralPassed: boolean | null;
   notes: string;
 }
 
