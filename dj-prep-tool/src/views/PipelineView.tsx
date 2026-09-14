@@ -156,6 +156,11 @@ function TrackDrawer({
     await onUpdated(track.id);
   });
 
+  const searchAgain = () => update(async () => {
+    await api.updateTrackState(track.id, "requested");
+    await onUpdated(track.id);
+  });
+
   return (
     <>
       <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#0008", zIndex: 10 }} />
@@ -176,6 +181,8 @@ function TrackDrawer({
         </div>
 
         {error && <p style={{ color: "#f87171", fontSize: 12, background: "#1a0c0c", border: "1px solid #7f1d1d", padding: 8, borderRadius: 5 }}>{error}</p>}
+
+        {track.state === "not_found" && <div style={sectionStyle}><p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 10px" }}>No matching file was found. You can retry later.</p><button onClick={searchAgain} disabled={busy} style={buttonStyle}>{busy ? "Working…" : "Search again"}</button></div>}
 
         {(track.state === "requested" || track.state === "needs_review") && <div ref={nextStepRef} style={sectionStyle}><h3 style={sectionHeading}>Next step: find a file</h3><div style={{ display: "flex", gap: 8 }}><button onClick={() => search()} disabled={busy || !artist.trim() || !title.trim()} style={buttonStyle}>{busy ? "Searching…" : "Search"}</button>{track.search_job_id && <button onClick={() => search(true)} disabled={busy} style={secondaryButtonStyle}>Search loose</button>}</div></div>}
 
