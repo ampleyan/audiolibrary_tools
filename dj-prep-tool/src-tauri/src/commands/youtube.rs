@@ -104,8 +104,18 @@ pub async fn create_youtube_playlist(app: AppHandle, video_ids: Vec<String>, tit
     let mut added = 0;
     let mut skipped_ids = skipped;
     for id in &ids {
-        let response = client.post("https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet").bearer_auth(&token).json(&serde_json::json!({"snippet": {"playlistId": playlist["id"], "resourceId": {"kind": "youtube#video", "videoId": id}}})).send().await.map_err(|e| e.to_string())?;
-        if response.status().is_success() {
+        let mut added_video = false;
+        for attempt in 0..2 {
+            let response = client.post("https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet").bearer_auth(&token).json(&serde_json::json!({"snippet": {"playlistId": playlist["id"], "resourceId": {"kind": "youtube#video", "videoId": id}}})).send().await;
+            if response.map(|value| value.status().is_success()).unwrap_or(false) {
+                added_video = true;
+                break;
+            }
+            if attempt == 0 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+            }
+        }
+        if added_video {
             added += 1;
         } else {
             skipped_ids.push(id.clone());

@@ -307,10 +307,18 @@ def command(name, payload):
         skipped = list(payload.get("skipped", []))
         added = 0
         for video_id in video_ids:
-            try:
-                youtube_request("https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet", token, {"snippet": {"playlistId": playlist["id"], "resourceId": {"kind": "youtube#video", "videoId": video_id}}})
+            added_video = False
+            for attempt in range(2):
+                try:
+                    youtube_request("https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet", token, {"snippet": {"playlistId": playlist["id"], "resourceId": {"kind": "youtube#video", "videoId": video_id}}})
+                    added_video = True
+                    break
+                except (urllib.error.HTTPError, urllib.error.URLError):
+                    if attempt == 0:
+                        time.sleep(0.3)
+            if added_video:
                 added += 1
-            except urllib.error.HTTPError:
+            else:
                 skipped.append(video_id)
         return {"playlistUrl": f"https://www.youtube.com/playlist?list={playlist['id']}", "added": added, "skipped": skipped}
     if name == "poll_download":
