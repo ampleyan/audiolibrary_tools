@@ -39,8 +39,17 @@ CREATE TABLE IF NOT EXISTS tracks (
  error TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS activities (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, track_id INTEGER NOT NULL, from_state TEXT,
+ to_state TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TRIGGER IF NOT EXISTS tracks_updated_at AFTER UPDATE ON tracks FOR EACH ROW
 BEGIN UPDATE tracks SET updated_at = datetime('now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS tracks_activity_insert AFTER INSERT ON tracks
+BEGIN INSERT INTO activities (track_id, to_state) VALUES (NEW.id, NEW.state); END;
+CREATE TRIGGER IF NOT EXISTS tracks_activity_state_change AFTER UPDATE OF state ON tracks
+WHEN OLD.state <> NEW.state
+BEGIN INSERT INTO activities (track_id, from_state, to_state) VALUES (NEW.id, OLD.state, NEW.state); END;
 """
 
 NOISE = re.compile(r"(?i)[\[\(][^\[\(\]\)]*?(official|lyric|hd|hq|4k|video|audio|free\s*download|320kbps)[^\[\(\]\)]*?[\]\)]")
@@ -237,6 +246,12 @@ def command(name, payload):
         if result.returncode: raise ValueError(result.stderr.strip() or "Playlist import failed")
         return [insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), draft.get("source_url"), draft.get("state", "needs_review"), draft.get("notes"))) for draft in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
     if name == "list_tracks": return tracks(payload.get("state"))
+    if name == "list_activity":
+        limit = max(1, min(int(payload.get("limit", 30)), 100))
+        conn = db()
+        rows = conn.execute("SELECT a.id,a.track_id,coalesce(t.artist,''),coalesce(t.title,''),a.from_state,a.to_state,a.created_at FROM activities a LEFT JOIN tracks t ON t.id=a.track_id ORDER BY a.id DESC LIMIT ?", (limit,)).fetchall()
+        conn.close()
+        return [{"id": row[0], "trackId": row[1], "artist": row[2], "title": row[3], "fromState": row[4], "toState": row[5], "createdAt": row[6]} for row in rows]
     if name == "update_track_state": return update(int(payload["id"]), "UPDATE tracks SET state=? WHERE id=?", (payload["state"],))
     if name == "delete_track":
         conn = db(); conn.execute("DELETE FROM tracks WHERE id=?", (payload["id"],)); conn.commit(); conn.close(); return None
