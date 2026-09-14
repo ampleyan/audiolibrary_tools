@@ -35,6 +35,26 @@ pub struct SockseekClient {
 #[serde(rename_all = "camelCase")]
 struct SearchBody {
     song_query: SongQuery,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    options: Option<SubmissionOptions>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SubmissionOptions {
+    download_settings: DownloadSettingsPatch,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadSettingsPatch {
+    search: SearchSettingsPatch,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchSettingsPatch {
+    relax: bool,
 }
 
 #[derive(Serialize)]
@@ -96,6 +116,7 @@ impl SockseekClient {
         artist: &str,
         title: &str,
         length: Option<i32>,
+        relax: bool,
     ) -> Result<String, reqwest::Error> {
         let body = SearchBody {
             song_query: SongQuery {
@@ -103,6 +124,11 @@ impl SockseekClient {
                 title: if title.is_empty() { None } else { Some(title.to_string()) },
                 length,
             },
+            options: relax.then_some(SubmissionOptions {
+                download_settings: DownloadSettingsPatch {
+                    search: SearchSettingsPatch { relax: true },
+                },
+            }),
         };
         let resp: JobSummary = self
             .client

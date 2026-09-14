@@ -121,6 +121,15 @@ function TrackDrawer({
     if (track.state === "requested") nextStepRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [track.state]);
 
+  useEffect(() => {
+    if (artist.trim() === track.artist && title.trim() === track.title && (mixVersion.trim() || null) === track.mix_version) return;
+    if (!artist.trim() || !title.trim()) return;
+    const timer = window.setTimeout(() => {
+      api.updateTrack(track.id, artist.trim(), title.trim(), mixVersion.trim() || null).catch((e) => setError(String(e)));
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [artist, title, mixVersion, track.id, track.artist, track.title, track.mix_version]);
+
   const update = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
@@ -133,12 +142,17 @@ function TrackDrawer({
     }
   };
 
-  const save = () => update(async () => {
+  const saveDetails = async () => {
     await api.updateTrack(track.id, artist.trim(), title.trim(), mixVersion.trim() || null);
+  };
+
+  const save = () => update(async () => {
+    await saveDetails();
     await onUpdated(track.id);
   });
 
   const search = (loose = false) => update(async () => {
+    await saveDetails();
     const results = loose ? await api.searchTrackLoose(track.id) : await api.searchTrack(track.id);
     setCandidates(results);
     await onUpdated(track.id);
@@ -192,6 +206,7 @@ function TrackDrawer({
           <label style={{ color: "#9ca3af", fontSize: 12 }}>Title<input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} /></label>
           <label style={{ color: "#9ca3af", fontSize: 12 }}>Mix version<input value={mixVersion} onChange={(e) => setMixVersion(e.target.value)} style={inputStyle} /></label>
           <button onClick={save} disabled={busy || !artist.trim() || !title.trim()} style={buttonStyle}>{busy ? "Working…" : "Save track details"}</button>
+          <span style={{ color: "#6b7280", fontSize: 11 }}>Changes auto-save after typing stops.</span>
         </div>
 
         {error && <p style={{ color: "#f87171", fontSize: 12, background: "#1a0c0c", border: "1px solid #7f1d1d", padding: 8, borderRadius: 5 }}>{error}</p>}

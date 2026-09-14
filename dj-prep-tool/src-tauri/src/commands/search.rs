@@ -19,10 +19,11 @@ async fn search_with_query(
     title: &str,
     query_artist: &str,
     query_title: &str,
+    relax: bool,
 ) -> Result<Vec<scoring::RankedCandidate>, String> {
     let client = make_client(app);
     let job_id = client
-        .search(query_artist, query_title, None)
+        .search(query_artist, query_title, None, relax)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -85,6 +86,7 @@ pub async fn search_track(
         &track.title,
         &track.artist,
         &query_title,
+        false,
     )
     .await
 }
@@ -96,7 +98,7 @@ pub async fn search_track_loose(
 ) -> Result<Vec<scoring::RankedCandidate>, String> {
     let track = import::get_track(&app, track_id).map_err(|e| e.to_string())?;
     let query = format!("{} {}", track.artist, track.title);
-    search_with_query(&app, track_id, &track.artist, &track.title, "", &query).await
+    search_with_query(&app, track_id, &track.artist, &track.title, "", &query, true).await
 }
 
 #[tauri::command]
@@ -141,7 +143,7 @@ pub async fn start_download(app: AppHandle, track_id: i64) -> Result<(), String>
                 _ => track.title.clone(),
             };
             let new_job_id = client
-                .search(&track.artist, &query_title, None)
+                .search(&track.artist, &query_title, None, false)
                 .await
                 .map_err(|e| format!("Re-search failed: {e}"))?;
 
