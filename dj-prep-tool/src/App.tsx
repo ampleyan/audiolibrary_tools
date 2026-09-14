@@ -141,7 +141,7 @@ export default function App() {
         {tab === "import" && <ImportView onNavigate={navigate} />}
         {tab === "review" && <ReviewView />}
         {tab === "downloads" && <DownloadView />}
-        {tab === "pipeline" && <PipelineView />}
+        {tab === "pipeline" && <PipelineView onNavigate={navigate} />}
         {tab === "library" && <PipelineView heading="Library" onNavigate={navigate} />}
         {tab === "discover" && <DiscoveryView />}
         {tab === "setup" && (
