@@ -34,8 +34,8 @@ export function PipelineSeedListbox({ tracks, selectedIds, onChange }: { tracks:
     <div className="seed-picker-search" style={{ flexDirection: "column", gap: 5 }}>
       <div style={{ display: "flex", gap: 5 }}>
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tracks…" aria-label="Search Pipeline seed tracks" />
-        <button type="button" onClick={selectVisible} disabled={!visibleTracks.length} title="Select all visible">All</button>
-        <button type="button" onClick={clear} disabled={!selectedIds.length} title="Clear selection">{selectedIds.length > 0 ? `✕ ${selectedIds.length}` : "✕"}</button>
+        <button type="button" onClick={selectVisible} disabled={!visibleTracks.length}>Select all visible seeds</button>
+        <button type="button" onClick={clear} disabled={!selectedIds.length}>Clear selection{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}</button>
       </div>
       <div style={{ display: "flex", gap: 4 }}>
         {STATE_GROUPS.map((group, i) => (

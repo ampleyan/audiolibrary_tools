@@ -49,6 +49,8 @@ export default function SetupView({ settings, onSaved }: Props) {
   const [rekordboxPreview, setRekordboxPreview] = useState<RekordboxPreview | null>(null);
   const [rekordboxQuery, setRekordboxQuery] = useState("");
   const [importingXml, setImportingXml] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [resetConfirmation, setResetConfirmation] = useState("");
 
   useEffect(() => {
     api.checkDaemon().then(setDaemonUp).catch(() => setDaemonUp(false));
@@ -84,6 +86,7 @@ export default function SetupView({ settings, onSaved }: Props) {
     try {
       const path = await api.importRekordboxXml(await file.text());
       setForm((current) => ({ ...current, rekordboxXmlPath: path }));
+      setDirty(true);
       setRekordboxPreview(await api.checkRekordbox(path));
       onSaved();
     } catch (e) { setError(String(e)); }
@@ -118,10 +121,10 @@ export default function SetupView({ settings, onSaved }: Props) {
   };
 
   const resetLibrary = async () => {
-    if (!window.confirm("Reset the entire library? This deletes every track and activity entry and cannot be undone.")) return;
+    if (resetConfirmation !== "RESET") return;
     setResetting(true);
     setError(null);
-    try { await api.clearTracks(); setBackupMessage("Library reset. All tracks and activity history were removed."); onSaved(); }
+    try { await api.clearTracks(); setBackupMessage("Library reset. All tracks and activity history were removed."); setResetConfirmation(""); onSaved(); }
     catch (e) { setError(String(e)); }
     finally { setResetting(false); }
   };
@@ -141,6 +144,7 @@ export default function SetupView({ settings, onSaved }: Props) {
       if (!payload.telegramApiHash) delete payload.telegramApiHash;
       if (!payload.telegramSessionPath) delete payload.telegramSessionPath;
       await api.saveSettings(payload);
+      setDirty(false);
       if (markComplete) onSaved();
     } catch (e) { setError(String(e)); }
     finally { setSaving(false); }
@@ -149,7 +153,7 @@ export default function SetupView({ settings, onSaved }: Props) {
   const Field = ({ label: lbl, k, type = "text", placeholder }: { label: string; k: keyof SaveSettingsPayload; type?: string; placeholder?: string }) => (
     <div style={s.field}>
       <span style={s.label}>{lbl}</span>
-      <input style={s.input} type={type} autoComplete={type === "password" ? "new-password" : "off"} value={(form[k] as string) ?? ""} onChange={set(k)} placeholder={placeholder} />
+      <input style={s.input} type={type} autoComplete={type === "password" ? "new-password" : "off"} value={(form[k] as string) ?? ""} onChange={(event) => { setDirty(true); set(k)(event); }} placeholder={placeholder} />
     </div>
   );
 
@@ -157,9 +161,14 @@ export default function SetupView({ settings, onSaved }: Props) {
     <div className="view setup-view" style={{ maxWidth: 600 }}>
       <div className="view-heading"><h2>Settings</h2></div>
 
+      <nav className="settings-section-nav" aria-label="Settings sections">
+        <a href="#connections">Connections</a><a href="#paths">Paths</a><a href="#integrations">Import integrations</a><a href="#tagging">Tagging</a><a href="#advanced">Advanced</a><a href="#danger-zone">Danger zone</a>
+      </nav>
+      {dirty && <div className="settings-save-bar" role="status"><span>Unsaved changes</span><button className="button primary" disabled={saving} onClick={() => save(false)}>{saving ? "Saving…" : "Save changes"}</button></div>}
+
       {/* SOULSEEK */}
-      <section style={s.card}>
-        <h3 style={s.sectionHead}>SOULSEEK</h3>
+      <section id="connections" style={s.card}>
+        <h3 style={s.sectionHead}>SOULSEEK <span style={{ color: "#ff4fa3", fontWeight: 400 }}>(required for downloads)</span></h3>
         <div style={s.field}>
           <span style={s.label}>Daemon URL</span>
           <input style={s.input} value={form.sockseekDaemonUrl ?? ""} onChange={set("sockseekDaemonUrl")} />
@@ -179,8 +188,8 @@ export default function SetupView({ settings, onSaved }: Props) {
       </section>
 
       {/* REKORDBOX */}
-      <section style={s.card}>
-        <h3 style={s.sectionHead}>REKORDBOX</h3>
+      <section id="paths" style={s.card}>
+        <h3 style={s.sectionHead}>REKORDBOX &amp; PATHS <span style={{ color: "#a48e9b", fontWeight: 400 }}>(optional)</span></h3>
         <div style={s.field}>
           <span style={s.label}>XML library</span>
           <input style={s.input} value={form.rekordboxXmlPath ?? ""} onChange={set("rekordboxXmlPath")} placeholder="Path to exported rekordbox.xml" />
@@ -230,12 +239,12 @@ export default function SetupView({ settings, onSaved }: Props) {
             <span style={{ color: "#6f8293", flexShrink: 0 }}>→</span>
             <input style={{ ...s.input, flex: 1 }} value={form.pathMapTo ?? ""} onChange={set("pathMapTo")} placeholder="Local prefix e.g. /Volumes/Music" />
           </div>
-          <span style={s.hint}>Maps Windows Rekordbox paths to local paths so Open works on Mac/Linux.</span>
+          <span style={s.hint}>Maps Windows Rekordbox paths to local paths so Reveal works on Mac/Linux.</span>
         </div>
       </section>
 
       {/* TAGGING */}
-      <section style={s.card}>
+      <section id="tagging" style={s.card}>
         <h3 style={s.sectionHead}>TAGGING</h3>
         <p style={{ fontSize: 12, color: "#6f8293", marginBottom: 14 }}>Beets runs in its own container and tags files against MusicBrainz. Config lives in <code style={{ color: "#a48e9b" }}>beets-config/config.yaml</code>.</p>
         <div style={s.field}>
@@ -246,7 +255,7 @@ export default function SetupView({ settings, onSaved }: Props) {
       </section>
 
       {/* YOUTUBE */}
-      <section style={s.card}>
+      <section id="integrations" style={s.card}>
         <h3 style={s.sectionHead}>YOUTUBE</h3>
         <div style={s.field}>
           <span style={s.label}>Cookies file <span style={{ color: "#6f8293", textTransform: "none" }}>(optional)</span></span>
@@ -290,7 +299,7 @@ export default function SetupView({ settings, onSaved }: Props) {
       </section>
 
       {/* SYSTEM INFO */}
-      <section style={s.card}>
+      <section id="advanced" style={s.card}>
         <h3 style={s.sectionHead}>SYSTEM</h3>
         <div style={{ borderRadius: 6, fontSize: 12 }}>
           {([["Inbox", settings.prepInboxDir], ["Library", settings.musicLibraryDir], ["Archive", settings.rekordboxImportDir], ["Python", settings.pythonPath]] as [string, string][]).map(([label, value]) => (
@@ -338,17 +347,18 @@ export default function SetupView({ settings, onSaved }: Props) {
           Save only
         </button>
         <button style={{ background: "transparent", color: "#a48e9b", border: "1px solid #513343", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: checking ? "not-allowed" : "pointer" }} disabled={checking} onClick={validate}>
-          {checking ? "Checking…" : "Validate"}
+          {checking ? "Checking…" : "Run integration checks"}
         </button>
         <button style={{ background: "transparent", color: "#a48e9b", border: "1px solid #513343", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: backingUp ? "not-allowed" : "pointer" }} disabled={backingUp} onClick={backup}>
           {backingUp ? "Backing up…" : "Back up DB"}
         </button>
       </div>
 
-      <section style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #352330" }}>
+      <section id="danger-zone" style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #352330" }}>
         <h3 style={{ fontSize: 10, color: "#f87171", marginBottom: 8, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600 }}>DANGER ZONE</h3>
         <p style={{ fontSize: 12, color: "#6f8293", marginBottom: 12 }}>Remove every imported track and its activity history. Downloaded files are not deleted.</p>
-        <button style={{ background: "transparent", color: resetting ? "#513343" : "#f87171", border: "1px solid #7f1d1d", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: resetting ? "not-allowed" : "pointer" }} disabled={resetting} onClick={resetLibrary}>
+        <label style={{ ...s.field, maxWidth: 240 }}><span style={s.label}>Type RESET to enable</span><input style={s.input} value={resetConfirmation} onChange={(event) => setResetConfirmation(event.target.value)} placeholder="RESET" aria-label="Type RESET to reset library" /></label>
+        <button style={{ background: "transparent", color: resetting || resetConfirmation !== "RESET" ? "#513343" : "#f87171", border: "1px solid #7f1d1d", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: resetting || resetConfirmation !== "RESET" ? "not-allowed" : "pointer" }} disabled={resetting || resetConfirmation !== "RESET"} onClick={resetLibrary}>
           {resetting ? "Resetting…" : "Reset library"}
         </button>
       </section>

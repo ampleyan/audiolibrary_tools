@@ -6,6 +6,7 @@ import type {
   RekordboxPreview,
   SimilarTrack,
   SetupCheck,
+  ImportPreviewRow,
   TrackRow,
   LogEntry,
 } from "./types";
@@ -71,6 +72,14 @@ export const api = {
     call<TrackRow[]>("import_rekordbox_playlist", { tracks }),
 
   importText: (text: string) => call<TrackRow[]>("import_text", { text }),
+
+  importPreviewRows: (rows: ImportPreviewRow[]) => {
+    const text = rows
+      .filter((row) => !row.skipped && !row.warning && row.artist.trim() && row.title.trim())
+      .map((row) => `${row.artist.trim()} - ${row.title.trim()}${row.mixVersion.trim() ? ` (${row.mixVersion.trim()})` : ""}`)
+      .join("\n");
+    return call<TrackRow[]>("import_text", { text });
+  },
 
   importCsv: (content: string) =>
     call<TrackRow[]>("import_csv", { content }),

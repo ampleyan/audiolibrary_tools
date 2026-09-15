@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import ImportPreview, { buildImportPreview } from "../components/ImportPreview";
 import { api } from "../lib/api";
-import type { RekordboxTrack, TrackRow, TrackState } from "../lib/types";
+import type { ImportPreviewRow, RekordboxTrack, TrackRow, TrackState } from "../lib/types";
 
 const STATE_COLOR: Record<TrackState, string> = {
   requested: "#60a5fa",
@@ -265,6 +266,7 @@ const btn = (primary = true): React.CSSProperties => ({
 export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const [mode, setMode] = useState<ImportMode>("playlist");
   const [textValue, setTextValue] = useState("");
+  const [textPreviewRows, setTextPreviewRows] = useState<ImportPreviewRow[] | null>(null);
   const [ytUrl, setYtUrl] = useState("");
   const [telegramChannelId, setTelegramChannelId] = useState("-1002508065505");
   const [telegramLimit, setTelegramLimit] = useState(100);
@@ -375,8 +377,25 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
     }
   };
 
-  const importText = () =>
-    run(() => api.importText(textValue)).then(() => setTextValue(""));
+  const textPreview = useMemo(() => {
+    if (!textPreviewRows) return null;
+    const counts = {
+      new: textPreviewRows.filter((row) => !row.duplicate && !row.skipped && !row.warning).length,
+      duplicate: textPreviewRows.filter((row) => row.duplicate).length,
+      skipped: textPreviewRows.filter((row) => row.skipped).length,
+      warning: textPreviewRows.filter((row) => Boolean(row.warning) && !row.skipped).length,
+    };
+    return { rows: textPreviewRows, counts };
+  }, [textPreviewRows]);
+
+  const confirmTextImport = async () => {
+    const rows = textPreviewRows?.filter((row) => !row.skipped && !row.warning && row.artist.trim() && row.title.trim()) ?? [];
+    if (!rows.length) return;
+    await run(() => api.importPreviewRows(rows));
+    setTextValue("");
+    setTextPreviewRows(null);
+    onNavigate?.("prepare");
+  };
 
   const importYoutube = () => run(() => api.importYoutube(ytUrl));
 
@@ -538,18 +557,22 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
             <textarea
               style={textarea}
               value={textValue}
-              onChange={(e) => setTextValue(e.target.value)}
+              onChange={(e) => { setTextValue(e.target.value); setTextPreviewRows(null); }}
               placeholder={"Surgeon - Magneze\n01. Blawan – Getting Me Down (Original Mix)\n• Ancient Methods\tStalker\n# comment"}
             />
             <div style={{ marginTop: 10 }}>
-              <button
-                style={btn()}
-                disabled={loading || !textValue.trim()}
-                onClick={importText}
-              >
-                {loading ? "Importing…" : "Import tracks"}
+              <button style={btn()} disabled={loading || !textValue.trim()} onClick={() => setTextPreviewRows(buildImportPreview(textValue).rows)}>
+                Preview tracks
               </button>
             </div>
+            {textPreview && <>
+              <ImportPreview model={textPreview} onChange={setTextPreviewRows} />
+              <div style={{ marginTop: 10 }}>
+                <button style={btn()} disabled={loading || textPreview.counts.new === 0} onClick={confirmTextImport}>
+                  {loading ? "Adding…" : `Add ${textPreview.counts.new} reviewed track${textPreview.counts.new === 1 ? "" : "s"}`}
+                </button>
+              </div>
+            </>}
           </div>
         )}
 

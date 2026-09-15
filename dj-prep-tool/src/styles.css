@@ -431,6 +431,29 @@ button.rekordbox-row { cursor: pointer; }
 .similar-row strong { display: block; overflow: hidden; color: #d5e6ef; text-overflow: ellipsis; white-space: nowrap; }
 .similar-row small { display: block; margin-top: 3px; color: #82909e; }
 .similar-row > span { color: #ff6fb5; }
+.import-preview { margin-top: 14px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); overflow: hidden; }
+.import-preview-summary { display: flex; flex-wrap: wrap; gap: 7px 13px; align-items: center; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-surface-raised); color: var(--color-muted); padding: 10px 12px; font-size: 11px; }
+.import-preview-summary strong { color: var(--color-foreground); }
+.import-preview-summary span:nth-of-type(1) { color: var(--color-success); }
+.import-preview-summary span:nth-of-type(2) { color: var(--color-warning); }
+.import-preview-summary span:nth-of-type(3) { color: var(--color-muted-foreground); }
+.import-preview-summary span:nth-of-type(4) { color: var(--color-status-attention); }
+.import-preview > p { margin: 0; border-bottom: 1px solid var(--color-border-subtle); color: var(--color-muted); padding: 8px 12px; font-size: 11px; line-height: 1.45; }
+.import-preview-rows { max-height: 270px; overflow: auto; }
+.import-preview-row { display: grid; grid-template-columns: 22px minmax(110px, .75fr) minmax(140px, 1fr) minmax(110px, .65fr) 82px; gap: 7px; align-items: center; border-bottom: 1px solid var(--color-border-subtle); padding: 7px 10px; }
+.import-preview-row:last-child { border-bottom: 0; }
+.import-preview-row input[type="checkbox"] { accent-color: var(--color-primary); }
+.import-preview-row input:not([type="checkbox"]) { min-width: 0; border: 1px solid var(--color-border-muted); border-radius: 5px; background: var(--color-background); color: var(--color-foreground); padding: 6px 7px; font-size: 11px; }
+.import-preview-row > span { color: var(--color-muted); font-size: 10px; }
+.import-preview-row.is-duplicate > span { color: var(--color-warning); }
+.import-preview-row.has-warning > span { color: var(--color-status-attention); }
+.discovery-add-message { margin: 0 0 16px; border: 1px solid color-mix(in srgb, var(--color-success) 38%, var(--color-border)); border-radius: 7px; background: color-mix(in srgb, var(--color-success) 8%, var(--color-surface)); color: var(--color-success); padding: 9px 11px; font-size: 12px; }
+.recommendation-score-note { margin: 5px 0 0; color: var(--color-muted); font-size: 11px; }
+.settings-section-nav { position: sticky; top: 0; z-index: 6; display: flex; gap: 5px; overflow-x: auto; margin: -8px 0 14px; border: 1px solid var(--color-border); border-radius: 8px; background: color-mix(in srgb, var(--color-surface) 94%, transparent); padding: 7px; backdrop-filter: blur(12px); }
+.settings-section-nav a { flex: 0 0 auto; border-radius: 5px; color: var(--color-muted); padding: 5px 7px; font-size: 11px; text-decoration: none; }
+.settings-section-nav a:hover { background: var(--color-surface-raised); color: var(--color-primary-foreground); }
+.settings-save-bar { position: sticky; bottom: 12px; z-index: 8; display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 0 0 14px; border: 1px solid var(--color-primary); border-radius: 8px; background: var(--color-primary-bg); box-shadow: 0 12px 28px #0009; color: var(--color-primary-foreground); padding: 9px 10px 9px 13px; font-size: 12px; }
+.settings-save-bar .button { flex: 0 0 auto; }
 @media (max-width: 980px) and (min-width: 761px) {
   .workbench-shell { display: block; }
   .workbench-rail { position: sticky; display: flex; width: 100%; height: auto; flex-direction: row; align-items: center; gap: 10px; border-right: 0; border-bottom: 1px solid var(--color-border-subtle); padding: 8px 12px; }
@@ -484,5 +507,7 @@ button.rekordbox-row { cursor: pointer; }
   .work-queue-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .work-queue-layout { grid-template-columns: minmax(0, 1fr); }
   .track-inspector { position: static; max-height: none; }
+  .import-preview-row { grid-template-columns: 22px minmax(100px, 1fr) minmax(120px, 1.2fr) 75px; }
+  .import-preview-row > span { grid-column: 2 / -1; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }

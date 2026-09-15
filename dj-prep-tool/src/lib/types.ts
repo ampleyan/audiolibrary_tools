@@ -161,3 +161,18 @@ export interface SetupCheck {
   ok: boolean;
   detail: string;
 }
+
+export interface ImportPreviewRow {
+  id: string;
+  artist: string;
+  title: string;
+  mixVersion: string;
+  duplicate: boolean;
+  skipped: boolean;
+  warning: string | null;
+}
+
+export interface ImportPreviewModel {
+  rows: ImportPreviewRow[];
+  counts: { new: number; duplicate: number; skipped: number; warning: number };
+}
