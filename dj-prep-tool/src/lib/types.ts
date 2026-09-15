@@ -17,6 +17,39 @@ export type TrackState =
   | "rekordbox_pending"
   | "failed";
 
+export type WorkflowBucket = "inbox" | "needs_attention" | "running" | "ready_to_dj";
+
+export type WorkflowStage = "find" | "match" | "download" | "convert" | "quality" | "tag" | "rekordbox" | "done";
+
+export type TrackActionId =
+  | "search"
+  | "edit_details"
+  | "loose_search"
+  | "approve"
+  | "download"
+  | "monitor_download"
+  | "convert"
+  | "quality_check"
+  | "retry_quality"
+  | "tag"
+  | "review_tagging"
+  | "send_to_rekordbox"
+  | "reveal"
+  | "review_error";
+
+export interface TrackAction {
+  id: TrackActionId;
+  label: string;
+}
+
+export interface WorkflowMetadata {
+  bucket: WorkflowBucket;
+  stage: WorkflowStage;
+  statusLabel: string;
+  nextAction: TrackAction;
+  actionable: boolean;
+}
+
 export interface TrackRow {
   id: number;
   artist: string;
