@@ -108,13 +108,6 @@ export default function DiscoveryView({ onNavigate, onPlayTrack }: { onNavigate:
     }
   };
 
-  const openPipelineRelated = () => {
-    setRelatedSource("pipeline");
-    setMode("related");
-    setResults(null);
-    setError(null);
-  };
-
   const addToPipeline = async (track: { artist: string; title: string; mixVersion?: string | null }) => {
     setAdding(true);
     setError(null);
@@ -136,7 +129,7 @@ export default function DiscoveryView({ onNavigate, onPlayTrack }: { onNavigate:
   return <div className="view discovery-view">
     <div className="discovery-heading"><div className="view-heading"><h2>Discover</h2><p>Explore your Rekordbox library and find what belongs next.</p></div><button className="button secondary" onClick={() => load(true)} disabled={refreshing}>{refreshing ? "Loading…" : xmlLoaded ? "Refresh XML" : "Load XML"}</button></div>
     <div className="discovery-tabs" role="tablist" aria-label="Discovery modes"><button role="tab" aria-selected={mode === "related"} onClick={() => { setMode("related"); setRelatedSource("pipeline"); }}>Related music</button><button role="tab" aria-selected={mode === "library"} onClick={() => setMode("library")}>Rekordbox library</button></div>
-    {pipeline.length > 0 && <div className="pipeline-seed"><label>Explore Pipeline tracks</label><span>Choose multiple seeds and build a playlist.</span><button className="button primary" onClick={openPipelineRelated}>Choose tracks</button></div>}
+
     {error && <div className="inline-error" role="alert"><span>{error}</span><button onClick={() => onNavigate("setup")}>Open Settings</button></div>}
     {loading ? <div className="empty-state">Loading Pipeline tracks…</div> : mode === "library" && !xmlLoaded && !error ? <div className="empty-state"><p>Rekordbox library is not loaded.</p><button className="button primary" onClick={() => load(true)}>Load XML</button></div> : !error && !tracks.length && mode !== "related" ? <div className="empty-state">No tracks were found in this Rekordbox XML.</div> : <>
       {mode === "library" && <div className={allPlaylists.length ? "discovery-library-layout" : ""}>

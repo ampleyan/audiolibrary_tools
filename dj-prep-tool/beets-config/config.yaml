@@ -1,0 +1,18 @@
+directory: /music/archive
+library: /data/beets.db
+
+import:
+  write: yes
+  copy: no
+  move: yes
+  timid: no
+  quiet: yes
+  log: /data/beets-import.log
+
+match:
+  # Be strict — only accept high-confidence matches
+  strong_rec_thresh: 0.10
+  medium_rec_thresh: 0.25
+
+ui:
+  color: no

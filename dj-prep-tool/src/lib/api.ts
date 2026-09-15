@@ -30,6 +30,9 @@ export interface SaveSettingsPayload {
   telegramApiId?: string;
   telegramApiHash?: string;
   telegramSessionPath?: string;
+  pathMapFrom?: string;
+  pathMapTo?: string;
+  beetsUrl?: string;
   setupComplete?: boolean;
 }
 

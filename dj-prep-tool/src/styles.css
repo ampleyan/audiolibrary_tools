@@ -100,8 +100,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .inline-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 10px 12px; border: 1px solid #7f1d1d; border-radius: 6px; background: #1a0c0c; color: #fca5a5; font-size: 12px; }
 .inline-error button { border: 0; background: transparent; color: #ff6fb5; cursor: pointer; white-space: nowrap; }
 .discovery-library-layout { display: flex; gap: 14px; align-items: flex-start; }
-.discovery-library-layout > div { min-width: 0; flex: 1; }
-.playlist-picker { width: 150px; min-width: 0; flex-shrink: 0; position: sticky; top: 12px; max-height: calc(100vh - 120px); display: flex; flex-direction: column; }
+.discovery-library-layout > div { min-width: 200px; }
+.playlist-picker { flex: 0 0 200px; max-width: 200px; position: sticky; top: 12px; max-height: calc(100vh - 120px); display: flex; flex-direction: column; overflow: hidden; }
 .playlist-picker .seed-picker-list { flex: 1; overflow-y: auto; max-height: none; }
 .playlist-picker .seed-picker-option { grid-template-columns: 16px minmax(0, 1fr) auto; gap: 5px; padding: 7px 6px; font-size: 11px; }
 .playlist-picker .seed-picker-header { padding: 8px 10px; }

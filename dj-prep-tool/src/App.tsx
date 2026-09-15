@@ -4,18 +4,17 @@ import type { LogEntry, PublicSettings, SimilarTrack } from "./lib/types";
 import DiscoveryView from "./views/DiscoveryView";
 import ImportView from "./views/ImportView";
 import LibraryView from "./views/LibraryView";
-import PipelineView from "./views/PipelineView";
+
 import PrepareView, { type PrepareStage } from "./views/PrepareView";
 import SetupView from "./views/SetupView";
 
-type Tab = "import" | "pipeline" | "library" | "prepare" | "discover" | "setup";
+type Tab = "import" | "library" | "prepare" | "discover" | "setup";
 
 function getVideoId(url: string) {
   return url.match(/[?&]v=([^&]+)/)?.[1] ?? url.match(/youtu\.be\/([^?]+)/)?.[1] ?? null;
 }
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "pipeline", label: "Overview" },
   { id: "import", label: "Import" },
   { id: "library", label: "Library" },
   { id: "prepare", label: "Prepare" },
@@ -25,12 +24,35 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function App() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
-  const [tab, setTab] = useState<Tab>("pipeline");
+  const [tab, setTab] = useState<Tab>("prepare");
   const [prepareStage, setPrepareStage] = useState<PrepareStage>("find");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [player, setPlayer] = useState<{ tracks: SimilarTrack[]; index: number } | null>(null);
+  const logPanelRef = useRef<HTMLDivElement>(null);
+  const logDragRef = useRef<{ startX: number; startY: number; origLeft: number; origTop: number } | null>(null);
+
+  const onLogDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const el = logPanelRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    el.style.transform = "none";
+    el.style.left = `${rect.left}px`;
+    el.style.top = `${rect.top}px`;
+    logDragRef.current = { startX: e.clientX, startY: e.clientY, origLeft: rect.left, origTop: rect.top };
+    const onMove = (me: MouseEvent) => {
+      if (!logDragRef.current || !logPanelRef.current) return;
+      const dx = me.clientX - logDragRef.current.startX;
+      const dy = me.clientY - logDragRef.current.startY;
+      logPanelRef.current.style.left = `${Math.max(0, Math.min(window.innerWidth - 120, logDragRef.current.origLeft + dx))}px`;
+      logPanelRef.current.style.top = `${Math.max(0, Math.min(window.innerHeight - 48, logDragRef.current.origTop + dy))}px`;
+    };
+    const onUp = () => { logDragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
   const [playerMessage, setPlayerMessage] = useState<string | null>(null);
   const navigate = (nextTab: string) => {
     if (nextTab === "review") {
@@ -48,12 +70,11 @@ export default function App() {
 
   useEffect(() => {
     const shortcuts: Record<string, Tab> = {
-      "1": "pipeline",
-      "2": "import",
-      "3": "library",
-      "4": "prepare",
-      "5": "discover",
-      "6": "setup",
+      "1": "import",
+      "2": "library",
+      "3": "prepare",
+      "4": "discover",
+      "5": "setup",
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
@@ -152,16 +173,16 @@ export default function App() {
 
       <main>
         {tab === "import" && <ImportView onNavigate={navigate} />}
-        {tab === "pipeline" && <PipelineView onNavigate={navigate} />}
+
         {tab === "library" && <LibraryView onNavigate={navigate} />}
-        {tab === "prepare" && <PrepareView stage={prepareStage} onStageChange={setPrepareStage} />}
+        {tab === "prepare" && <PrepareView stage={prepareStage} onStageChange={setPrepareStage} pathMapFrom={settings.pathMapFrom} pathMapTo={settings.pathMapTo} />}
         {tab === "discover" && <DiscoveryView onNavigate={navigate} onPlayTrack={(tracks, index) => { setPlayer({ tracks, index }); setPlayerMessage(null); }} />}
         {tab === "setup" && (
           <SetupView
             settings={settings}
             onSaved={() => {
               loadSettings();
-              setTab("pipeline");
+              setTab("prepare");
             }}
           />
         )}
@@ -178,12 +199,12 @@ export default function App() {
         }
       }} />}
       {showLogs && (
-        <div role="dialog" aria-modal="true" aria-label="Application logs" style={{ position: "fixed", inset: 0, zIndex: 30, background: "#0008", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={(e) => { if (e.target === e.currentTarget) setShowLogs(false); }}>
-          <div style={{ background: "#0d131a", border: "1px solid #344454", borderRadius: 10, width: "min(860px, 94vw)", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px #000c" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid #1f2f3f" }}>
-              <strong style={{ color: "#d5e6ef", fontSize: 13 }}>Logs</strong>
+        <div role="dialog" aria-modal="true" aria-label="Application logs" style={{ position: "fixed", inset: 0, zIndex: 30, background: "#0008" }} onClick={(e) => { if (e.target === e.currentTarget) setShowLogs(false); }}>
+          <div ref={logPanelRef} style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)", background: "#0d131a", border: "1px solid #344454", borderRadius: 10, width: "min(860px, 94vw)", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px #000c" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid #1f2f3f", cursor: "grab", userSelect: "none" }} onMouseDown={onLogDragStart}>
+              <strong style={{ color: "#d5e6ef", fontSize: 13 }}>⠿ Logs</strong>
               <span style={{ color: "#6f8293", fontSize: 11 }}>{logs.length} recent entries</span>
-              <button onClick={() => setShowLogs(false)} style={{ background: "transparent", border: "none", color: "#6f8293", cursor: "pointer", fontSize: 16, padding: "0 4px", lineHeight: 1 }}>✕</button>
+              <button onMouseDown={(e) => e.stopPropagation()} onClick={() => setShowLogs(false)} style={{ background: "transparent", border: "none", color: "#6f8293", cursor: "pointer", fontSize: 16, padding: "0 4px", lineHeight: 1 }}>✕</button>
             </div>
             <pre style={{ flex: 1, overflow: "auto", margin: 0, padding: "12px 16px", color: "#9fb2bf", font: "12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace", whiteSpace: "pre-wrap" }}>
               {logs.length ? [...logs].reverse().map((entry, index) => <div key={`${index}-${entry.message}`} style={{ borderBottom: "1px solid #111d27", padding: "2px 0" }}><span style={{ color: "#4b6070", marginRight: 8 }}>{entry.timestamp}</span>{entry.message}</div>) : "No logs yet."}

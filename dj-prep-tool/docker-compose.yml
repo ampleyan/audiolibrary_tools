@@ -1,0 +1,53 @@
+services:
+  beets:
+    build:
+      context: ./beets-config
+    volumes:
+      - ./beets-config:/config:ro
+      - ./data:/data
+      - ./music-inbox:/music/inbox
+      - ./music-archive:/music/archive
+    restart: unless-stopped
+
+  sockseek:
+    build:
+      context: ./sockseek-config
+      platforms:
+        - linux/amd64
+    command: ["daemon", "--config", "/config/sockseek.conf"]
+    ports:
+      - "5030:5030"
+    volumes:
+      - ./sockseek-config:/config
+      - ./music-inbox:/data
+    restart: unless-stopped
+
+  dj-prep:
+    build:
+      context: ..
+      dockerfile: dj-prep-tool/web/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DJ_PREP_DATA_DIR: /data
+      DJ_PREP_INBOX_DIR: /music/inbox
+      DJ_PREP_ARCHIVE_DIR: /music/archive
+      DJ_PREP_LIBRARY_DIR: /music/library
+      DJ_PREP_REKORDBOX_XML: ${DJ_PREP_REKORDBOX_XML:-}
+      SOCKSEEK_URL: http://sockseek:5030
+      BEETS_URL: http://beets:8337
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
+      YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/data
+      - ./music-library:/music/library
+      - ./music-inbox:/music/inbox
+      - ./music-archive:/music/archive
+      - ./rekordbox:/rekordbox:ro
+    depends_on:
+      - sockseek
+      - beets
+    restart: unless-stopped

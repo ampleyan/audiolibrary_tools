@@ -58,6 +58,9 @@ export interface PublicSettings {
   hasCosineCredentials: boolean;
   hasTelegramCredentials: boolean;
   hasTelegramSession: boolean;
+  pathMapFrom: string;
+  pathMapTo: string;
+  beetsUrl: string;
 }
 
 export interface SimilarTrack {

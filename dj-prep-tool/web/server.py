@@ -33,6 +33,7 @@ ARCHIVE_DIR = Path(os.environ.get("DJ_PREP_ARCHIVE_DIR", "/music/archive"))
 LIBRARY_DIR = Path(os.environ.get("DJ_PREP_LIBRARY_DIR", "/music/library"))
 REKORDBOX_XML_PATH = os.environ.get("DJ_PREP_REKORDBOX_XML", "")
 SOCKSEEK_URL = os.environ.get("SOCKSEEK_URL", "http://sockseek:5030").rstrip("/")
+BEETS_URL = os.environ.get("BEETS_URL", "http://beets:8337").rstrip("/")
 SOCKSEEK_LOG_FILE = os.environ.get("SOCKSEEK_LOG_FILE", "")
 PYTHON = os.environ.get("PYTHON", "python3")
 YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "")
@@ -425,11 +426,11 @@ def command(name, payload):
         conn = db()
         values = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM settings")}
         conn.close()
-        return {"sockseekPath": "", "sockseekDaemonUrl": values.get("sockseek_daemon_url", SOCKSEEK_URL), "prepInboxDir": str(INBOX_DIR), "musicLibraryDir": str(LIBRARY_DIR), "picardPath": "", "ffmpegPath": "", "rekordboxImportDir": str(ARCHIVE_DIR), "rekordboxXmlPath": values.get("rekordbox_xml_path", REKORDBOX_XML_PATH), "pythonPath": PYTHON, "ytCookiesFile": "", "setupComplete": values.get("setup_complete") == "true", "hasSockseekCredentials": bool(values.get("sockseek_username") and values.get("sockseek_password")), "hasSpotifyCredentials": bool(values.get("spotify_client_id") and values.get("spotify_client_secret")), "hasCosineCredentials": bool(values.get("cosine_api_key")), "hasTelegramCredentials": bool(values.get("telegram_api_id") and values.get("telegram_api_hash")), "hasTelegramSession": Path(values.get("telegram_session_path", str(DATA_DIR / "telegram.session"))).exists()}
+        return {"sockseekPath": "", "sockseekDaemonUrl": values.get("sockseek_daemon_url", SOCKSEEK_URL), "prepInboxDir": str(INBOX_DIR), "musicLibraryDir": str(LIBRARY_DIR), "picardPath": "", "ffmpegPath": "", "rekordboxImportDir": str(ARCHIVE_DIR), "rekordboxXmlPath": values.get("rekordbox_xml_path", REKORDBOX_XML_PATH), "pythonPath": PYTHON, "ytCookiesFile": values.get("yt_cookies_file", ""), "setupComplete": values.get("setup_complete") == "true", "hasSockseekCredentials": bool(values.get("sockseek_username") and values.get("sockseek_password")), "hasSpotifyCredentials": bool(values.get("spotify_client_id") and values.get("spotify_client_secret")), "hasCosineCredentials": bool(values.get("cosine_api_key")), "hasTelegramCredentials": bool(values.get("telegram_api_id") and values.get("telegram_api_hash")), "hasTelegramSession": Path(values.get("telegram_session_path", str(DATA_DIR / "telegram.session"))).exists(), "pathMapFrom": values.get("path_map_from", ""), "pathMapTo": values.get("path_map_to", ""), "beetsUrl": values.get("beets_url", "")}
     if name == "save_settings":
         payload = payload.get("payload", payload)
         conn = db()
-        mapping = {"sockseekDaemonUrl": "sockseek_daemon_url", "rekordboxXmlPath": "rekordbox_xml_path", "setupComplete": "setup_complete", "sockseekUsername": "sockseek_username", "sockseekPassword": "sockseek_password", "spotifyClientId": "spotify_client_id", "spotifyClientSecret": "spotify_client_secret", "cosineApiKey": "cosine_api_key", "telegramApiId": "telegram_api_id", "telegramApiHash": "telegram_api_hash", "telegramSessionPath": "telegram_session_path"}
+        mapping = {"sockseekDaemonUrl": "sockseek_daemon_url", "rekordboxXmlPath": "rekordbox_xml_path", "setupComplete": "setup_complete", "sockseekUsername": "sockseek_username", "sockseekPassword": "sockseek_password", "spotifyClientId": "spotify_client_id", "spotifyClientSecret": "spotify_client_secret", "cosineApiKey": "cosine_api_key", "telegramApiId": "telegram_api_id", "telegramApiHash": "telegram_api_hash", "telegramSessionPath": "telegram_session_path", "pathMapFrom": "path_map_from", "pathMapTo": "path_map_to", "ytCookiesFile": "yt_cookies_file", "beetsUrl": "beets_url"}
         for key, value in payload.items():
             if key in mapping and value is not None:
                 conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (mapping[key], str(value).lower() if isinstance(value, bool) else value))
@@ -740,12 +741,21 @@ def command(name, payload):
         track = get_track(int(payload["trackId"]))
         source = track.get("downloaded_path")
         if not source: raise ValueError("No downloaded file — run poll_download first")
-        output = str(Path(source).with_suffix(".mp3"))
-        append_log(f"[tag] converting: {track['artist']} - {track['title']}")
-        result = subprocess.run(["ffmpeg", "-i", source, "-b:a", "320k", "-y", output], capture_output=True, text=True, check=False)
-        if result.returncode: raise ValueError(result.stderr.strip() or "Conversion failed")
-        append_log(f"[tag] done: {track['artist']} - {track['title']} → {Path(output).name}")
-        return update(track["id"], "UPDATE tracks SET archive_path=?,state='ready_for_rekordbox',error=NULL WHERE id=?", (output,))
+        append_log(f"[beets] importing: {track['artist']} - {track['title']}")
+        beets_url = setting("beets_url", BEETS_URL).rstrip("/")
+        req_body = json.dumps({"path": source}).encode()
+        req = urllib.request.Request(f"{beets_url}/import", data=req_body, headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                result = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            result = json.loads(exc.read())
+        if not result.get("ok"):
+            raise ValueError(result.get("output") or "beets import failed")
+        output_line = next((l for l in result.get("output", "").splitlines() if "/music/archive" in l), None)
+        tagged_path = output_line.strip() if output_line else str(Path(source).with_suffix(".mp3"))
+        append_log(f"[beets] done: {track['artist']} - {track['title']} → {Path(tagged_path).name}")
+        return update(track["id"], "UPDATE tracks SET archive_path=?,state='ready_for_rekordbox',error=NULL WHERE id=?", (tagged_path,))
     if name in ("open_folder", "launch_sockseek"):
         raise ValueError("This action is only available in the desktop Tauri app")
     if name == "check_daemon":
