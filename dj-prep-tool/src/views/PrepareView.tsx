@@ -1,273 +1,251 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import TrackInspector from "../components/TrackInspector";
+import TrackRow, { type TrackMenuAction } from "../components/TrackRow";
 import { api } from "../lib/api";
-import type { TrackRow, TrackState } from "../lib/types";
-import { Button } from "@/components/ui/button";
+import type { TrackActionId, TrackRow as Track, TrackState } from "../lib/types";
+import { getWorkflowMeta, isActionable } from "../lib/workflow";
 import DownloadView from "./DownloadView";
 import ReviewView from "./ReviewView";
 
 export type PrepareStage = "find" | "match" | "download" | "convert" | "quality" | "tag" | "rekordbox";
-type PreparationBucket = "needsAction" | "running" | "blocked" | "done";
+export type WorkQueueView = "needs_attention" | "running" | "ready_to_dj";
+export type PreparationFilter = "needs_attention" | "needs_action" | "running" | "blocked" | "done" | "all";
+type StageFilter = PrepareStage | "all";
 
 const FIND_STATES: TrackState[] = ["requested", "needs_review", "not_found"];
 const MATCH_STATES: TrackState[] = ["matched"];
+const BLOCKED_STATES = new Set<TrackState>(["needs_review", "not_found", "quality_failed", "tagging_review", "picard_pending", "failed"]);
+const STAGE_ORDER: Array<PrepareStage | "done"> = ["find", "match", "download", "convert", "quality", "tag", "rekordbox", "done"];
 
-const STAGES: { id: PrepareStage; label: string; description: string; primaryAction: string; states: TrackState[] }[] = [
-  { id: "find", label: "Find files", description: "Search Soulseek and find candidate files for each track.", primaryAction: "Search for a file", states: ["requested", "needs_review", "not_found"] },
-  { id: "match", label: "Match", description: "Choose the right candidate file before downloading.", primaryAction: "Approve a match", states: ["matched"] },
-  { id: "download", label: "Download", description: "Start an approved download and monitor it to completion.", primaryAction: "Start download", states: ["approved", "downloading", "failed"] },
-  { id: "convert", label: "Convert", description: "Convert FLAC and other lossless files to MP3 before quality checking.", primaryAction: "Convert to MP3", states: ["conversion_pending"] },
-  { id: "quality", label: "Quality", description: "Check MP3 files before Beets tagging.", primaryAction: "Run quality check", states: ["downloaded", "converted", "quality_failed"] },
-  { id: "tag", label: "Tag", description: "Run Beets after a file passes the quality check.", primaryAction: "Run Beets tagging", states: ["ready_for_conversion", "tagging_review", "picard_pending"] },
-  { id: "rekordbox", label: "Rekordbox", description: "Complete the Rekordbox handoff after tagging.", primaryAction: "Mark imported", states: ["ready_for_rekordbox", "rekordbox_pending", "dj_ready"] },
+const STAGES: Array<{ id: PrepareStage; label: string; description: string; states: TrackState[] }> = [
+  { id: "find", label: "Find files", description: "Search Soulseek and widen the query when a precise search returns nothing.", states: FIND_STATES },
+  { id: "match", label: "Match", description: "Review candidate files and choose the correct version.", states: MATCH_STATES },
+  { id: "download", label: "Download", description: "Start approved downloads, monitor progress, and retry failures.", states: ["approved", "downloading", "failed"] },
+  { id: "convert", label: "Convert", description: "Convert lossless sources into the configured DJ format.", states: ["conversion_pending"] },
+  { id: "quality", label: "Quality", description: "Run authenticity and spectral checks before tagging.", states: ["downloaded", "converted", "quality_failed"] },
+  { id: "tag", label: "Tag", description: "Complete Beets or manual Picard metadata review.", states: ["ready_for_conversion", "tagging_review", "picard_pending"] },
+  { id: "rekordbox", label: "Rekordbox", description: "Hand finished files to Rekordbox and confirm completion.", states: ["ready_for_rekordbox", "rekordbox_pending", "dj_ready"] },
 ];
 
-const BUCKETS: { id: PreparationBucket; label: string; color: string }[] = [
-  { id: "needsAction", label: "Needs action", color: "#60a5fa" },
-  { id: "running", label: "Running", color: "#facc15" },
-  { id: "blocked", label: "Blocked", color: "#fb923c" },
-  { id: "done", label: "Done", color: "#4ade80" },
+const FILTERS: Array<{ id: Exclude<PreparationFilter, "needs_attention" | "all">; label: string; description: string }> = [
+  { id: "needs_action", label: "Needs action", description: "Ready for a user-triggered next step." },
+  { id: "running", label: "Running", description: "Active work that can be monitored." },
+  { id: "blocked", label: "Blocked", description: "Needs a decision, correction, or retry." },
+  { id: "done", label: "Done", description: "Completed and ready for DJ use." },
 ];
 
-function stageForTrack(track: TrackRow): PrepareStage {
-  if (["requested", "needs_review", "not_found"].includes(track.state)) return "find";
-  if (track.state === "matched") return "match";
-  if (["approved", "downloading", "failed"].includes(track.state)) return "download";
-  if (track.state === "conversion_pending") return "convert";
-  if (["downloaded", "converted", "quality_failed"].includes(track.state)) return "quality";
-  if (["ready_for_conversion", "tagging_review", "picard_pending"].includes(track.state)) return "tag";
-  return "rekordbox";
+function isBlocked(track: Track) {
+  return BLOCKED_STATES.has(track.state) || Boolean(track.error) || (track.state === "requested" && Boolean(track.search_job_id));
 }
 
-function bucketForTrack(track: TrackRow): PreparationBucket {
-  if (track.state === "dj_ready") return "done";
-  if (track.state === "downloading") return "running";
-  if (track.state === "not_found" || track.state === "needs_review" || track.state === "quality_failed" || track.state === "tagging_review" || track.state === "picard_pending" || track.state === "failed" || (track.state === "requested" && !!track.search_job_id)) return "blocked";
-  return "needsAction";
+function preparationBucket(track: Track): Exclude<PreparationFilter, "needs_attention" | "all"> {
+  const metadata = getWorkflowMeta(track);
+  if (metadata.bucket === "ready_to_dj") return "done";
+  if (metadata.bucket === "running") return "running";
+  if (isBlocked(track)) return "blocked";
+  return "needs_action";
 }
 
-function trackName(track: TrackRow) {
-  return track.artist ? `${track.artist} – ${track.title}` : track.title;
+export function filterPreparationTracks(tracks: Track[], filter: PreparationFilter, stage: StageFilter) {
+  return tracks.filter((track) => {
+    const metadata = getWorkflowMeta(track);
+    const matchesQueue = filter === "all"
+      || (filter === "needs_attention" ? metadata.bucket === "needs_attention" : preparationBucket(track) === filter);
+    return matchesQueue && (stage === "all" || metadata.stage === stage);
+  });
 }
 
-export default function PrepareView({ stage, onStageChange, pathMapFrom, pathMapTo }: { stage: PrepareStage; onStageChange: (stage: PrepareStage) => void; pathMapFrom?: string; pathMapTo?: string }) {
-  const [tracks, setTracks] = useState<TrackRow[]>([]);
+export function prioritizeActionableTracks(tracks: Track[]) {
+  return tracks.filter(isActionable).sort((a, b) => {
+    const blockedDifference = Number(isBlocked(b)) - Number(isBlocked(a));
+    if (blockedDifference) return blockedDifference;
+    const stageDifference = STAGE_ORDER.indexOf(getWorkflowMeta(a).stage) - STAGE_ORDER.indexOf(getWorkflowMeta(b).stage);
+    if (stageDifference) return stageDifference;
+    return a.created_at.localeCompare(b.created_at) || a.id - b.id;
+  });
+}
+
+function defaultFilter(view: WorkQueueView): PreparationFilter {
+  if (view === "running") return "running";
+  if (view === "ready_to_dj") return "done";
+  return "needs_attention";
+}
+
+function fallbackStage(track: Track): PrepareStage {
+  const stage = getWorkflowMeta(track).stage;
+  return stage === "done" ? "rekordbox" : stage;
+}
+
+function localPath(path: string, from?: string, to?: string) {
+  const normalized = path.replace(/^file:\/\/localhost\//i, "").replace(/^file:\/\/\//i, "").replace(/\\/g, "/");
+  if (!from || !to) return normalized;
+  const normalizedFrom = from.replace(/\\/g, "/").replace(/\/$/, "");
+  const normalizedTo = to.replace(/\\/g, "/").replace(/\/$/, "");
+  return normalized.startsWith(normalizedFrom) ? normalizedTo + normalized.slice(normalizedFrom.length) : normalized;
+}
+
+interface PrepareViewProps {
+  stage: PrepareStage;
+  queueView: WorkQueueView;
+  selectedTrackId: number | null;
+  onStageChange: (stage: PrepareStage) => void;
+  onSelectedTrackChange: (trackId: number | null) => void;
+  pathMapFrom?: string;
+  pathMapTo?: string;
+}
+
+export default function PrepareView({ stage, queueView, selectedTrackId, onStageChange, onSelectedTrackChange, pathMapFrom, pathMapTo }: PrepareViewProps) {
+  const [tracks, setTracks] = useState<Track[]>([]);
+  const [filter, setFilter] = useState<PreparationFilter>(() => defaultFilter(queueView));
+  const [stageFilter, setStageFilter] = useState<StageFilter>("all");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [moveTarget, setMoveTarget] = useState<TrackState>("requested");
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [continuedTrackId, setContinuedTrackId] = useState<number | null>(null);
-  const [showLibrary, setShowLibrary] = useState(false);
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set());
-  const [libSearch, setLibSearch] = useState("");
-  const [libSort, setLibSort] = useState<{ col: "artist" | "title"; dir: "asc" | "desc" }>({ col: "artist", dir: "asc" });
-  const [libStateFilter, setLibStateFilter] = useState("all");
-
-  const resolveLocalPath = (djPath: string) => {
-    // Strip file://localhost/ or file:/// URI prefix
-    let p = djPath.replace(/^file:\/\/localhost\//i, "").replace(/^file:\/\/\//i, "");
-    // Normalize Windows backslashes
-    p = p.replace(/\\/g, "/");
-    if (pathMapFrom && pathMapTo) {
-      const from = pathMapFrom.replace(/\\/g, "/").replace(/\/$/, "");
-      const to = pathMapTo.replace(/\/$/, "");
-      if (p.startsWith(from)) p = to + p.slice(from.length);
-    }
-    return p;
-  };
-
-  const act = async (id: number, fn: () => Promise<unknown>) => {
-    setBusyIds((s) => new Set(s).add(id));
-    try { await fn(); } catch (e) { setLoadError(String(e)); } finally { setBusyIds((s) => { const n = new Set(s); n.delete(id); return n; }); }
-  };
-
-  const toggleSort = (col: "artist" | "title") =>
-    setLibSort((s) => s.col === col ? { col, dir: s.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" });
-  const activeStage = STAGES.find((item) => item.id === stage) ?? STAGES[0];
+  const [error, setError] = useState<string | null>(null);
+  const [fallbackOpen, setFallbackOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
-    setLoadError(null);
-    api.listTracks().then(setTracks).catch((error) => setLoadError(String(error))).finally(() => setLoading(false));
+    setError(null);
+    return api.listTracks().then(setTracks).catch((reason) => setError(String(reason))).finally(() => setLoading(false));
   };
 
-  useEffect(load, [stage]);
+  useEffect(() => { load(); }, []);
+  useEffect(() => { setFilter(defaultFilter(queueView)); setStageFilter("all"); }, [queueView]);
 
-  const incompleteTracks = tracks
-    .filter((track) => track.state !== "dj_ready")
-    .sort((a, b) => {
-      const stageDifference = STAGES.findIndex((item) => item.id === stageForTrack(a)) - STAGES.findIndex((item) => item.id === stageForTrack(b));
-      if (stageDifference) return stageDifference;
-      return a.created_at.localeCompare(b.created_at) || a.id - b.id;
-    });
-  const nextTrack = incompleteTracks[0];
-  const continuedTrack = tracks.find((track) => track.id === continuedTrackId) ?? null;
-  const selectedStage = continuedTrack ? stageForTrack(continuedTrack) : null;
-  const count = tracks.filter((track) => activeStage.states.includes(track.state)).length;
-  const bucketCounts = BUCKETS.map((bucket) => ({ ...bucket, count: tracks.filter((track) => bucketForTrack(track) === bucket.id).length }));
-  const allLibTracks = tracks;
-  const visibleLibraryTracks = allLibTracks
-    .filter((t) => {
-      if (libStateFilter !== "all" && t.state !== libStateFilter) return false;
-      if (libSearch) { const q = libSearch.toLowerCase(); return t.artist.toLowerCase().includes(q) || t.title.toLowerCase().includes(q); }
-      return true;
-    })
-    .sort((a, b) => {
-      const va = (a[libSort.col] ?? "").toLowerCase();
-      const vb = (b[libSort.col] ?? "").toLowerCase();
-      return libSort.dir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
-    });
+  const selectedTrack = tracks.find((track) => track.id === selectedTrackId) ?? null;
+  const visibleTracks = useMemo(() => filterPreparationTracks(tracks, filter, stageFilter), [filter, stageFilter, tracks]);
+  const actionableTracks = useMemo(() => prioritizeActionableTracks(visibleTracks), [visibleTracks]);
+  const orderedTracks = useMemo(() => {
+    const priority = new Map(prioritizeActionableTracks(visibleTracks).map((track, index) => [track.id, index]));
+    return [...visibleTracks].sort((a, b) => (priority.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (priority.get(b.id) ?? Number.MAX_SAFE_INTEGER) || b.updated_at.localeCompare(a.updated_at));
+  }, [visibleTracks]);
+  const selectedTracks = tracks.filter((track) => selectedIds.has(track.id));
+  const activeStage = STAGES.find((item) => item.id === stage) ?? STAGES[0];
+  const counts = new Map(FILTERS.map((item) => [item.id, tracks.filter((track) => preparationBucket(track) === item.id).length]));
 
-  const continuePreparation = () => {
-    if (!nextTrack) return;
-    setContinuedTrackId(nextTrack.id);
-    onStageChange(stageForTrack(nextTrack));
-  };
+  const setBusy = (ids: number[], busy: boolean) => setBusyIds((current) => {
+    const next = new Set(current);
+    ids.forEach((id) => busy ? next.add(id) : next.delete(id));
+    return next;
+  });
 
-  const recover = async () => {
-    if (!continuedTrack) return;
+  const runOperation = async (targets: Track[], operation: (track: Track) => Promise<unknown>) => {
+    if (!targets.length) return;
+    const ids = targets.map((track) => track.id);
+    setBusy(ids, true);
+    setError(null);
     try {
-      if (continuedTrack.state === "not_found") {
-        await api.updateTrackState(continuedTrack.id, "requested");
-        setContinuedTrackId(null);
-        onStageChange("find");
-        load();
-        return;
-      }
-      onStageChange(stageForTrack(continuedTrack));
-    } catch (error) {
-      setLoadError(String(error));
+      await Promise.all(targets.map(operation));
+      await load();
+    } catch (reason) {
+      const message = String(reason);
+      await load();
+      setError(message);
+    } finally {
+      setBusy(ids, false);
     }
   };
 
-  const recoveryLabel = continuedTrack?.state === "not_found" ? "Search again" : `Open ${selectedStage ? STAGES.find((item) => item.id === selectedStage)?.label : "stage"}`;
-
-  const libStates = [...new Set(tracks.map((t) => t.state))].sort();
-
-  const libActionLabel = (track: TrackRow) => {
-    if (track.state === "dj_ready") return track.dj_path ? "Open" : "Done";
-    if (track.state === "not_found") return "Re-search";
-    if (["requested", "needs_review"].includes(track.state)) return "Find";
-    if (track.state === "matched") return "Match";
-    if (["approved", "downloading", "failed"].includes(track.state)) return "Download";
-    if (track.state === "conversion_pending") return "Convert";
-    if (["downloaded", "quality_failed"].includes(track.state)) return "Quality";
-    if (["ready_for_conversion", "tagging_review", "picard_pending"].includes(track.state)) return "Tag";
-    return "Rekordbox";
+  const showFallback = (track: Track) => {
+    onSelectedTrackChange(track.id);
+    onStageChange(fallbackStage(track));
+    setFallbackOpen(true);
   };
 
-  const libStateColor = (state: TrackState) => {
-    if (state === "dj_ready") return "#4ade80";
-    if (["failed", "quality_failed", "not_found"].includes(state)) return "#f59e0b";
-    if (state === "downloading") return "#facc15";
-    return "#a48e9b";
+  const runPrimaryAction = async (track: Track) => {
+    const action = getWorkflowMeta(track).nextAction.id;
+    const operations: Partial<Record<TrackActionId, (item: Track) => Promise<unknown>>> = {
+      search: (item) => api.searchTrack(item.id),
+      loose_search: (item) => api.searchTrackLoose(item.id),
+      download: (item) => api.startDownload(item.id),
+      convert: (item) => api.convertTrack(item.id),
+      quality_check: (item) => api.runQualityCheck(item.id),
+      retry_quality: (item) => api.runQualityCheck(item.id),
+      tag: (item) => api.tagTrack(item.id),
+      send_to_rekordbox: (item) => api.finishRekordbox(item.id),
+      reveal: (item) => {
+        const path = item.dj_path || item.archive_path || item.downloaded_path;
+        return path ? api.openFolder(localPath(path, pathMapFrom, pathMapTo)) : Promise.reject(new Error("No file path is recorded for this track."));
+      },
+    };
+    const operation = operations[action];
+    if (operation) await runOperation([track], operation);
+    else showFallback(track);
   };
 
-  const libAccentColor = (state: TrackState) => {
-    if (state === "dj_ready") return "#ff4fa3";
-    if (["failed", "quality_failed", "not_found"].includes(state)) return "#f59e0b";
-    if (state === "downloading") return "#facc15";
-    return "#352330";
-  };
-
-  const handleLibAction = async (track: TrackRow) => {
-    if (track.state === "dj_ready") {
-      if (track.dj_path) await act(track.id, () => api.openFolder(resolveLocalPath(track.dj_path!)));
+  const handleMenuAction = async (track: Track, action: TrackMenuAction) => {
+    if (action === "retry") return runPrimaryAction(track);
+    if (action === "reveal") {
+      const path = track.dj_path || track.archive_path || track.downloaded_path;
+      if (path) await runOperation([track], () => api.openFolder(localPath(path, pathMapFrom, pathMapTo)));
       return;
     }
-    if (track.state === "not_found") {
-      await act(track.id, () => api.updateTrackState(track.id, "requested"));
+    if (action === "delete") {
+      if (!window.confirm(`Delete ${track.artist ? `${track.artist} – ` : ""}${track.title} from the workbench?`)) return;
+      await runOperation([track], (item) => api.deleteTrack(item.id));
+      onSelectedTrackChange(null);
+      return;
     }
-    onStageChange(stageForTrack(track));
+    if (action === "move_stage") {
+      setSelectedIds(new Set([track.id]));
+      document.querySelector<HTMLSelectElement>("#batch-stage-target")?.focus();
+      return;
+    }
+    showFallback(track);
+  };
+
+  const runBatch = (kind: "search" | "loose" | "download" | "quality" | "move") => {
+    if (kind === "search") return runOperation(selectedTracks.filter((track) => track.state === "requested" && !track.search_job_id), (track) => api.searchTrack(track.id));
+    if (kind === "loose") return runOperation(selectedTracks.filter((track) => track.state === "not_found" || (track.state === "requested" && Boolean(track.search_job_id))), (track) => api.searchTrackLoose(track.id));
+    if (kind === "download") return runOperation(selectedTracks.filter((track) => track.state === "approved"), (track) => api.startDownload(track.id));
+    if (kind === "quality") return runOperation(selectedTracks.filter((track) => ["downloaded", "converted", "quality_failed"].includes(track.state)), (track) => api.runQualityCheck(track.id));
+    return runOperation(selectedTracks, (track) => api.updateTrackState(track.id, moveTarget)).then(() => setSelectedIds(new Set()));
+  };
+
+  const closeInspector = () => {
+    const id = selectedTrackId;
+    onSelectedTrackChange(null);
+    if (id !== null) window.requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-track-id="${id}"] .workbench-track-identity`)?.focus());
   };
 
   return (
-    <div className="view prepare-view" style={{ padding: 24, color: "#f9fafb" }}>
-      <div className="view-heading" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
-        <div><h2>Prepare</h2><p>Follow each track from matching through Beets tagging and Rekordbox.</p></div>
-        <Button size="sm" variant={nextTrack ? "outline" : "ghost"} onClick={continuePreparation} disabled={!nextTrack || loading} className="whitespace-nowrap text-blue-300 border-blue-900">{nextTrack ? "Continue preparation" : "Preparation complete"}</Button>
+    <div className="view prepare-view work-queue-view">
+      <header className="work-queue-heading">
+        <div className="view-heading"><h2>Prepare</h2><p>Work the highest-priority decisions without losing your place.</p></div>
+        <button className="button primary" type="button" onClick={() => actionableTracks[0] && runPrimaryAction(actionableTracks[0])} disabled={!actionableTracks.length || loading}>{actionableTracks.length ? `Process ${actionableTracks.length} track${actionableTracks.length === 1 ? "" : "s"} needing action` : "No actions in this view"}</button>
+      </header>
+      {error && <div className="inline-error" role="alert"><span>{error}</span><button type="button" onClick={load}>Reload</button></div>}
+
+      <div className="work-queue-metrics" aria-label="Preparation filters">
+        {FILTERS.map((item) => <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)} title={item.description}><strong>{loading ? "–" : counts.get(item.id)}</strong><span>{item.label}</span><small>{item.description}</small></button>)}
+        <button type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")} title="Every imported track, including completed tracks"><strong>{loading ? "–" : tracks.length}</strong><span>All tracks</span><small>Every imported track.</small></button>
       </div>
-      {loadError && <p style={{ color: "#f87171", background: "#1a0c0c", border: "1px solid #7f1d1d", borderRadius: 5, padding: "8px 10px", fontSize: 12 }}><button onClick={load} style={{ background: "transparent", color: "#fca5a5", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>Reload tracks</button> — {loadError}</p>}
-      <div aria-label="Preparation status" className="prepare-stats">
-        {bucketCounts.map((bucket, i) => (
-          <React.Fragment key={bucket.id}>
-            {i > 0 && <div className="prepare-stats-divider" />}
-            <div className="prepare-stat">
-              <span className="prepare-stat-value" style={{ color: bucket.color }}>{loading ? "–" : bucket.count}</span>
-              <span className="prepare-stat-label">{bucket.label}</span>
-            </div>
-          </React.Fragment>
-        ))}
-      </div>
-      {tracks.length > 0 && (
-        <div className="library-section">
-          <button className="library-toggle" onClick={() => setShowLibrary((v) => !v)}>
-            <span className="library-toggle-icon">{showLibrary ? "▾" : "▸"}</span>
-            All tracks
-            <span className="library-toggle-meta">{tracks.length} · {tracks.filter((t) => t.state === "dj_ready").length} done</span>
-          </button>
-          {showLibrary && <>
-            <div className="library-toolbar">
-              <input className="library-search" value={libSearch} onChange={(e) => setLibSearch(e.target.value)} placeholder="Search…" aria-label="Search tracks" />
-              <select className="library-state-select" value={libStateFilter} onChange={(e) => setLibStateFilter(e.target.value)} aria-label="Filter by stage">
-                <option value="all">All stages</option>
-                {libStates.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
-              </select>
-              <span className="library-sort">
-                {(["artist", "title"] as const).map((col) => (
-                  <button key={col} className={`library-sort-btn${libSort.col === col ? " active" : ""}`} onClick={() => toggleSort(col)}>
-                    {col === "artist" ? "Artist" : "Title"}{libSort.col === col ? (libSort.dir === "asc" ? " ↑" : " ↓") : ""}
-                  </button>
-                ))}
-              </span>
-            </div>
-            <div className="library-list">
-              {visibleLibraryTracks.length ? visibleLibraryTracks.map((track) => {
-                const busy = busyIds.has(track.id);
-                return (
-                  <div key={track.id} className={`library-row${busy ? " busy" : ""}`} style={{ borderLeftColor: libAccentColor(track.state) }}>
-                    <span className="library-row-name">
-                      {track.artist ? `${track.artist} – ${track.title}` : track.title}
-                      {track.mix_version && <span className="library-row-mix">{track.mix_version}</span>}
-                    </span>
-                    <span className="library-row-state" style={{ color: libStateColor(track.state) }}>{track.state.replace(/_/g, " ")}</span>
-                    <button className="library-row-action" onClick={() => handleLibAction(track)} disabled={busy || (track.state === "dj_ready" && !track.dj_path)}>{libActionLabel(track)}</button>
-                    <div className="library-row-actions">
-                      {track.dj_path && <button onClick={() => navigator.clipboard.writeText(track.dj_path!)} title="Copy path">⎘</button>}
-                      <button onClick={() => act(track.id, () => api.updateTrackState(track.id, "requested").then(load))} title="Re-queue" disabled={busy}>↺</button>
-                      <button onClick={() => act(track.id, () => api.deleteTrack(track.id).then(() => setTracks((t) => t.filter((x) => x.id !== track.id))))} title="Remove" disabled={busy} className="destructive">✕</button>
-                    </div>
-                  </div>
-                );
-              }) : <div className="library-empty">No tracks match.</div>}
-            </div>
-          </>}
-        </div>
-      )}
-      {continuedTrack && <section aria-label="Current preparation track" style={{ background: "#111827", border: "1px solid #1e40af", borderRadius: 6, padding: "10px 12px", marginBottom: 18 }}>
-        <div style={{ color: "#93c5fd", fontSize: 11, marginBottom: 4 }}>CONTINUING</div>
-        <div style={{ color: "#e5e7eb", fontSize: 14, fontWeight: 600 }}>{trackName(continuedTrack)}</div>
-        <div aria-label="Preparation step indicator" style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-          {STAGES.map((item, index) => {
-            const currentIndex = STAGES.findIndex((stageItem) => stageItem.id === selectedStage);
-            const state = index < currentIndex ? "Complete" : item.id === selectedStage ? "Current" : "Later";
-            return <span key={item.id} style={{ color: item.id === selectedStage ? "#93c5fd" : index < currentIndex ? "#4ade80" : "#6b7280", border: "1px solid #374151", borderRadius: 999, padding: "3px 7px", fontSize: 10 }}>{item.label}: {state}</span>;
-          })}
-        </div>
-        {continuedTrack.error && <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, color: "#fca5a5", fontSize: 12 }}><span style={{ flex: 1 }}>{continuedTrack.error}</span><button onClick={recover} style={{ background: "transparent", color: "#fca5a5", border: "1px solid #7f1d1d", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontFamily: "inherit", fontSize: 11 }}>{recoveryLabel}</button></div>}
-      </section>}
-      <nav aria-label="Preparation stages" className="prepare-stage-tabs">
-        {STAGES.map((item) => {
-          const stageCount = tracks.filter((track) => item.states.includes(track.state)).length;
-          const active = item.id === activeStage.id;
-          return <button key={item.id} onClick={() => onStageChange(item.id)} aria-current={active ? "step" : undefined} aria-label={`${item.label}, ${stageCount} track${stageCount === 1 ? "" : "s"}`}>
-            {item.label}<span>{loading ? "–" : stageCount}</span>
-          </button>;
-        })}
+
+      <nav className="prepare-stage-tabs" aria-label="Secondary stage filters">
+        <button type="button" aria-current={stageFilter === "all" ? "step" : undefined} onClick={() => setStageFilter("all")}>All stages<span>{tracks.length}</span></button>
+        {STAGES.map((item) => <button key={item.id} type="button" aria-current={stageFilter === item.id ? "step" : undefined} title={item.description} onClick={() => { setStageFilter(item.id); onStageChange(item.id); }}>{item.label}<span>{tracks.filter((track) => getWorkflowMeta(track).stage === item.id).length}</span></button>)}
       </nav>
-      <section aria-labelledby="prepare-stage-title">
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
-          <h3 id="prepare-stage-title" style={{ fontSize: 15, color: "#e5e7eb", margin: 0, fontWeight: 600 }}>{activeStage.label}</h3>
-          <span aria-live="polite" style={{ color: "#7a6570", fontSize: 12 }}>{loading ? "Loading…" : `${count} track${count === 1 ? "" : "s"}`}</span>
-        </div>
-        {stage === "find" ? <ReviewView states={FIND_STATES} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} /> : stage === "match" ? <ReviewView states={MATCH_STATES} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} /> : <DownloadView states={activeStage.states} embedded selectedTrackId={continuedTrack?.id} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} emptyMessage={`No tracks are ready for ${activeStage.label.toLowerCase()} yet.`} />}
+      <p className="work-queue-stage-description">{stageFilter === "all" ? "All preparation stages, ordered by urgency and next action." : STAGES.find((item) => item.id === stageFilter)?.description}</p>
+
+      {selectedIds.size > 0 && <div className="work-queue-batch" aria-label="Batch actions">
+        <strong>{selectedIds.size} selected</strong><button type="button" onClick={() => runBatch("search")}>Search</button><button type="button" onClick={() => runBatch("loose")}>Loose search</button><button type="button" onClick={() => runBatch("download")}>Start downloads</button><button type="button" onClick={() => runBatch("quality")}>Run quality checks</button>
+        <label htmlFor="batch-stage-target">Move to</label><select id="batch-stage-target" value={moveTarget} onChange={(event) => setMoveTarget(event.target.value as TrackState)}>{STAGES.flatMap((item) => item.states).map((state) => <option key={state} value={state}>{state.replace(/_/g, " ")}</option>)}</select><button type="button" onClick={() => runBatch("move")}>Apply stage</button><button type="button" onClick={() => setSelectedIds(new Set())}>Clear selection</button>
+      </div>}
+
+      <div className="work-queue-layout">
+        <section className="work-queue-list" aria-label="Prioritized track queue">
+          <div className="work-queue-columns" aria-hidden="true"><span /><span>Track</span><span>Mix</span><span>Status</span><span>Blocker</span><span>Updated</span><span>Next action</span><span /></div>
+          {loading ? <p className="work-queue-empty">Loading prioritized queue…</p> : orderedTracks.length ? orderedTracks.map((track) => <TrackRow key={track.id} track={track} metadata={getWorkflowMeta(track)} selected={selectedTrackId === track.id} checked={selectedIds.has(track.id)} busy={busyIds.has(track.id)} onCheckedChange={(checked) => setSelectedIds((current) => { const next = new Set(current); checked ? next.add(track.id) : next.delete(track.id); return next; })} onOpen={() => onSelectedTrackChange(track.id)} onPrimaryAction={() => runPrimaryAction(track)} onMenuAction={(action) => handleMenuAction(track, action)} />) : <p className="work-queue-empty">No tracks match this queue and stage filter.</p>}
+          {orderedTracks.some((track) => track.state === "not_found" || (track.state === "requested" && track.search_job_id)) && <details className="work-queue-help"><summary>No search results?</summary><p>Use Loose search to broaden the query. Edit the artist, title, or mix in the full Find files workspace if the result is still empty.</p></details>}
+        </section>
+        <TrackInspector track={selectedTrack} pathMapFrom={pathMapFrom} pathMapTo={pathMapTo} busy={selectedTrack ? busyIds.has(selectedTrack.id) : false} error={error} onClose={closeInspector} onPrimaryAction={runPrimaryAction} onMenuAction={handleMenuAction} />
+      </div>
+
+      <section className="legacy-stage-fallback" aria-labelledby="fallback-stage-title">
+        <button type="button" className="legacy-stage-toggle" aria-expanded={fallbackOpen} onClick={() => setFallbackOpen((open) => !open)}><span><strong id="fallback-stage-title">Full {activeStage.label} workspace</strong><small>{activeStage.description}</small></span><span>{fallbackOpen ? "Hide" : "Open"}</span></button>
+        {fallbackOpen && <div className="legacy-stage-content">{stage === "find" ? <ReviewView states={FIND_STATES} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} /> : stage === "match" ? <ReviewView states={MATCH_STATES} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} /> : <DownloadView states={activeStage.states} embedded selectedTrackId={selectedTrackId ?? undefined} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} emptyMessage={`No tracks are ready for ${activeStage.label.toLowerCase()} yet.`} />}</div>}
       </section>
     </div>
   );

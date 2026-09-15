@@ -279,6 +279,37 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .track-inspector-activity time { overflow: hidden; color: var(--color-muted-foreground); text-overflow: ellipsis; white-space: nowrap; }
 .track-inspector-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 13px 16px 16px; }
 .track-inspector-actions button { border: 1px solid var(--color-border-muted); border-radius: 5px; background: transparent; color: var(--color-muted); padding: 6px 8px; cursor: pointer; font-size: 10px; }
+.work-queue-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.work-queue-heading > .button { flex: 0 0 auto; margin-top: 2px; }
+.work-queue-metrics { display: grid; grid-template-columns: repeat(5, minmax(110px, 1fr)); gap: 8px; margin-bottom: 16px; }
+.work-queue-metrics button { display: grid; min-width: 0; border: 1px solid var(--color-border-subtle); border-radius: 8px; background: var(--color-surface); color: var(--color-muted); padding: 10px 12px; cursor: pointer; text-align: left; }
+.work-queue-metrics button:hover { border-color: var(--color-border-muted); background: var(--color-surface-raised); filter: none; }
+.work-queue-metrics button[aria-pressed="true"] { border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary-bg) 55%, var(--color-surface)); }
+.work-queue-metrics strong { color: var(--color-foreground); font-size: 21px; line-height: 1; }
+.work-queue-metrics span { margin-top: 6px; color: var(--color-primary-foreground); font-size: 11px; }
+.work-queue-metrics small { overflow: hidden; margin-top: 3px; color: var(--color-muted-foreground); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.work-queue-stage-description { margin: -9px 0 14px; color: var(--color-muted); font-size: 11px; }
+.work-queue-batch { display: flex; align-items: center; gap: 6px; overflow-x: auto; margin-bottom: 12px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface-raised); padding: 8px 10px; color: var(--color-muted); font-size: 10px; white-space: nowrap; }
+.work-queue-batch strong { margin-right: 4px; color: var(--color-primary-foreground); }
+.work-queue-batch button, .work-queue-batch select { border: 1px solid var(--color-border-muted); border-radius: 5px; background: var(--color-surface); color: var(--color-muted); padding: 5px 7px; cursor: pointer; font-size: 10px; }
+.work-queue-batch label { margin-left: 5px; }
+.work-queue-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); align-items: start; gap: 14px; }
+.work-queue-list { min-width: 0; overflow-x: auto; border: 1px solid var(--color-border); border-radius: 9px; background: var(--color-surface); }
+.work-queue-columns { display: grid; grid-template-columns: 28px minmax(180px, 1.4fr) minmax(90px, .65fr) minmax(130px, .85fr) minmax(150px, 1fr) 110px minmax(130px, auto) 34px; gap: 10px; min-width: 940px; border-bottom: 1px solid var(--color-border); background: var(--color-background); padding: 7px 10px; color: var(--color-muted-foreground); font-size: 9px; letter-spacing: .07em; text-transform: uppercase; }
+.work-queue-empty { margin: 0; padding: 40px 18px; color: var(--color-muted); text-align: center; font-size: 12px; }
+.work-queue-help { border-top: 1px solid var(--color-border); padding: 9px 12px; color: var(--color-muted); font-size: 11px; }
+.work-queue-help summary { color: var(--color-primary); cursor: pointer; }
+.work-queue-help p { margin: 7px 0 2px; line-height: 1.5; }
+.legacy-stage-fallback { margin-top: 18px; overflow: hidden; border: 1px solid var(--color-border-subtle); border-radius: 9px; background: var(--color-surface); }
+.legacy-stage-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; border: 0; background: transparent; color: var(--color-muted); padding: 11px 13px; cursor: pointer; text-align: left; }
+.legacy-stage-toggle > span:first-child { display: grid; gap: 3px; }
+.legacy-stage-toggle strong { color: var(--color-foreground); font-size: 11px; }
+.legacy-stage-toggle small { color: var(--color-muted-foreground); font-size: 10px; }
+.legacy-stage-content { border-top: 1px solid var(--color-border-subtle); padding: 12px; }
+.legacy-stage-content .view { padding: 0 !important; }
+.pipeline-workflow-group { border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); padding: 14px; }
+.pipeline-workflow-card { border-left: 3px solid var(--color-border-muted); border-radius: 5px; background: var(--color-surface-raised); padding: 8px 10px; }
+.pipeline-workflow-card .track-status-badge { margin-top: 6px; }
 .discovery-tabs { display: flex; gap: 24px; border-bottom: 1px solid #352330; margin-bottom: 16px; }
 .discovery-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; color: #a48e9b; padding: 10px 2px; cursor: pointer; font-size: 13px; }
 .discovery-tabs button[aria-selected="true"] { color: #fff0f7; border-bottom-color: #ff4fa3; }
@@ -393,6 +424,9 @@ button.rekordbox-row { cursor: pointer; }
   .activity-log-control { grid-template-columns: 17px auto; width: auto; flex: 0 0 auto; margin: 0; border-top-color: transparent; border-radius: 7px; padding-top: 9px; }
   .pipeline-board { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-x: visible !important; }
   .pipeline-board > section { min-width: 0 !important; }
+  .work-queue-layout { grid-template-columns: minmax(0, 1fr); }
+  .track-inspector { position: static; max-height: none; }
+  .work-queue-metrics { grid-template-columns: repeat(3, minmax(100px, 1fr)); }
 }
 @media (max-width: 760px) {
   .workbench-shell { display: block; }
@@ -427,5 +461,10 @@ button.rekordbox-row { cursor: pointer; }
   .similar-row button { justify-self: start; }
   .similar-row button.secondary { grid-column: 2 / -1; }
   .related-actions { align-items: stretch; flex-wrap: wrap; }
+  .work-queue-heading { align-items: stretch; flex-direction: column; }
+  .work-queue-heading > .button { width: 100%; }
+  .work-queue-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .work-queue-layout { grid-template-columns: minmax(0, 1fr); }
+  .track-inspector { position: static; max-height: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }

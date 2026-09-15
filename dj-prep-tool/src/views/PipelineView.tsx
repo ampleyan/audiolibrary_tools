@@ -1,41 +1,20 @@
 import { useEffect, useState } from "react";
+import TrackStatusBadge from "../components/TrackStatusBadge";
 import { api } from "../lib/api";
-import type { TrackRow } from "../lib/types";
+import type { TrackRow, WorkflowBucket } from "../lib/types";
+import { getWorkflowMeta } from "../lib/workflow";
 
-type PipelineGroupId = "inbox" | "attention" | "progress" | "ready" | "skipped";
+type PipelineGroupId = WorkflowBucket;
 
-const PIPELINE_GROUPS: { id: PipelineGroupId; label: string; description: string; color: string }[] = [
-  { id: "inbox", label: "Inbox", description: "New tracks waiting to be reviewed", color: "#60a5fa" },
-  { id: "attention", label: "Needs attention", description: "Tracks blocked or needing a fix", color: "#f59e0b" },
-  { id: "progress", label: "In progress", description: "Tracks moving through preparation", color: "#a78bfa" },
-  { id: "ready", label: "Ready", description: "Tracks ready for DJ use", color: "#34d399" },
-  { id: "skipped", label: "Not found", description: "Tracks with no available file", color: "#9ca3af" },
+const PIPELINE_GROUPS: { id: PipelineGroupId; label: string; description: string }[] = [
+  { id: "inbox", label: "Inbox", description: "New tracks waiting to enter preparation." },
+  { id: "needs_attention", label: "Needs attention", description: "Tracks with a user-triggered next action." },
+  { id: "running", label: "Running", description: "Downloads and other active work." },
+  { id: "ready_to_dj", label: "Ready to DJ", description: "Completed tracks ready for performance." },
 ];
 
 function groupForTrack(track: TrackRow): PipelineGroupId {
-  if (track.state === "not_found") return "skipped";
-  if (track.state === "dj_ready") return "ready";
-  if (track.state === "requested" && !track.search_job_id) return "inbox";
-  if (track.state === "needs_review" || track.state === "quality_failed" || track.state === "failed") return "attention";
-  if (track.state === "requested" && track.search_job_id) return "attention";
-  return "progress";
-}
-
-function nextActionFor(track: TrackRow): string {
-  if (track.state === "not_found") return "Search again";
-  if (track.state === "requested" || track.state === "needs_review") return "Search for a file"
-  if (track.state === "matched") return "Approve a candidate"
-  if (track.state === "approved") return "Start download"
-  if (track.state === "downloading") return "Download in progress"
-  if (track.state === "conversion_pending") return "Convert to MP3"
-  if (track.state === "converted") return "Run quality check"
-  if (track.state === "downloaded" || track.state === "quality_failed") return "Run quality check"
-  if (track.state === "ready_for_conversion") return "Run Beets tagging"
-  if (track.state === "tagging_review" || track.state === "picard_pending") return "Finish tagging"
-  if (track.state === "ready_for_rekordbox" || track.state === "rekordbox_pending") return "Send to Rekordbox"
-  if (track.state === "failed") return "Review error"
-  if (track.state === "dj_ready") return "Open DJ-ready file"
-  return "Open details"
+  return getWorkflowMeta(track).bucket;
 }
 
 function workViewFor(track: TrackRow): "review" | "downloads" {
@@ -44,7 +23,7 @@ function workViewFor(track: TrackRow): "review" | "downloads" {
 }
 
 function emptyGroups(): Record<PipelineGroupId, TrackRow[]> {
-  return { inbox: [], attention: [], progress: [], ready: [], skipped: [] };
+  return { inbox: [], needs_attention: [], running: [], ready_to_dj: [] };
 }
 
 function GroupColumn({
@@ -59,9 +38,8 @@ function GroupColumn({
   onNextAction?: (track: TrackRow) => void;
 }) {
   return (
-    <section style={{ minWidth: 260, flex: "1 1 0", background: "#111827", border: "1px solid #293548", borderRadius: 8, padding: 14 }} aria-labelledby={`${group.id}-heading`}>
+    <section className="pipeline-workflow-group" style={{ minWidth: 260, flex: "1 1 0" }} aria-labelledby={`${group.id}-heading`}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: group.color, display: "inline-block", flexShrink: 0 }} />
         <h3 id={`${group.id}-heading`} style={{ fontSize: 13, color: "#e5e7eb", fontWeight: 600, margin: 0 }}>{group.label}</h3>
         <span style={{ marginLeft: "auto", fontSize: 11, color: "#d1d5db", background: "#1f2937", borderRadius: 999, padding: "1px 7px" }}>{tracks.length}</span>
       </div>
@@ -70,14 +48,14 @@ function GroupColumn({
         {tracks.length === 0 ? (
           <p style={{ color: "#4b5563", fontSize: 12, margin: 0 }}>Nothing here yet.</p>
         ) : tracks.map((track) => (
-          <div key={track.id} style={{ background: "#1f2937", borderLeft: `3px solid ${group.color}66`, borderRadius: 5, padding: "8px 10px" }}>
+          <div key={track.id} className="pipeline-workflow-card">
             <span style={{ display: "block", fontSize: 12, color: "#e5e7eb", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${track.artist} – ${track.title}`}>
               {track.artist ? `${track.artist} – ${track.title}` : track.title}
             </span>
-            <span style={{ display: "block", fontSize: 10, color: group.color, marginTop: 3 }}>{nextActionFor(track)}</span>
+            <TrackStatusBadge metadata={getWorkflowMeta(track)} />
             {track.mix_version && <span style={{ display: "block", fontSize: 10, color: "#6b7280", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.mix_version}</span>}
             {track.error && <span style={{ display: "block", fontSize: 10, color: track.state === "not_found" ? "#9ca3af" : "#f87171", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={track.error}>{track.state === "not_found" ? "ⓘ" : "⚠"} {track.error}</span>}
-            {onNextAction ? <button onClick={() => onNextAction(track)} style={{ ...secondaryButtonStyle, marginTop: 8, width: "100%" }}>{nextActionFor(track)}</button> : onOpen && <button onClick={() => onOpen(track)} style={{ ...secondaryButtonStyle, marginTop: 8, width: "100%" }}>Open details</button>}
+            {onNextAction ? <button onClick={() => onNextAction(track)} style={{ ...secondaryButtonStyle, marginTop: 8, width: "100%" }}>{getWorkflowMeta(track).nextAction.label}</button> : onOpen && <button onClick={() => onOpen(track)} style={{ ...secondaryButtonStyle, marginTop: 8, width: "100%" }}>Open details</button>}
           </div>
         ))}
       </div>
@@ -110,9 +88,9 @@ export default function PipelineView({ heading = "Overview", onNavigate }: { hea
     return groups;
   }, emptyGroups());
 
-  const attentionTrack = tracks.find((track) => groupForTrack(track) === "attention");
-  const blockers = byGroup.attention;
-  const activeJobs = tracks.filter((track) => track.state === "downloading");
+  const attentionTrack = tracks.find((track) => groupForTrack(track) === "needs_attention");
+  const blockers = byGroup.needs_attention;
+  const activeJobs = byGroup.running;
   const continueWork = () => {
     if (!attentionTrack) return;
     onNavigate?.(workViewFor(attentionTrack));
@@ -137,11 +115,10 @@ export default function PipelineView({ heading = "Overview", onNavigate }: { hea
   };
   const healthStats = [
     { label: "Inbox", value: byGroup.inbox.length, color: "#60a5fa" },
-    { label: "Needs attention", value: byGroup.attention.length, color: "#f59e0b" },
-    { label: "In progress", value: byGroup.progress.length, color: "#a78bfa" },
-    { label: "DJ-ready", value: byGroup.ready.length, color: "#34d399" },
-    { label: "Not found", value: byGroup.skipped.length, color: "#9ca3af" },
-    { label: "Completion", value: tracks.length ? `${Math.round((byGroup.ready.length / tracks.length) * 100)}%` : "—", color: "#60a5fa" },
+    { label: "Needs attention", value: byGroup.needs_attention.length, color: "#f59e0b" },
+    { label: "Running", value: byGroup.running.length, color: "#facc15" },
+    { label: "DJ-ready", value: byGroup.ready_to_dj.length, color: "#34d399" },
+    { label: "Completion", value: tracks.length ? `${Math.round((byGroup.ready_to_dj.length / tracks.length) * 100)}%` : "—", color: "#60a5fa" },
   ];
 
   return (
@@ -180,7 +157,7 @@ export default function PipelineView({ heading = "Overview", onNavigate }: { hea
       {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : isLibrary ? tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks in your Library yet. Add tracks to get started.</p> : <div className="pipeline-board" style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>{PIPELINE_GROUPS.map((group) => <GroupColumn key={group.id} group={group} tracks={byGroup[group.id]} onNextAction={takeLibraryAction} />)}</div> : tracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>No tracks to prepare yet. Add tracks in Library when you are ready.</p> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
         <section style={{ background: "#111827", border: "1px solid #293548", borderRadius: 6, padding: "12px 14px" }} aria-labelledby="overview-blockers">
           <h3 id="overview-blockers" style={{ color: "#e5e7eb", fontSize: 13, margin: "0 0 8px" }}>Blockers</h3>
-          {blockers.length === 0 ? <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>Nothing needs attention.</p> : <div style={{ display: "grid", gap: 7 }}>{blockers.slice(0, 5).map((track) => <div key={track.id} style={{ color: "#d1d5db", fontSize: 12 }}><span>{track.artist ? `${track.artist} – ${track.title}` : track.title}</span><span style={{ color: "#f59e0b", marginLeft: 8 }}>{nextActionFor(track)}</span></div>)}</div>}
+          {blockers.length === 0 ? <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>Nothing needs attention.</p> : <div style={{ display: "grid", gap: 7 }}>{blockers.slice(0, 5).map((track) => <div key={track.id} style={{ color: "#d1d5db", fontSize: 12 }}><span>{track.artist ? `${track.artist} – ${track.title}` : track.title}</span><span style={{ color: "#f59e0b", marginLeft: 8 }}>{getWorkflowMeta(track).nextAction.label}</span></div>)}</div>}
         </section>
         <section style={{ background: "#111827", border: "1px solid #293548", borderRadius: 6, padding: "12px 14px" }} aria-labelledby="overview-active-jobs">
           <h3 id="overview-active-jobs" style={{ color: "#e5e7eb", fontSize: 13, margin: "0 0 8px" }}>Active jobs</h3>

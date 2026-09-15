@@ -5,6 +5,7 @@ import { getWorkflowMeta } from "../lib/workflow";
 import TrackInspector from "./TrackInspector";
 import TrackRow from "./TrackRow";
 import TrackStatusBadge from "./TrackStatusBadge";
+import { filterPreparationTracks, prioritizeActionableTracks } from "../views/PrepareView";
 
 const track: Track = {
   id: 17,
@@ -109,5 +110,42 @@ describe("TrackInspector", () => {
     );
 
     expect(html).toContain("Select a track to inspect its next action and available details.");
+  });
+});
+
+describe("Prepare queue derivation", () => {
+  const withState = (id: number, state: Track["state"], overrides: Partial<Track> = {}): Track => ({
+    ...track,
+    id,
+    state,
+    search_job_id: null,
+    error: null,
+    created_at: `2026-09-${String(id).padStart(2, "0")}T10:00:00Z`,
+    ...overrides,
+  });
+
+  it("defaults to needs-attention tracks and hides completed tracks", () => {
+    const tracks = [
+      withState(1, "requested"),
+      withState(2, "matched"),
+      withState(3, "downloading"),
+      withState(4, "dj_ready"),
+    ];
+
+    expect(filterPreparationTracks(tracks, "needs_attention", "all").map((item) => item.id)).toEqual([2]);
+    expect(filterPreparationTracks(tracks, "done", "all").map((item) => item.id)).toEqual([4]);
+    expect(filterPreparationTracks(tracks, "all", "all").map((item) => item.id)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("prioritizes blocked actionable work before normal stage work", () => {
+    const tracks = [
+      withState(5, "approved"),
+      withState(4, "matched"),
+      withState(3, "requested", { search_job_id: "empty-search" }),
+      withState(2, "dj_ready"),
+      withState(1, "downloading"),
+    ];
+
+    expect(prioritizeActionableTracks(tracks).map((item) => item.id)).toEqual([3, 4, 5]);
   });
 });

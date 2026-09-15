@@ -22,6 +22,7 @@ export default function App() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [view, setView] = useState<WorkbenchView>("needs_attention");
   const [prepareStage, setPrepareStage] = useState<PrepareStage>("find");
+  const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -33,6 +34,7 @@ export default function App() {
     if (nextView === "needs_attention") setPrepareStage("find");
     if (nextView === "running") setPrepareStage("download");
     if (nextView === "ready_to_dj") setPrepareStage("rekordbox");
+    if (!(["needs_attention", "running", "ready_to_dj"] as WorkbenchView[]).includes(nextView)) setSelectedTrackId(null);
     setView(nextView);
   };
 
@@ -147,7 +149,7 @@ export default function App() {
         <main>
           {view === "inbox" && <ImportView onNavigate={navigate} />}
           {view === "library" && <LibraryView onNavigate={navigate} />}
-          {(view === "needs_attention" || view === "running" || view === "ready_to_dj") && <PrepareView stage={prepareStage} onStageChange={setPrepareStage} pathMapFrom={settings.pathMapFrom} pathMapTo={settings.pathMapTo} />}
+          {(view === "needs_attention" || view === "running" || view === "ready_to_dj") && <PrepareView stage={prepareStage} queueView={view} selectedTrackId={selectedTrackId} onStageChange={setPrepareStage} onSelectedTrackChange={setSelectedTrackId} pathMapFrom={settings.pathMapFrom} pathMapTo={settings.pathMapTo} />}
           {view === "discover" && <DiscoveryView onNavigate={navigate} onPlayTrack={(tracks, index) => { setPlayer({ tracks, index }); setPlayerMessage(null); }} />}
           {view === "settings" && (
             <SetupView
