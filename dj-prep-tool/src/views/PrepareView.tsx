@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { TrackRow, TrackState } from "../lib/types";
+import { Button } from "@/components/ui/button";
 import DownloadView from "./DownloadView";
 import ReviewView from "./ReviewView";
 
@@ -57,7 +58,7 @@ export default function PrepareView({ stage, onStageChange, pathMapFrom, pathMap
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set());
   const [libSearch, setLibSearch] = useState("");
   const [libSort, setLibSort] = useState<{ col: "artist" | "title"; dir: "asc" | "desc" }>({ col: "artist", dir: "asc" });
-  const [libFileFilter, setLibFileFilter] = useState<"all" | "file" | "no_file">("all");
+  const [libStateFilter, setLibStateFilter] = useState("all");
 
   const resolveLocalPath = (djPath: string) => {
     // Strip file://localhost/ or file:/// URI prefix
@@ -101,11 +102,10 @@ export default function PrepareView({ stage, onStageChange, pathMapFrom, pathMap
   const selectedStage = continuedTrack ? stageForTrack(continuedTrack) : null;
   const count = tracks.filter((track) => activeStage.states.includes(track.state)).length;
   const bucketCounts = BUCKETS.map((bucket) => ({ ...bucket, count: tracks.filter((track) => bucketForTrack(track) === bucket.id).length }));
-  const libraryTracks = tracks.filter((track) => track.state === "dj_ready");
-  const visibleLibraryTracks = libraryTracks
+  const allLibTracks = tracks;
+  const visibleLibraryTracks = allLibTracks
     .filter((t) => {
-      if (libFileFilter === "file" && !t.dj_path) return false;
-      if (libFileFilter === "no_file" && t.dj_path) return false;
+      if (libStateFilter !== "all" && t.state !== libStateFilter) return false;
       if (libSearch) { const q = libSearch.toLowerCase(); return t.artist.toLowerCase().includes(q) || t.title.toLowerCase().includes(q); }
       return true;
     })
@@ -139,63 +139,108 @@ export default function PrepareView({ stage, onStageChange, pathMapFrom, pathMap
 
   const recoveryLabel = continuedTrack?.state === "not_found" ? "Search again" : `Open ${selectedStage ? STAGES.find((item) => item.id === selectedStage)?.label : "stage"}`;
 
+  const libStates = [...new Set(tracks.map((t) => t.state))].sort();
+
+  const libActionLabel = (track: TrackRow) => {
+    if (track.state === "dj_ready") return track.dj_path ? "Open" : "Done";
+    if (track.state === "not_found") return "Re-search";
+    if (["requested", "needs_review"].includes(track.state)) return "Find";
+    if (track.state === "matched") return "Match";
+    if (["approved", "downloading", "failed"].includes(track.state)) return "Download";
+    if (track.state === "conversion_pending") return "Convert";
+    if (["downloaded", "quality_failed"].includes(track.state)) return "Quality";
+    if (["ready_for_conversion", "tagging_review", "picard_pending"].includes(track.state)) return "Tag";
+    return "Rekordbox";
+  };
+
+  const libStateColor = (state: TrackState) => {
+    if (state === "dj_ready") return "#4ade80";
+    if (["failed", "quality_failed", "not_found"].includes(state)) return "#f59e0b";
+    if (state === "downloading") return "#facc15";
+    return "#a48e9b";
+  };
+
+  const libAccentColor = (state: TrackState) => {
+    if (state === "dj_ready") return "#ff4fa3";
+    if (["failed", "quality_failed", "not_found"].includes(state)) return "#f59e0b";
+    if (state === "downloading") return "#facc15";
+    return "#352330";
+  };
+
+  const handleLibAction = async (track: TrackRow) => {
+    if (track.state === "dj_ready") {
+      if (track.dj_path) await act(track.id, () => api.openFolder(resolveLocalPath(track.dj_path!)));
+      return;
+    }
+    if (track.state === "not_found") {
+      await act(track.id, () => api.updateTrackState(track.id, "requested"));
+    }
+    onStageChange(stageForTrack(track));
+  };
+
   return (
     <div className="view prepare-view" style={{ padding: 24, color: "#f9fafb" }}>
       <div className="view-heading" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
         <div><h2>Prepare</h2><p>Follow each track from matching through Beets tagging and Rekordbox.</p></div>
-        <button onClick={continuePreparation} disabled={!nextTrack || loading} style={{ background: !nextTrack || loading ? "#111827" : "#1e3a5f", color: !nextTrack || loading ? "#4b5563" : "#93c5fd", border: "1px solid #1e40af", borderRadius: 5, padding: "7px 12px", fontSize: 12, cursor: !nextTrack || loading ? "not-allowed" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>{nextTrack ? "Continue preparation" : "Preparation complete"}</button>
+        <Button size="sm" variant={nextTrack ? "outline" : "ghost"} onClick={continuePreparation} disabled={!nextTrack || loading} className="whitespace-nowrap text-blue-300 border-blue-900">{nextTrack ? "Continue preparation" : "Preparation complete"}</Button>
       </div>
       {loadError && <p style={{ color: "#f87171", background: "#1a0c0c", border: "1px solid #7f1d1d", borderRadius: 5, padding: "8px 10px", fontSize: 12 }}><button onClick={load} style={{ background: "transparent", color: "#fca5a5", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>Reload tracks</button> — {loadError}</p>}
-      <div aria-label="Preparation status" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, marginBottom: 8 }}>
-        {bucketCounts.map((bucket) => <div key={bucket.id} style={{ background: "#111827", border: "1px solid #293548", borderRadius: 6, padding: "10px 12px" }}><div style={{ color: "#6b7280", fontSize: 11 }}>{bucket.label}</div><div style={{ color: bucket.color, fontSize: 20, fontWeight: 600, marginTop: 3 }}>{loading ? "…" : bucket.count}</div></div>)}
+      <div aria-label="Preparation status" className="prepare-stats">
+        {bucketCounts.map((bucket, i) => (
+          <React.Fragment key={bucket.id}>
+            {i > 0 && <div className="prepare-stats-divider" />}
+            <div className="prepare-stat">
+              <span className="prepare-stat-value" style={{ color: bucket.color }}>{loading ? "–" : bucket.count}</span>
+              <span className="prepare-stat-label">{bucket.label}</span>
+            </div>
+          </React.Fragment>
+        ))}
       </div>
-      {libraryTracks.length > 0 && <div style={{ marginBottom: 18 }}>
-        <button onClick={() => setShowLibrary((v) => !v)} style={{ background: "transparent", border: "none", color: "#4ade80", cursor: "pointer", fontFamily: "inherit", fontSize: 12, padding: "6px 0", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 10 }}>{showLibrary ? "▾" : "▸"}</span> In library ({libraryTracks.length})
-        </button>
-        {showLibrary && <>
-          <div style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
-            <input value={libSearch} onChange={(e) => setLibSearch(e.target.value)} placeholder="Search artist, title…" style={{ flex: 1, background: "#0d131a", border: "1px solid #293548", borderRadius: 4, color: "#d1d5db", fontSize: 12, padding: "4px 8px", fontFamily: "inherit" }} />
-            <select value={libFileFilter} onChange={(e) => setLibFileFilter(e.target.value as "all" | "file" | "no_file")} style={{ background: "#0d131a", border: "1px solid #293548", borderRadius: 4, color: "#d1d5db", fontSize: 12, padding: "4px 6px", fontFamily: "inherit" }}>
-              <option value="all">All ({libraryTracks.length})</option>
-              <option value="file">Has file ({libraryTracks.filter((t) => t.dj_path).length})</option>
-              <option value="no_file">No file ({libraryTracks.filter((t) => !t.dj_path).length})</option>
-            </select>
-          </div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, color: "#d1d5db" }}>
-            <thead><tr style={{ borderBottom: "1px solid #293548" }}>
-              {(["artist", "title"] as const).map((col) => {
-                const active = libSort.col === col;
-                return <th key={col} onClick={() => toggleSort(col)} style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500, cursor: "pointer", userSelect: "none", color: active ? "#93c5fd" : "#6b7280" }}>
-                  {col === "artist" ? "Artist" : "Title"}{active ? (libSort.dir === "asc" ? " ↑" : " ↓") : ""}
-                </th>;
-              })}
-              <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500, color: "#6b7280" }}>File</th>
-              <th />
-            </tr></thead>
-            <tbody>{visibleLibraryTracks.length ? visibleLibraryTracks.map((track) => {
-              const busy = busyIds.has(track.id);
-              const fileName = track.dj_path ? track.dj_path.split(/[\\/]/).pop() : null;
-              return <tr key={track.id} style={{ borderBottom: "1px solid #1a2535", opacity: busy ? 0.5 : 1 }}>
-                <td style={{ padding: "4px 8px" }}>{track.artist}</td>
-                <td style={{ padding: "4px 8px" }}>{track.title}</td>
-                <td style={{ padding: "4px 8px", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={track.dj_path ?? undefined}>
-                  {fileName ? <span style={{ color: "#4ade80" }}>✓ {fileName}</span> : <span style={{ color: "#4b5563" }}>—</span>}
-                </td>
-                <td style={{ padding: "4px 8px", whiteSpace: "nowrap", textAlign: "right" }}>
-                  {track.dj_path && <>
-                    <button disabled={busy} onClick={() => act(track.id, () => api.openFolder(resolveLocalPath(track.dj_path!)))} title={resolveLocalPath(track.dj_path)} style={{ background: "transparent", border: "1px solid #293548", borderRadius: 3, color: "#9ca3af", cursor: "pointer", fontSize: 11, padding: "2px 6px", marginRight: 4, fontFamily: "inherit" }}>Open</button>
-                    <button onClick={() => navigator.clipboard.writeText(track.dj_path!)} title="Copy raw path" style={{ background: "transparent", border: "none", color: "#4b5563", cursor: "pointer", fontSize: 13, padding: "2px 4px", marginRight: 2, lineHeight: 1 }}>⎘</button>
-                  </>}
-                  <button disabled={busy} onClick={() => act(track.id, () => api.updateTrackState(track.id, "requested").then(() => setTracks((t) => t.filter((x) => x.id !== track.id))))} style={{ background: "transparent", border: "1px solid #293548", borderRadius: 3, color: "#9ca3af", cursor: "pointer", fontSize: 11, padding: "2px 6px", marginRight: 4, fontFamily: "inherit" }}>Re-queue</button>
-                  <button disabled={busy} onClick={() => act(track.id, () => api.deleteTrack(track.id).then(() => setTracks((t) => t.filter((x) => x.id !== track.id))))} style={{ background: "transparent", border: "1px solid #7f1d1d", borderRadius: 3, color: "#f87171", cursor: "pointer", fontSize: 11, padding: "2px 6px", fontFamily: "inherit" }}>Remove</button>
-                </td>
-              </tr>;
-            }) : <tr><td colSpan={4} style={{ padding: "10px 8px", color: "#4b5563", textAlign: "center" }}>No tracks match.</td></tr>}
-            </tbody>
-          </table>
-        </>}
-      </div>}
+      {tracks.length > 0 && (
+        <div className="library-section">
+          <button className="library-toggle" onClick={() => setShowLibrary((v) => !v)}>
+            <span className="library-toggle-icon">{showLibrary ? "▾" : "▸"}</span>
+            All tracks
+            <span className="library-toggle-meta">{tracks.length} · {tracks.filter((t) => t.state === "dj_ready").length} done</span>
+          </button>
+          {showLibrary && <>
+            <div className="library-toolbar">
+              <input className="library-search" value={libSearch} onChange={(e) => setLibSearch(e.target.value)} placeholder="Search…" aria-label="Search tracks" />
+              <select className="library-state-select" value={libStateFilter} onChange={(e) => setLibStateFilter(e.target.value)} aria-label="Filter by stage">
+                <option value="all">All stages</option>
+                {libStates.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+              </select>
+              <span className="library-sort">
+                {(["artist", "title"] as const).map((col) => (
+                  <button key={col} className={`library-sort-btn${libSort.col === col ? " active" : ""}`} onClick={() => toggleSort(col)}>
+                    {col === "artist" ? "Artist" : "Title"}{libSort.col === col ? (libSort.dir === "asc" ? " ↑" : " ↓") : ""}
+                  </button>
+                ))}
+              </span>
+            </div>
+            <div className="library-list">
+              {visibleLibraryTracks.length ? visibleLibraryTracks.map((track) => {
+                const busy = busyIds.has(track.id);
+                return (
+                  <div key={track.id} className={`library-row${busy ? " busy" : ""}`} style={{ borderLeftColor: libAccentColor(track.state) }}>
+                    <span className="library-row-name">
+                      {track.artist ? `${track.artist} – ${track.title}` : track.title}
+                      {track.mix_version && <span className="library-row-mix">{track.mix_version}</span>}
+                    </span>
+                    <span className="library-row-state" style={{ color: libStateColor(track.state) }}>{track.state.replace(/_/g, " ")}</span>
+                    <button className="library-row-action" onClick={() => handleLibAction(track)} disabled={busy || (track.state === "dj_ready" && !track.dj_path)}>{libActionLabel(track)}</button>
+                    <div className="library-row-actions">
+                      {track.dj_path && <button onClick={() => navigator.clipboard.writeText(track.dj_path!)} title="Copy path">⎘</button>}
+                      <button onClick={() => act(track.id, () => api.updateTrackState(track.id, "requested").then(load))} title="Re-queue" disabled={busy}>↺</button>
+                      <button onClick={() => act(track.id, () => api.deleteTrack(track.id).then(() => setTracks((t) => t.filter((x) => x.id !== track.id))))} title="Remove" disabled={busy} className="destructive">✕</button>
+                    </div>
+                  </div>
+                );
+              }) : <div className="library-empty">No tracks match.</div>}
+            </div>
+          </>}
+        </div>
+      )}
       {continuedTrack && <section aria-label="Current preparation track" style={{ background: "#111827", border: "1px solid #1e40af", borderRadius: 6, padding: "10px 12px", marginBottom: 18 }}>
         <div style={{ color: "#93c5fd", fontSize: 11, marginBottom: 4 }}>CONTINUING</div>
         <div style={{ color: "#e5e7eb", fontSize: 14, fontWeight: 600 }}>{trackName(continuedTrack)}</div>
@@ -208,22 +253,20 @@ export default function PrepareView({ stage, onStageChange, pathMapFrom, pathMap
         </div>
         {continuedTrack.error && <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, color: "#fca5a5", fontSize: 12 }}><span style={{ flex: 1 }}>{continuedTrack.error}</span><button onClick={recover} style={{ background: "transparent", color: "#fca5a5", border: "1px solid #7f1d1d", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontFamily: "inherit", fontSize: 11 }}>{recoveryLabel}</button></div>}
       </section>}
-      <div aria-label="Preparation stages" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
+      <nav aria-label="Preparation stages" className="prepare-stage-tabs">
         {STAGES.map((item) => {
           const stageCount = tracks.filter((track) => item.states.includes(track.state)).length;
           const active = item.id === activeStage.id;
-          return <button key={item.id} onClick={() => onStageChange(item.id)} aria-current={active ? "step" : undefined} aria-label={`${item.label}, ${stageCount} track${stageCount === 1 ? "" : "s"}`} style={{ background: active ? "#1e3a5f" : "transparent", color: active ? "#93c5fd" : "#9ca3af", border: `1px solid ${active ? "#1e40af" : "#374151"}`, borderRadius: 5, padding: "7px 12px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-            {item.label} ({loading ? "…" : stageCount})
+          return <button key={item.id} onClick={() => onStageChange(item.id)} aria-current={active ? "step" : undefined} aria-label={`${item.label}, ${stageCount} track${stageCount === 1 ? "" : "s"}`}>
+            {item.label}<span>{loading ? "–" : stageCount}</span>
           </button>;
         })}
-      </div>
+      </nav>
       <section aria-labelledby="prepare-stage-title">
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-          <h3 id="prepare-stage-title" style={{ fontSize: 16, color: "#e5e7eb", margin: 0 }}>{activeStage.label}</h3>
-          <span aria-live="polite" style={{ color: "#60a5fa", fontSize: 12 }}>{loading ? "Loading…" : `${count} track${count === 1 ? "" : "s"}`}</span>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
+          <h3 id="prepare-stage-title" style={{ fontSize: 15, color: "#e5e7eb", margin: 0, fontWeight: 600 }}>{activeStage.label}</h3>
+          <span aria-live="polite" style={{ color: "#7a6570", fontSize: 12 }}>{loading ? "Loading…" : `${count} track${count === 1 ? "" : "s"}`}</span>
         </div>
-        <p style={{ color: "#6b7280", fontSize: 12, margin: "0 0 4px" }}>{activeStage.description}</p>
-        <p style={{ color: "#93c5fd", fontSize: 12, margin: "0 0 8px" }}>Primary action: {activeStage.primaryAction}</p>
         {stage === "find" ? <ReviewView states={FIND_STATES} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} /> : stage === "match" ? <ReviewView states={MATCH_STATES} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} /> : <DownloadView states={activeStage.states} embedded selectedTrackId={continuedTrack?.id} onTrackChanged={(updated) => setTracks((current) => current.map((track) => track.id === updated.id ? updated : track))} emptyMessage={`No tracks are ready for ${activeStage.label.toLowerCase()} yet.`} />}
       </section>
     </div>

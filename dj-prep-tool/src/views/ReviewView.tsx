@@ -262,7 +262,6 @@ export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: T
     <section className="similar-panel" style={{ background: "#111827", border: "1px solid #293548", borderRadius: 8, marginBottom: 18, padding: 16 }}>
       <div className="similar-panel-layout">
         <aside className="similar-seed-column">
-          <div className="similar-column-heading"><h3>Choose seed tracks</h3><p>Select one or more Pipeline tracks.</p></div>
           <PipelineSeedListbox tracks={tracks} selectedIds={sourceIds} onChange={(ids) => {
             setSourceIds(ids);
             setSimilarTracks(null);
@@ -275,13 +274,11 @@ export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: T
           </button>
         </aside>
         <div className="similar-results-column">
-          <div className="similar-column-heading"><h3>Similar tracks</h3></div>
           {error && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{error}</p>}
           {importError && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{importError}</p>}
           {importedCount !== null && <p aria-live="polite" style={{ color: "#34d399", fontSize: 12, margin: "0 0 8px" }}>Added {importedCount} track{importedCount === 1 ? "" : "s"} to Library.{onOpenLibrary && <button onClick={onOpenLibrary} style={{ background: "transparent", color: "#93c5fd", border: "1px solid #1e40af", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", marginLeft: 8 }}>View Library</button>}</p>}
           {youtubeError && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{youtubeError}</p>}
           {youtubeResult && <p style={{ color: "#34d399", fontSize: 12, margin: "0 0 8px" }}>Created playlist with {youtubeResult.added} tracks. <a href={youtubeResult.playlistUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa" }}>Open YouTube playlist</a>{youtubeResult.skipped.length > 0 && ` · Skipped ${youtubeResult.skipped.length} unavailable or rejected`}</p>}
-          {similarTracks === null && !loading && !error && <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>Choose a track and find related music.</p>}
           {similarTracks !== null && (
             <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>

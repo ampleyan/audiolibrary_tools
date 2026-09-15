@@ -9,12 +9,13 @@ interface Props {
 
 const s: Record<string, React.CSSProperties> = {
   field: { display: "flex", flexDirection: "column", gap: 4, marginBottom: 14 },
-  label: { fontSize: 12, color: "#9ca3af", letterSpacing: "0.04em", textTransform: "uppercase" },
-  input: { background: "#111827", border: "1px solid #374151", borderRadius: 4, color: "#f9fafb", padding: "6px 10px", fontSize: 13, fontFamily: "inherit", width: "100%", boxSizing: "border-box" },
-  section: { marginBottom: 28 },
-  sectionHead: { fontSize: 13, color: "#6b7280", marginBottom: 16, letterSpacing: "0.06em" },
-  hint: { fontSize: 11, color: "#4b5563", marginTop: 2 },
-  infoRow: { display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "1px solid #1f2937" },
+  label: { fontSize: 11, color: "#a48e9b", letterSpacing: "0.06em", textTransform: "uppercase" as const, fontWeight: 500 },
+  input: { background: "#0d0a0f", border: "1px solid #513343", borderRadius: 6, color: "#f1dce6", padding: "8px 10px", fontSize: 13, fontFamily: "inherit", width: "100%", boxSizing: "border-box" as const },
+  section: { marginBottom: 8 },
+  sectionHead: { fontSize: 10, color: "#6f8293", marginBottom: 14, letterSpacing: "0.1em", textTransform: "uppercase" as const, fontWeight: 600 },
+  hint: { fontSize: 11, color: "#6f8293", marginTop: 4 },
+  infoRow: { display: "flex", justifyContent: "space-between", fontSize: 12, padding: "5px 0", borderBottom: "1px solid #2d2029" },
+  card: { background: "#171118", border: "1px solid #352330", borderRadius: 10, padding: "20px 20px 6px", marginBottom: 16 },
 };
 
 export default function SetupView({ settings, onSaved }: Props) {
@@ -153,54 +154,54 @@ export default function SetupView({ settings, onSaved }: Props) {
   );
 
   return (
-    <div style={{ maxWidth: 560, margin: "0 auto", padding: "32px 24px", color: "#f9fafb" }}>
-      <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 28, color: "#e5e7eb" }}>Settings</h2>
+    <div className="view setup-view" style={{ maxWidth: 600 }}>
+      <div className="view-heading"><h2>Settings</h2></div>
 
       {/* SOULSEEK */}
-      <section style={s.section}>
+      <section style={s.card}>
         <h3 style={s.sectionHead}>SOULSEEK</h3>
         <div style={s.field}>
           <span style={s.label}>Daemon URL</span>
           <input style={s.input} value={form.sockseekDaemonUrl ?? ""} onChange={set("sockseekDaemonUrl")} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-          <span style={{ fontSize: 12, color: daemonUp === null ? "#4b5563" : daemonUp ? "#4ade80" : "#f87171" }}>
+          <span style={{ fontSize: 12, color: daemonUp === null ? "#6f8293" : daemonUp ? "#4ade80" : "#f87171" }}>
             {daemonUp === null ? "Checking…" : daemonUp ? "● Connected" : "○ Not reachable"}
           </span>
-          <button style={{ background: "transparent", color: "#4b5563", border: "none", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => api.checkDaemon().then(setDaemonUp).catch(() => setDaemonUp(false))}>Re-check</button>
+          <button style={{ background: "transparent", color: "#6f8293", border: "none", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => api.checkDaemon().then(setDaemonUp).catch(() => setDaemonUp(false))}>Re-check</button>
         </div>
-        <p style={{ fontSize: 12, color: "#4b5563", marginBottom: 14 }}>
+        <p style={{ fontSize: 12, color: "#6f8293", marginBottom: 14 }}>
           Credentials stored locally — never returned to this screen after save.{" "}
-          {settings.hasSockseekCredentials && <span style={{ color: "#34d399" }}>✓ saved</span>}
+          {settings.hasSockseekCredentials && <span style={{ color: "#4ade80" }}>✓ saved</span>}
         </p>
         <Field label="Username" k="sockseekUsername" placeholder={settings.hasSockseekCredentials ? "(leave blank to keep)" : ""} />
         <Field label="Password" k="sockseekPassword" type="password" placeholder={settings.hasSockseekCredentials ? "(leave blank to keep)" : ""} />
       </section>
 
       {/* REKORDBOX */}
-      <section style={s.section}>
+      <section style={s.card}>
         <h3 style={s.sectionHead}>REKORDBOX</h3>
         <div style={s.field}>
           <span style={s.label}>XML library</span>
           <input style={s.input} value={form.rekordboxXmlPath ?? ""} onChange={set("rekordboxXmlPath")} placeholder="Path to exported rekordbox.xml" />
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-            <button onClick={checkRekordbox} disabled={!form.rekordboxXmlPath?.trim()} style={{ background: "transparent", color: form.rekordboxXmlPath?.trim() ? "#60a5fa" : "#4b5563", border: "1px solid #374151", borderRadius: 4, padding: "5px 10px", fontSize: 12, cursor: form.rekordboxXmlPath?.trim() ? "pointer" : "not-allowed" }}>Preview XML</button>
-            <label style={{ display: "inline-flex", alignItems: "center", background: "transparent", color: "#a78bfa", border: "1px solid #4c1d95", borderRadius: 4, padding: "5px 10px", fontSize: 12, cursor: importingXml ? "wait" : "pointer" }}>
+            <button onClick={checkRekordbox} disabled={!form.rekordboxXmlPath?.trim()} style={{ background: "transparent", color: form.rekordboxXmlPath?.trim() ? "#60a5fa" : "#513343", border: "1px solid #352330", borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: form.rekordboxXmlPath?.trim() ? "pointer" : "not-allowed" }}>Preview XML</button>
+            <label style={{ display: "inline-flex", alignItems: "center", background: "transparent", color: "#ff4fa3", border: "1px solid #76134b", borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: importingXml ? "wait" : "pointer" }}>
               {importingXml ? "Loading…" : "Load XML into app"}
               <input type="file" accept=".xml,text/xml,application/xml" onChange={importRekordboxXml} disabled={importingXml} style={{ display: "none" }} />
             </label>
           </div>
           {rekordboxPreview && (
-            <div style={{ marginTop: 10, border: "1px solid #293548", borderRadius: 5, padding: 10 }}>
+            <div style={{ marginTop: 10, border: "1px solid #352330", borderRadius: 8, padding: 10 }}>
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11, marginBottom: 8 }}>
-                <span style={{ color: "#34d399" }}>{rekordboxPreview.tracksInXml.length} tracks</span>
-                <span style={{ color: "#93c5fd" }}>{rekordboxPreview.tracksInXml.filter((t) => t.inLibrary).length} in library</span>
+                <span style={{ color: "#4ade80" }}>{rekordboxPreview.tracksInXml.length} tracks</span>
+                <span style={{ color: "#60a5fa" }}>{rekordboxPreview.tracksInXml.filter((t) => t.inLibrary).length} in library</span>
               </div>
               <input style={{ ...s.input, marginBottom: 8 }} value={rekordboxQuery} onChange={(e) => setRekordboxQuery(e.target.value)} placeholder="Filter…" />
               <div style={{ maxHeight: 320, overflow: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                   <thead>
-                    <tr style={{ color: "#6b7280", textAlign: "left" }}>
+                    <tr style={{ color: "#6f8293", textAlign: "left", fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase" }}>
                       <th style={{ padding: "4px 6px 4px 0" }}>Artist</th>
                       <th style={{ padding: 4 }}>Title</th>
                       <th style={{ padding: 4 }}>Mix</th>
@@ -209,11 +210,11 @@ export default function SetupView({ settings, onSaved }: Props) {
                   </thead>
                   <tbody>
                     {filteredRekordboxTracks.map((track, i) => (
-                      <tr key={`${track.artist}-${track.title}-${i}`} style={{ borderTop: "1px solid #1f2937", opacity: track.inLibrary ? 0.45 : 1 }}>
-                        <td style={{ padding: "5px 6px 5px 0", color: "#e5e7eb" }}>{track.artist}</td>
-                        <td style={{ padding: 5, color: "#e5e7eb" }}>{track.title}</td>
-                        <td style={{ padding: 5, color: "#9ca3af" }}>{track.mixVersion ?? ""}</td>
-                        <td style={{ padding: 5, color: "#34d399", textAlign: "right" }}>{track.inLibrary ? "✓" : ""}</td>
+                      <tr key={`${track.artist}-${track.title}-${i}`} style={{ borderTop: "1px solid #2d2029", opacity: track.inLibrary ? 0.45 : 1 }}>
+                        <td style={{ padding: "5px 6px 5px 0", color: "#d5e6ef" }}>{track.artist}</td>
+                        <td style={{ padding: 5, color: "#d5e6ef" }}>{track.title}</td>
+                        <td style={{ padding: 5, color: "#a48e9b" }}>{track.mixVersion ?? ""}</td>
+                        <td style={{ padding: 5, color: "#4ade80", textAlign: "right" }}>{track.inLibrary ? "✓" : ""}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -226,7 +227,7 @@ export default function SetupView({ settings, onSaved }: Props) {
           <span style={s.label}>File path mapping</span>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input style={{ ...s.input, flex: 1 }} value={form.pathMapFrom ?? ""} onChange={set("pathMapFrom")} placeholder="Windows prefix e.g. C:/Users/alex/Music" />
-            <span style={{ color: "#4b5563", flexShrink: 0 }}>→</span>
+            <span style={{ color: "#6f8293", flexShrink: 0 }}>→</span>
             <input style={{ ...s.input, flex: 1 }} value={form.pathMapTo ?? ""} onChange={set("pathMapTo")} placeholder="Local prefix e.g. /Volumes/Music" />
           </div>
           <span style={s.hint}>Maps Windows Rekordbox paths to local paths so Open works on Mac/Linux.</span>
@@ -234,9 +235,9 @@ export default function SetupView({ settings, onSaved }: Props) {
       </section>
 
       {/* TAGGING */}
-      <section style={s.section}>
+      <section style={s.card}>
         <h3 style={s.sectionHead}>TAGGING</h3>
-        <p style={{ fontSize: 12, color: "#4b5563", marginBottom: 14 }}>Beets runs in its own container and tags files against MusicBrainz. Config lives in <code style={{ color: "#6b7280" }}>beets-config/config.yaml</code>.</p>
+        <p style={{ fontSize: 12, color: "#6f8293", marginBottom: 14 }}>Beets runs in its own container and tags files against MusicBrainz. Config lives in <code style={{ color: "#a48e9b" }}>beets-config/config.yaml</code>.</p>
         <div style={s.field}>
           <span style={s.label}>Beets URL</span>
           <input style={s.input} value={form.beetsUrl ?? ""} onChange={set("beetsUrl")} placeholder="http://beets:8337 (default)" />
@@ -245,22 +246,22 @@ export default function SetupView({ settings, onSaved }: Props) {
       </section>
 
       {/* YOUTUBE */}
-      <section style={s.section}>
+      <section style={s.card}>
         <h3 style={s.sectionHead}>YOUTUBE</h3>
         <div style={s.field}>
-          <span style={s.label}>Cookies file <span style={{ color: "#4b5563", textTransform: "none" }}>(optional)</span></span>
+          <span style={s.label}>Cookies file <span style={{ color: "#6f8293", textTransform: "none" }}>(optional)</span></span>
           <input style={s.input} value={form.ytCookiesFile ?? ""} onChange={set("ytCookiesFile")} placeholder="/data/cookies.txt" />
           <span style={s.hint}>Required for private playlists. Export with "Get cookies.txt LOCALLY" browser extension.</span>
         </div>
       </section>
 
       {/* TELEGRAM */}
-      <section style={s.section}>
-        <h3 style={s.sectionHead}>TELEGRAM <span style={{ color: "#4b5563", fontWeight: 400 }}>(optional)</span></h3>
-        <p style={{ fontSize: 12, color: "#4b5563", marginBottom: 14 }}>
+      <section style={s.card}>
+        <h3 style={s.sectionHead}>TELEGRAM <span style={{ color: "#6f8293", fontWeight: 400 }}>(optional)</span></h3>
+        <p style={{ fontSize: 12, color: "#6f8293", marginBottom: 14 }}>
           For importing YouTube links from channels. Get API credentials at my.telegram.org.{" "}
-          {settings.hasTelegramCredentials && <span style={{ color: "#34d399" }}>✓ saved</span>}
-          {settings.hasTelegramSession && <span style={{ color: "#34d399", marginLeft: 8 }}>✓ session active</span>}
+          {settings.hasTelegramCredentials && <span style={{ color: "#4ade80" }}>✓ saved</span>}
+          {settings.hasTelegramSession && <span style={{ color: "#4ade80", marginLeft: 8 }}>✓ session active</span>}
         </p>
         <Field label="API ID" k="telegramApiId" placeholder={settings.hasTelegramCredentials ? "(leave blank to keep)" : "123456"} />
         <Field label="API hash" k="telegramApiHash" type="password" placeholder={settings.hasTelegramCredentials ? "(leave blank to keep)" : ""} />
@@ -268,48 +269,48 @@ export default function SetupView({ settings, onSaved }: Props) {
       </section>
 
       {/* SPOTIFY */}
-      <section style={s.section}>
-        <h3 style={s.sectionHead}>SPOTIFY <span style={{ color: "#4b5563", fontWeight: 400 }}>(optional)</span></h3>
-        <p style={{ fontSize: 12, color: "#4b5563", marginBottom: 14 }}>
+      <section style={s.card}>
+        <h3 style={s.sectionHead}>SPOTIFY <span style={{ color: "#6f8293", fontWeight: 400 }}>(optional)</span></h3>
+        <p style={{ fontSize: 12, color: "#6f8293", marginBottom: 14 }}>
           For Spotify playlist import. Create an app at developer.spotify.com.{" "}
-          {settings.hasSpotifyCredentials && <span style={{ color: "#34d399" }}>✓ saved</span>}
+          {settings.hasSpotifyCredentials && <span style={{ color: "#4ade80" }}>✓ saved</span>}
         </p>
         <Field label="Client ID" k="spotifyClientId" placeholder={settings.hasSpotifyCredentials ? "(leave blank to keep)" : ""} />
         <Field label="Client secret" k="spotifyClientSecret" type="password" placeholder={settings.hasSpotifyCredentials ? "(leave blank to keep)" : ""} />
       </section>
 
       {/* COSINE */}
-      <section style={s.section}>
-        <h3 style={s.sectionHead}>COSINE.CLUB <span style={{ color: "#4b5563", fontWeight: 400 }}>(optional)</span></h3>
-        <p style={{ fontSize: 12, color: "#4b5563", marginBottom: 14 }}>
+      <section style={s.card}>
+        <h3 style={s.sectionHead}>COSINE.CLUB <span style={{ color: "#6f8293", fontWeight: 400 }}>(optional)</span></h3>
+        <p style={{ fontSize: 12, color: "#6f8293", marginBottom: 14 }}>
           Per-track similarity recommendations.{" "}
-          {settings.hasCosineCredentials && <span style={{ color: "#34d399" }}>✓ saved</span>}
+          {settings.hasCosineCredentials && <span style={{ color: "#4ade80" }}>✓ saved</span>}
         </p>
         <Field label="API key" k="cosineApiKey" type="password" placeholder={settings.hasCosineCredentials ? "(leave blank to keep)" : "cosine_…"} />
       </section>
 
       {/* SYSTEM INFO */}
-      <section style={s.section}>
+      <section style={s.card}>
         <h3 style={s.sectionHead}>SYSTEM</h3>
-        <div style={{ border: "1px solid #1f2937", borderRadius: 5, padding: "6px 10px", fontSize: 12 }}>
+        <div style={{ borderRadius: 6, fontSize: 12 }}>
           {([["Inbox", settings.prepInboxDir], ["Library", settings.musicLibraryDir], ["Archive", settings.rekordboxImportDir], ["Python", settings.pythonPath]] as [string, string][]).map(([label, value]) => (
             <div key={label} style={s.infoRow}>
-              <span style={{ color: "#6b7280" }}>{label}</span>
-              <span style={{ color: "#4b5563", fontFamily: "ui-monospace, monospace", fontSize: 11 }}>{value || "—"}</span>
+              <span style={{ color: "#a48e9b" }}>{label}</span>
+              <span style={{ color: "#6f8293", fontFamily: "ui-monospace, monospace", fontSize: 11 }}>{value || "—"}</span>
             </div>
           ))}
         </div>
         <span style={s.hint}>Read-only — set via Docker environment variables.</span>
       </section>
 
-      {error && <p style={{ color: "#f87171", fontSize: 13, marginBottom: 16 }}>{error}</p>}
+      {error && <p style={{ color: "#f87171", fontSize: 13, marginBottom: 16, padding: "10px 14px", background: "#1a0c0c", border: "1px solid #7f1d1d", borderRadius: 8 }}>{error}</p>}
 
       {checks && (
-        <div style={{ marginBottom: 16, border: "1px solid #293548", borderRadius: 5, padding: "8px 10px" }}>
+        <div style={{ marginBottom: 16, border: "1px solid #352330", borderRadius: 8, padding: "10px 14px" }}>
           {checks.map((check) => (
-            <div key={check.name} style={{ display: "flex", gap: 8, justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
+            <div key={check.name} style={{ display: "flex", gap: 8, justifyContent: "space-between", fontSize: 12, padding: "4px 0" }}>
               <span style={{ color: check.ok ? "#4ade80" : "#f87171" }}>{check.ok ? "✓" : "!"} {check.name}</span>
-              <span style={{ color: "#6b7280" }}>{check.detail}</span>
+              <span style={{ color: "#6f8293" }}>{check.detail}</span>
             </div>
           ))}
         </div>
@@ -323,31 +324,31 @@ export default function SetupView({ settings, onSaved }: Props) {
             <option value="">Restore a backup…</option>
             {backups.map((b) => <option key={b} value={b}>{b}</option>)}
           </select>
-          <button onClick={restore} disabled={restoring || !selectedBackup} style={{ background: "transparent", color: selectedBackup && !restoring ? "#f87171" : "#4b5563", border: "1px solid #7f1d1d", borderRadius: 5, padding: "8px 12px", fontSize: 13, cursor: restoring || !selectedBackup ? "not-allowed" : "pointer" }}>
+          <button onClick={restore} disabled={restoring || !selectedBackup} style={{ background: "transparent", color: selectedBackup && !restoring ? "#f87171" : "#513343", border: "1px solid #7f1d1d", borderRadius: 6, padding: "8px 12px", fontSize: 13, cursor: restoring || !selectedBackup ? "not-allowed" : "pointer" }}>
             {restoring ? "Restoring…" : "Restore"}
           </button>
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button style={{ background: "#2563eb", color: "#fff", border: "none", borderRadius: 5, padding: "8px 20px", fontSize: 14, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1 }} disabled={saving} onClick={() => save(true)}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+        <button style={{ background: "#76134b", color: "#ffe1ef", border: "1px solid #ff4fa3", borderRadius: 6, padding: "8px 20px", fontSize: 13, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1, fontWeight: 500 }} disabled={saving} onClick={() => save(true)}>
           {saving ? "Saving…" : "Save & continue"}
         </button>
-        <button style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 5, padding: "8px 16px", fontSize: 14, cursor: saving ? "not-allowed" : "pointer" }} disabled={saving} onClick={() => save(false)}>
+        <button style={{ background: "transparent", color: "#a48e9b", border: "1px solid #513343", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: saving ? "not-allowed" : "pointer" }} disabled={saving} onClick={() => save(false)}>
           Save only
         </button>
-        <button style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 5, padding: "8px 16px", fontSize: 14, cursor: checking ? "not-allowed" : "pointer" }} disabled={checking} onClick={validate}>
+        <button style={{ background: "transparent", color: "#a48e9b", border: "1px solid #513343", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: checking ? "not-allowed" : "pointer" }} disabled={checking} onClick={validate}>
           {checking ? "Checking…" : "Validate"}
         </button>
-        <button style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 5, padding: "8px 16px", fontSize: 14, cursor: backingUp ? "not-allowed" : "pointer" }} disabled={backingUp} onClick={backup}>
+        <button style={{ background: "transparent", color: "#a48e9b", border: "1px solid #513343", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: backingUp ? "not-allowed" : "pointer" }} disabled={backingUp} onClick={backup}>
           {backingUp ? "Backing up…" : "Back up DB"}
         </button>
       </div>
 
-      <section style={{ marginTop: 32, paddingTop: 20, borderTop: "1px solid #293548" }}>
-        <h3 style={{ fontSize: 13, color: "#f87171", marginBottom: 8 }}>DANGER ZONE</h3>
-        <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>Remove every imported track and its activity history. Downloaded files are not deleted.</p>
-        <button style={{ background: "transparent", color: resetting ? "#4b5563" : "#f87171", border: "1px solid #7f1d1d", borderRadius: 5, padding: "8px 16px", fontSize: 13, cursor: resetting ? "not-allowed" : "pointer" }} disabled={resetting} onClick={resetLibrary}>
+      <section style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #352330" }}>
+        <h3 style={{ fontSize: 10, color: "#f87171", marginBottom: 8, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600 }}>DANGER ZONE</h3>
+        <p style={{ fontSize: 12, color: "#6f8293", marginBottom: 12 }}>Remove every imported track and its activity history. Downloaded files are not deleted.</p>
+        <button style={{ background: "transparent", color: resetting ? "#513343" : "#f87171", border: "1px solid #7f1d1d", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: resetting ? "not-allowed" : "pointer" }} disabled={resetting} onClick={resetLibrary}>
           {resetting ? "Resetting…" : "Reset library"}
         </button>
       </section>

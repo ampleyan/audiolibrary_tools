@@ -49,5 +49,4 @@ services:
       - ./rekordbox:/rekordbox:ro
     depends_on:
       - sockseek
-      - beets
     restart: unless-stopped
