@@ -358,6 +358,32 @@ def update(track_id, sql, values):
     conn.close()
     return row_json(row) if row else None
 
+def safe_audio_stem(artist, title):
+    value = f"{artist} - {title}" if artist and title else artist or title or "untitled"
+    value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", value)
+    return re.sub(r"\s+", " ", value).strip().rstrip(".") or "untitled"
+
+def convert_to_mp3(source_path, artist, title):
+    source = Path(source_path)
+    if not source.is_file():
+        raise ValueError("Downloaded file not found")
+    if source.suffix.lower() == ".mp3":
+        return str(source)
+    output = source.with_name(f"{safe_audio_stem(artist, title)}.mp3")
+    ffmpeg = setting("ffmpeg_path", "ffmpeg") or "ffmpeg"
+    append_log(f"[ffmpeg] converting: {source.name} → {output.name}")
+    result = subprocess.run(
+        [ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-i", str(source), "-map", "0:a:0", "-map_metadata", "0", "-vn", "-c:a", "libmp3lame", "-b:a", "320k", "-id3v2_version", "3", "-y", str(output)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        raise ValueError(result.stderr.strip() or "ffmpeg conversion failed")
+    if not output.is_file() or output.stat().st_size == 0:
+        raise ValueError("ffmpeg produced no output file")
+    return str(output)
+
 def request(method, path, payload=None):
     body = None if payload is None else json.dumps(payload).encode()
     req = urllib.request.Request(SOCKSEEK_URL + path, data=body, method=method, headers={"Content-Type": "application/json"})
@@ -419,7 +445,7 @@ def telegram_request(payload):
     return json.loads(lines[-1])
 
 def command(name, payload):
-    if name not in {"get_logs", "list_tracks", "list_activity", "get_settings", "check_daemon", "list_backups", "search_track", "search_track_loose", "approve_candidate", "start_download", "cancel_download", "check_download_progress", "poll_download", "run_quality_check", "clear_tracks", "import_rekordbox_xml", "import_rekordbox_playlist", "import_text", "import_csv", "import_youtube", "import_telegram", "update_track", "update_track_state", "delete_track", "finish_rekordbox", "tag_track", "get_similar_tracks", "get_similar_tracks_for_query"}:
+    if name not in {"get_logs", "list_tracks", "list_activity", "get_settings", "check_daemon", "list_backups", "search_track", "search_track_loose", "approve_candidate", "start_download", "cancel_download", "check_download_progress", "poll_download", "run_quality_check", "convert_track", "clear_tracks", "import_rekordbox_xml", "import_rekordbox_playlist", "import_text", "import_csv", "import_youtube", "import_telegram", "update_track", "update_track_state", "delete_track", "finish_rekordbox", "tag_track", "get_similar_tracks", "get_similar_tracks_for_query"}:
         append_log(f"[app] {name}")
     if name == "get_logs": return get_logs()
     if name == "get_settings":
@@ -722,6 +748,14 @@ def command(name, payload):
         detail = quality.get("notes") or ("fake FLAC" if state == "quality_failed" else "passed")
         append_log(f"[quality] {track['artist']} - {track['title']}: {detail}")
         return {"isRealFlac": quality.get("is_real_flac"), "sampleRate": None, "bitDepth": None, "channels": None, "durationSecs": None, "spectralCutoffHz": None, "notes": quality.get("notes", "")}
+    if name == "convert_track":
+        track = get_track(int(payload["trackId"]))
+        source = track.get("downloaded_path")
+        if not source:
+            raise ValueError("No downloaded file — run poll_download first")
+        mp3_path = convert_to_mp3(source, track["artist"], track["title"])
+        append_log(f"[convert] completed: {track['artist']} - {track['title']}")
+        return update(track["id"], "UPDATE tracks SET downloaded_path=?,state='converted',quality_result=NULL,quality_notes=NULL,error=NULL WHERE id=?", (mp3_path,))
     if name in ("get_similar_tracks", "get_similar_tracks_for_query"):
         if name == "get_similar_tracks":
             track = get_track(int(payload["trackId"]))
