@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { TrackRow, TrackState } from "../lib/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import DownloadView from "./DownloadView";
 import ReviewView from "./ReviewView";
 
@@ -143,58 +148,68 @@ export default function PrepareView({ stage, onStageChange, pathMapFrom, pathMap
     <div className="view prepare-view" style={{ padding: 24, color: "#f9fafb" }}>
       <div className="view-heading" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
         <div><h2>Prepare</h2><p>Follow each track from matching through Beets tagging and Rekordbox.</p></div>
-        <button onClick={continuePreparation} disabled={!nextTrack || loading} style={{ background: !nextTrack || loading ? "#111827" : "#1e3a5f", color: !nextTrack || loading ? "#4b5563" : "#93c5fd", border: "1px solid #1e40af", borderRadius: 5, padding: "7px 12px", fontSize: 12, cursor: !nextTrack || loading ? "not-allowed" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>{nextTrack ? "Continue preparation" : "Preparation complete"}</button>
+        <Button size="sm" variant={nextTrack ? "outline" : "ghost"} onClick={continuePreparation} disabled={!nextTrack || loading} className="whitespace-nowrap text-blue-300 border-blue-900">{nextTrack ? "Continue preparation" : "Preparation complete"}</Button>
       </div>
       {loadError && <p style={{ color: "#f87171", background: "#1a0c0c", border: "1px solid #7f1d1d", borderRadius: 5, padding: "8px 10px", fontSize: 12 }}><button onClick={load} style={{ background: "transparent", color: "#fca5a5", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>Reload tracks</button> — {loadError}</p>}
       <div aria-label="Preparation status" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, marginBottom: 8 }}>
         {bucketCounts.map((bucket) => <div key={bucket.id} style={{ background: "#111827", border: "1px solid #293548", borderRadius: 6, padding: "10px 12px" }}><div style={{ color: "#6b7280", fontSize: 11 }}>{bucket.label}</div><div style={{ color: bucket.color, fontSize: 20, fontWeight: 600, marginTop: 3 }}>{loading ? "…" : bucket.count}</div></div>)}
       </div>
-      {libraryTracks.length > 0 && <div style={{ marginBottom: 18 }}>
-        <button onClick={() => setShowLibrary((v) => !v)} style={{ background: "transparent", border: "none", color: "#4ade80", cursor: "pointer", fontFamily: "inherit", fontSize: 12, padding: "6px 0", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 10 }}>{showLibrary ? "▾" : "▸"}</span> In library ({libraryTracks.length})
+      {libraryTracks.length > 0 && <div className="mb-4">
+        <button onClick={() => setShowLibrary((v) => !v)} className="flex items-center gap-1.5 text-xs text-green-400 hover:text-green-300 py-1.5 bg-transparent border-none cursor-pointer font-[inherit]">
+          <span className="text-[10px]">{showLibrary ? "▾" : "▸"}</span> In library ({libraryTracks.length})
         </button>
-        {showLibrary && <>
-          <div style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
-            <input value={libSearch} onChange={(e) => setLibSearch(e.target.value)} placeholder="Search artist, title…" style={{ flex: 1, background: "#0d131a", border: "1px solid #293548", borderRadius: 4, color: "#d1d5db", fontSize: 12, padding: "4px 8px", fontFamily: "inherit" }} />
-            <select value={libFileFilter} onChange={(e) => setLibFileFilter(e.target.value as "all" | "file" | "no_file")} style={{ background: "#0d131a", border: "1px solid #293548", borderRadius: 4, color: "#d1d5db", fontSize: 12, padding: "4px 6px", fontFamily: "inherit" }}>
-              <option value="all">All ({libraryTracks.length})</option>
-              <option value="file">Has file ({libraryTracks.filter((t) => t.dj_path).length})</option>
-              <option value="no_file">No file ({libraryTracks.filter((t) => !t.dj_path).length})</option>
-            </select>
+        {showLibrary && <div className="mt-2 border border-[#1f2937] rounded-lg overflow-hidden bg-[#0d131a]">
+          <div className="flex gap-2 p-2 border-b border-[#1f2937]">
+            <Input value={libSearch} onChange={(e) => setLibSearch(e.target.value)} placeholder="Search artist, title…" className="flex-1 h-7 text-xs" />
+            <Select value={libFileFilter} onValueChange={(v) => setLibFileFilter(v as "all" | "file" | "no_file")}>
+              <SelectTrigger className="h-7 w-40 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All ({libraryTracks.length})</SelectItem>
+                <SelectItem value="file">Has file ({libraryTracks.filter((t) => t.dj_path).length})</SelectItem>
+                <SelectItem value="no_file">No file ({libraryTracks.filter((t) => !t.dj_path).length})</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, color: "#d1d5db" }}>
-            <thead><tr style={{ borderBottom: "1px solid #293548" }}>
-              {(["artist", "title"] as const).map((col) => {
-                const active = libSort.col === col;
-                return <th key={col} onClick={() => toggleSort(col)} style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500, cursor: "pointer", userSelect: "none", color: active ? "#93c5fd" : "#6b7280" }}>
-                  {col === "artist" ? "Artist" : "Title"}{active ? (libSort.dir === "asc" ? " ↑" : " ↓") : ""}
-                </th>;
-              })}
-              <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500, color: "#6b7280" }}>File</th>
-              <th />
-            </tr></thead>
-            <tbody>{visibleLibraryTracks.length ? visibleLibraryTracks.map((track) => {
-              const busy = busyIds.has(track.id);
-              const fileName = track.dj_path ? track.dj_path.split(/[\\/]/).pop() : null;
-              return <tr key={track.id} style={{ borderBottom: "1px solid #1a2535", opacity: busy ? 0.5 : 1 }}>
-                <td style={{ padding: "4px 8px" }}>{track.artist}</td>
-                <td style={{ padding: "4px 8px" }}>{track.title}</td>
-                <td style={{ padding: "4px 8px", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={track.dj_path ?? undefined}>
-                  {fileName ? <span style={{ color: "#4ade80" }}>✓ {fileName}</span> : <span style={{ color: "#4b5563" }}>—</span>}
-                </td>
-                <td style={{ padding: "4px 8px", whiteSpace: "nowrap", textAlign: "right" }}>
-                  {track.dj_path && <>
-                    <button disabled={busy} onClick={() => act(track.id, () => api.openFolder(resolveLocalPath(track.dj_path!)))} title={resolveLocalPath(track.dj_path)} style={{ background: "transparent", border: "1px solid #293548", borderRadius: 3, color: "#9ca3af", cursor: "pointer", fontSize: 11, padding: "2px 6px", marginRight: 4, fontFamily: "inherit" }}>Open</button>
-                    <button onClick={() => navigator.clipboard.writeText(track.dj_path!)} title="Copy raw path" style={{ background: "transparent", border: "none", color: "#4b5563", cursor: "pointer", fontSize: 13, padding: "2px 4px", marginRight: 2, lineHeight: 1 }}>⎘</button>
-                  </>}
-                  <button disabled={busy} onClick={() => act(track.id, () => api.updateTrackState(track.id, "requested").then(() => setTracks((t) => t.filter((x) => x.id !== track.id))))} style={{ background: "transparent", border: "1px solid #293548", borderRadius: 3, color: "#9ca3af", cursor: "pointer", fontSize: 11, padding: "2px 6px", marginRight: 4, fontFamily: "inherit" }}>Re-queue</button>
-                  <button disabled={busy} onClick={() => act(track.id, () => api.deleteTrack(track.id).then(() => setTracks((t) => t.filter((x) => x.id !== track.id))))} style={{ background: "transparent", border: "1px solid #7f1d1d", borderRadius: 3, color: "#f87171", cursor: "pointer", fontSize: 11, padding: "2px 6px", fontFamily: "inherit" }}>Remove</button>
-                </td>
-              </tr>;
-            }) : <tr><td colSpan={4} style={{ padding: "10px 8px", color: "#4b5563", textAlign: "center" }}>No tracks match.</td></tr>}
-            </tbody>
-          </table>
-        </>}
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                {(["artist", "title"] as const).map((col) => {
+                  const active = libSort.col === col;
+                  return <TableHead key={col} onClick={() => toggleSort(col)} className={`cursor-pointer select-none ${active ? "text-blue-400" : ""}`}>
+                    {col === "artist" ? "Artist" : "Title"}{active ? (libSort.dir === "asc" ? " ↑" : " ↓") : ""}
+                  </TableHead>;
+                })}
+                <TableHead>File</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visibleLibraryTracks.length ? visibleLibraryTracks.map((track) => {
+                const busy = busyIds.has(track.id);
+                const fileName = track.dj_path ? track.dj_path.split(/[\\/]/).pop() : null;
+                return <TableRow key={track.id} className={busy ? "opacity-50" : ""}>
+                  <TableCell className="font-medium">{track.artist}</TableCell>
+                  <TableCell>{track.title}</TableCell>
+                  <TableCell className="max-w-[200px] truncate" title={track.dj_path ?? undefined}>
+                    {fileName
+                      ? <Badge variant="success" className="font-mono text-[10px]">✓ {fileName}</Badge>
+                      : <span className="text-[#4b5563]">—</span>}
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
+                    {track.dj_path && <>
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(track.id, () => api.openFolder(resolveLocalPath(track.dj_path!)))} title={resolveLocalPath(track.dj_path)} className="h-6 px-2 text-[11px] mr-1">Open</Button>
+                      <Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(track.dj_path!)} title="Copy raw path" className="h-6 w-6 px-0 text-[#4b5563] mr-1">⎘</Button>
+                    </>}
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => act(track.id, () => api.updateTrackState(track.id, "requested").then(() => setTracks((t) => t.filter((x) => x.id !== track.id))))} className="h-6 px-2 text-[11px] mr-1">Re-queue</Button>
+                    <Button size="sm" variant="destructive" disabled={busy} onClick={() => act(track.id, () => api.deleteTrack(track.id).then(() => setTracks((t) => t.filter((x) => x.id !== track.id))))} className="h-6 px-2 text-[11px]">Remove</Button>
+                  </TableCell>
+                </TableRow>;
+              }) : <TableRow><TableCell colSpan={4} className="text-center text-[#4b5563] py-6">No tracks match.</TableCell></TableRow>}
+            </TableBody>
+          </Table>
+        </div>}
       </div>}
       {continuedTrack && <section aria-label="Current preparation track" style={{ background: "#111827", border: "1px solid #1e40af", borderRadius: 6, padding: "10px 12px", marginBottom: 18 }}>
         <div style={{ color: "#93c5fd", fontSize: 11, marginBottom: 4 }}>CONTINUING</div>
