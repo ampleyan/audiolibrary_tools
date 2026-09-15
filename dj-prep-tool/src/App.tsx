@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import ActivityDrawer from "./components/ActivityDrawer";
+import WorkbenchRail from "./components/WorkbenchRail";
+import type { WorkbenchCounts, WorkbenchView } from "./components/WorkbenchRail";
 import { api } from "./lib/api";
 import type { LogEntry, PublicSettings, SimilarTrack } from "./lib/types";
+import { getWorkflowMeta } from "./lib/workflow";
 import DiscoveryView from "./views/DiscoveryView";
 import ImportView from "./views/ImportView";
 import LibraryView from "./views/LibraryView";
@@ -8,85 +12,90 @@ import LibraryView from "./views/LibraryView";
 import PrepareView, { type PrepareStage } from "./views/PrepareView";
 import SetupView from "./views/SetupView";
 
-type Tab = "import" | "library" | "prepare" | "discover" | "setup";
-
 function getVideoId(url: string) {
   return url.match(/[?&]v=([^&]+)/)?.[1] ?? url.match(/youtu\.be\/([^?]+)/)?.[1] ?? null;
 }
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "import", label: "Import" },
-  { id: "library", label: "Library" },
-  { id: "prepare", label: "Prepare" },
-  { id: "discover", label: "Discover" },
-  { id: "setup", label: "Settings" },
-];
+const EMPTY_COUNTS: WorkbenchCounts = { inbox: 0, needsAttention: 0, running: 0, readyToDj: 0, library: 0 };
 
 export default function App() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
-  const [tab, setTab] = useState<Tab>("prepare");
+  const [view, setView] = useState<WorkbenchView>("needs_attention");
   const [prepareStage, setPrepareStage] = useState<PrepareStage>("find");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [counts, setCounts] = useState<WorkbenchCounts>(EMPTY_COUNTS);
   const [player, setPlayer] = useState<{ tracks: SimilarTrack[]; index: number } | null>(null);
-  const logPanelRef = useRef<HTMLDivElement>(null);
-  const logDragRef = useRef<{ startX: number; startY: number; origLeft: number; origTop: number } | null>(null);
-
-  const onLogDragStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const el = logPanelRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    el.style.transform = "none";
-    el.style.left = `${rect.left}px`;
-    el.style.top = `${rect.top}px`;
-    logDragRef.current = { startX: e.clientX, startY: e.clientY, origLeft: rect.left, origTop: rect.top };
-    const onMove = (me: MouseEvent) => {
-      if (!logDragRef.current || !logPanelRef.current) return;
-      const dx = me.clientX - logDragRef.current.startX;
-      const dy = me.clientY - logDragRef.current.startY;
-      logPanelRef.current.style.left = `${Math.max(0, Math.min(window.innerWidth - 120, logDragRef.current.origLeft + dx))}px`;
-      logPanelRef.current.style.top = `${Math.max(0, Math.min(window.innerHeight - 48, logDragRef.current.origTop + dy))}px`;
-    };
-    const onUp = () => { logDragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
   const [playerMessage, setPlayerMessage] = useState<string | null>(null);
+
+  const selectView = (nextView: WorkbenchView) => {
+    if (nextView === "needs_attention") setPrepareStage("find");
+    if (nextView === "running") setPrepareStage("download");
+    if (nextView === "ready_to_dj") setPrepareStage("rekordbox");
+    setView(nextView);
+  };
+
   const navigate = (nextTab: string) => {
     if (nextTab === "review") {
-      setPrepareStage("find");
-      setTab("prepare");
+      selectView("needs_attention");
       return;
     }
     if (nextTab === "downloads") {
-      setPrepareStage("download");
-      setTab("prepare");
+      selectView("running");
       return;
     }
-    setTab(nextTab as Tab);
+    const legacyViews: Record<string, WorkbenchView> = {
+      import: "inbox",
+      library: "library",
+      prepare: "needs_attention",
+      discover: "discover",
+      setup: "settings",
+    };
+    const nextView = legacyViews[nextTab];
+    if (nextView) selectView(nextView);
   };
 
   useEffect(() => {
-    const shortcuts: Record<string, Tab> = {
-      "1": "import",
+    const shortcuts: Record<string, WorkbenchView> = {
+      "1": "inbox",
       "2": "library",
-      "3": "prepare",
+      "3": "needs_attention",
       "4": "discover",
-      "5": "setup",
+      "5": "settings",
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       if (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
-      const nextTab = shortcuts[event.key];
-      if (!nextTab || event.altKey || event.ctrlKey || event.metaKey) return;
+      const nextView = shortcuts[event.key];
+      if (!nextView || event.altKey || event.ctrlKey || event.metaKey) return;
       event.preventDefault();
-      setTab(nextTab);
+      selectView(nextView);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (!settings?.setupComplete) return;
+    let active = true;
+    const loadCounts = () => api.listTracks().then((tracks) => {
+      if (!active) return;
+      const next = tracks.reduce<WorkbenchCounts>((result, track) => {
+        const bucket = getWorkflowMeta(track).bucket;
+        result.library += 1;
+        if (bucket === "inbox") result.inbox += 1;
+        if (bucket === "needs_attention") result.needsAttention += 1;
+        if (bucket === "running") result.running += 1;
+        if (bucket === "ready_to_dj") result.readyToDj += 1;
+        return result;
+      }, { ...EMPTY_COUNTS });
+      setCounts(next);
+    }).catch(() => {});
+    loadCounts();
+    const timer = window.setInterval(loadCounts, 5000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [settings?.setupComplete]);
 
   useEffect(() => {
     if (!showLogs) return;
@@ -132,66 +141,37 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div className="app-header-top">
-          <span className="brand"><span className="brand-mark" />DJ PREP</span>
-          <nav className="topnav" aria-label="Main navigation">
-            {TABS.map(({ id, label }, index) => (
-              <button key={id} title={`${label} (${index + 1})`} aria-label={`${label}, shortcut ${index + 1}`} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
-                {label}
-              </button>
-            ))}
-          </nav>
-          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
-            <button onClick={() => setShowLogs((v) => !v)} style={{ background: "transparent", border: "none", color: showLogs ? "#ff4fa3" : "#5a4552", cursor: "pointer", fontSize: 18, padding: "0 4px", lineHeight: 1, transition: "color .15s" }} title="Logs" aria-label="Toggle logs">
-              ≡
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main>
-        {tab === "import" && <ImportView onNavigate={navigate} />}
-
-        {tab === "library" && <LibraryView onNavigate={navigate} />}
-        {tab === "prepare" && <PrepareView stage={prepareStage} onStageChange={setPrepareStage} pathMapFrom={settings.pathMapFrom} pathMapTo={settings.pathMapTo} />}
-        {tab === "discover" && <DiscoveryView onNavigate={navigate} onPlayTrack={(tracks, index) => { setPlayer({ tracks, index }); setPlayerMessage(null); }} />}
-        {tab === "setup" && (
-          <SetupView
-            settings={settings}
-            onSaved={() => {
-              loadSettings();
-              setTab("prepare");
-            }}
-          />
-        )}
-      </main>
-      {player && <PersistentPlayer player={player} onChange={setPlayer} onStop={() => setPlayer(null)} message={playerMessage} onAdd={async () => {
-        const track = player.tracks[player.index];
-        if (!track) return;
-        try {
-          const mix = track.mixVersion ? ` (${track.mixVersion})` : "";
-          const added = await api.importText(`${track.artist} - ${track.title}${mix}`);
-          setPlayerMessage(added.length ? "Added to Library" : "Already in Library");
-        } catch (e) {
-          setPlayerMessage(String(e));
-        }
-      }} />}
-      {showLogs && (
-        <div role="dialog" aria-modal="true" aria-label="Application logs" style={{ position: "fixed", inset: 0, zIndex: 30, background: "#00000088" }} onClick={(e) => { if (e.target === e.currentTarget) setShowLogs(false); }}>
-          <div ref={logPanelRef} style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)", background: "#120d14", border: "1px solid #352330", borderRadius: 12, width: "min(860px, 94vw)", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px #000c" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid #2d2029", cursor: "grab", userSelect: "none" }} onMouseDown={onLogDragStart}>
-              <strong style={{ color: "#f8f4f7", fontSize: 13 }}>⠿ Logs</strong>
-              <span style={{ color: "#6f8293", fontSize: 11 }}>{logs.length} recent entries</span>
-              <button onMouseDown={(e) => e.stopPropagation()} onClick={() => setShowLogs(false)} style={{ background: "transparent", border: "none", color: "#a48e9b", cursor: "pointer", fontSize: 16, padding: "0 4px", lineHeight: 1 }}>✕</button>
-            </div>
-            <pre style={{ flex: 1, overflow: "auto", margin: 0, padding: "12px 16px", color: "#d5e6ef", font: "12px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace", whiteSpace: "pre-wrap" }}>
-              {logs.length ? [...logs].reverse().map((entry, index) => <div key={`${index}-${entry.message}`} style={{ borderBottom: "1px solid #1e1320", padding: "3px 0" }}><span style={{ color: "#513343", marginRight: 8 }}>{entry.timestamp}</span>{entry.message}</div>) : "No logs yet."}
-            </pre>
-          </div>
-        </div>
-      )}
+    <div className="app-shell workbench-shell">
+      <WorkbenchRail currentView={view} counts={counts} activityOpen={showLogs} onNavigate={selectView} onToggleActivity={() => setShowLogs((open) => !open)} />
+      <div className="workbench-content">
+        <main>
+          {view === "inbox" && <ImportView onNavigate={navigate} />}
+          {view === "library" && <LibraryView onNavigate={navigate} />}
+          {(view === "needs_attention" || view === "running" || view === "ready_to_dj") && <PrepareView stage={prepareStage} onStageChange={setPrepareStage} pathMapFrom={settings.pathMapFrom} pathMapTo={settings.pathMapTo} />}
+          {view === "discover" && <DiscoveryView onNavigate={navigate} onPlayTrack={(tracks, index) => { setPlayer({ tracks, index }); setPlayerMessage(null); }} />}
+          {view === "settings" && (
+            <SetupView
+              settings={settings}
+              onSaved={() => {
+                loadSettings();
+                selectView("needs_attention");
+              }}
+            />
+          )}
+        </main>
+        {player && <PersistentPlayer player={player} onChange={setPlayer} onStop={() => setPlayer(null)} message={playerMessage} onAdd={async () => {
+          const track = player.tracks[player.index];
+          if (!track) return;
+          try {
+            const mix = track.mixVersion ? ` (${track.mixVersion})` : "";
+            const added = await api.importText(`${track.artist} - ${track.title}${mix}`);
+            setPlayerMessage(added.length ? "Added to Library" : "Already in Library");
+          } catch (e) {
+            setPlayerMessage(String(e));
+          }
+        }} />}
+      </div>
+      <ActivityDrawer entries={logs} open={showLogs} onClose={() => setShowLogs(false)} />
     </div>
   );
 }
