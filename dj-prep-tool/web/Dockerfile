@@ -1,7 +1,7 @@
 FROM node:20-slim AS frontend
 WORKDIR /app
 COPY dj-prep-tool/package.json dj-prep-tool/package-lock.json ./
-RUN npm ci
+RUN npm ci --include=optional
 COPY dj-prep-tool/index.html dj-prep-tool/vite.config.ts dj-prep-tool/tsconfig.json ./
 COPY dj-prep-tool/src ./src
 RUN npx tsc --noEmit && npx vite build

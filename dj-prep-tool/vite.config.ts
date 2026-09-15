@@ -14,6 +14,12 @@ export default defineConfig(({ mode }) => {
       watch: {
         ignored: ["**/src-tauri/**"],
       },
+      proxy: {
+        "/api": {
+          target: env.VITE_API_URL || "http://localhost:8080",
+          changeOrigin: true,
+        },
+      },
     },
   };
 });

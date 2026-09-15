@@ -109,16 +109,7 @@ export default function App() {
 
   if (loadError) {
     return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100vh",
-          color: "#f87171",
-          fontSize: 14,
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#f87171", fontSize: 14, background: "#09090d" }}>
         Failed to load settings: {loadError}
       </div>
     );
@@ -126,16 +117,7 @@ export default function App() {
 
   if (!settings) {
     return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100vh",
-          color: "#4b5563",
-          fontSize: 14,
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#6f8293", fontSize: 14, background: "#09090d" }}>
         Loading…
       </div>
     );
@@ -143,7 +125,7 @@ export default function App() {
 
   if (!settings.setupComplete) {
     return (
-      <div style={{ background: "#111827", minHeight: "100vh" }}>
+      <div className="app-shell">
         <SetupView settings={settings} onSaved={loadSettings} />
       </div>
     );
@@ -153,21 +135,19 @@ export default function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="app-header-top">
-        <span
-          className="brand"
-        >
-          <span className="brand-mark" />DJ PREP
-        </span>
-        <nav className="topnav" aria-label="Main navigation">
-        {TABS.map(({ id, label }, index) => (
-          <button key={id} title={`${label} (Shortcut: ${index + 1})`} aria-label={`${label}, shortcut ${index + 1}`} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
-            {label}
-          </button>
-        ))}
-        </nav>
-        <div>
-          <button onClick={() => setShowLogs((v) => !v)} style={{ background: "transparent", border: "1px solid #344454", borderRadius: 5, color: "#8190a0", cursor: "pointer", fontSize: 12, padding: "4px 10px", fontFamily: "inherit" }}>Logs</button>
-        </div>
+          <span className="brand"><span className="brand-mark" />DJ PREP</span>
+          <nav className="topnav" aria-label="Main navigation">
+            {TABS.map(({ id, label }, index) => (
+              <button key={id} title={`${label} (${index + 1})`} aria-label={`${label}, shortcut ${index + 1}`} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
+                {label}
+              </button>
+            ))}
+          </nav>
+          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
+            <button onClick={() => setShowLogs((v) => !v)} style={{ background: "transparent", border: "none", color: showLogs ? "#ff4fa3" : "#5a4552", cursor: "pointer", fontSize: 18, padding: "0 4px", lineHeight: 1, transition: "color .15s" }} title="Logs" aria-label="Toggle logs">
+              ≡
+            </button>
+          </div>
         </div>
       </header>
 
@@ -199,15 +179,15 @@ export default function App() {
         }
       }} />}
       {showLogs && (
-        <div role="dialog" aria-modal="true" aria-label="Application logs" style={{ position: "fixed", inset: 0, zIndex: 30, background: "#0008" }} onClick={(e) => { if (e.target === e.currentTarget) setShowLogs(false); }}>
-          <div ref={logPanelRef} style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)", background: "#0d131a", border: "1px solid #344454", borderRadius: 10, width: "min(860px, 94vw)", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px #000c" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid #1f2f3f", cursor: "grab", userSelect: "none" }} onMouseDown={onLogDragStart}>
-              <strong style={{ color: "#d5e6ef", fontSize: 13 }}>⠿ Logs</strong>
+        <div role="dialog" aria-modal="true" aria-label="Application logs" style={{ position: "fixed", inset: 0, zIndex: 30, background: "#00000088" }} onClick={(e) => { if (e.target === e.currentTarget) setShowLogs(false); }}>
+          <div ref={logPanelRef} style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)", background: "#120d14", border: "1px solid #352330", borderRadius: 12, width: "min(860px, 94vw)", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px #000c" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid #2d2029", cursor: "grab", userSelect: "none" }} onMouseDown={onLogDragStart}>
+              <strong style={{ color: "#f8f4f7", fontSize: 13 }}>⠿ Logs</strong>
               <span style={{ color: "#6f8293", fontSize: 11 }}>{logs.length} recent entries</span>
-              <button onMouseDown={(e) => e.stopPropagation()} onClick={() => setShowLogs(false)} style={{ background: "transparent", border: "none", color: "#6f8293", cursor: "pointer", fontSize: 16, padding: "0 4px", lineHeight: 1 }}>✕</button>
+              <button onMouseDown={(e) => e.stopPropagation()} onClick={() => setShowLogs(false)} style={{ background: "transparent", border: "none", color: "#a48e9b", cursor: "pointer", fontSize: 16, padding: "0 4px", lineHeight: 1 }}>✕</button>
             </div>
-            <pre style={{ flex: 1, overflow: "auto", margin: 0, padding: "12px 16px", color: "#9fb2bf", font: "12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace", whiteSpace: "pre-wrap" }}>
-              {logs.length ? [...logs].reverse().map((entry, index) => <div key={`${index}-${entry.message}`} style={{ borderBottom: "1px solid #111d27", padding: "2px 0" }}><span style={{ color: "#4b6070", marginRight: 8 }}>{entry.timestamp}</span>{entry.message}</div>) : "No logs yet."}
+            <pre style={{ flex: 1, overflow: "auto", margin: 0, padding: "12px 16px", color: "#d5e6ef", font: "12px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace", whiteSpace: "pre-wrap" }}>
+              {logs.length ? [...logs].reverse().map((entry, index) => <div key={`${index}-${entry.message}`} style={{ borderBottom: "1px solid #1e1320", padding: "3px 0" }}><span style={{ color: "#513343", marginRight: 8 }}>{entry.timestamp}</span>{entry.message}</div>) : "No logs yet."}
             </pre>
           </div>
         </div>
