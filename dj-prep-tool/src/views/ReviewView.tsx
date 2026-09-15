@@ -1,15 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { RankedCandidate, SimilarTrack, TrackRow, TrackState } from "../lib/types";
-import { matchQuality } from "../lib/matchQuality";
 import { PipelineSeedListbox } from "../components/PipelineSeedListbox";
-
-const EXT_COLOR: Record<string, string> = {
-  flac: "#4ade80",
-  mp3: "#60a5fa",
-  aac: "#fb923c",
-  ogg: "#c084fc",
-};
 
 function parseCandidates(track: TrackRow): RankedCandidate[] {
   if (!track.candidate_json) return [];
@@ -18,83 +10,6 @@ function parseCandidates(track: TrackRow): RankedCandidate[] {
   } catch {
     return [];
   }
-}
-
-function ExtBadge({ ext }: { ext: string }) {
-  const color = EXT_COLOR[ext.toLowerCase()] ?? "#6b7280";
-  return (
-    <span
-      style={{
-        fontSize: 10,
-        padding: "2px 6px",
-        borderRadius: 3,
-        background: `${color}22`,
-        color,
-        fontWeight: 700,
-        letterSpacing: "0.05em",
-      }}
-    >
-      {ext.toUpperCase()}
-    </span>
-  );
-}
-
-function CandidateRow({
-  rc,
-  onApprove,
-  approving,
-}: {
-  rc: RankedCandidate;
-  onApprove: () => void;
-  approving: boolean;
-}) {
-  const c = rc.candidate;
-  const name = c.filename.replace(/\\/g, "/").split("/").pop() ?? c.filename;
-  return (
-    <tr style={{ borderTop: "1px solid #1f2937", fontSize: 12 }}>
-      <td style={{ padding: "6px 8px" }}>
-        <ExtBadge ext={c.extension} />
-      </td>
-      <td
-        style={{
-          padding: "6px 8px",
-          color: "#d1d5db",
-          maxWidth: 300,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-        title={c.filename}
-      >
-        {name}
-      </td>
-      <td style={{ padding: "6px 8px", color: "#6b7280" }}>
-        {c.bitRate ? `${c.bitRate} kbps` : "—"}
-      </td>
-      <td style={{ padding: "6px 8px", color: "#6b7280" }}>
-        {c.length ? `${Math.floor(c.length / 60)}:${String(c.length % 60).padStart(2, "0")}` : "—"}
-      </td>
-      <td style={{ padding: "6px 8px", color: "#9ca3af" }}>{rc.score}</td>
-      <td style={{ padding: "6px 8px" }}>
-        <button
-          onClick={onApprove}
-          disabled={approving}
-          style={{
-            background: approving ? "#1f2937" : "#065f46",
-            color: approving ? "#4b5563" : "#34d399",
-            border: "none",
-            borderRadius: 4,
-            padding: "3px 10px",
-            fontSize: 12,
-            cursor: approving ? "not-allowed" : "pointer",
-            fontFamily: "inherit",
-          }}
-        >
-          {approving ? "…" : "Approve"}
-        </button>
-      </td>
-    </tr>
-  );
 }
 
 const editInput: React.CSSProperties = {
@@ -330,16 +245,12 @@ function TrackCard({
   track,
   onRefresh,
   onDelete,
-  onTrackChanged,
 }: {
   track: TrackRow;
   onRefresh: () => Promise<void>;
   onDelete: (id: number) => void;
-  onTrackChanged?: (track: TrackRow) => void;
 }) {
   const [searching, setSearching] = useState(false);
-  const [expanded, setExpanded] = useState(track.state === "matched");
-  const [approvingFile, setApprovingFile] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editArtist, setEditArtist] = useState(track.artist);
@@ -356,7 +267,6 @@ function TrackCard({
     try {
       await api.searchTrack(track.id);
       await onRefresh();
-      setExpanded(true);
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -370,25 +280,10 @@ function TrackCard({
     try {
       await api.searchTrackLoose(track.id);
       await onRefresh();
-      setExpanded(true);
     } catch (e) {
       setErr(String(e));
     } finally {
       setSearching(false);
-    }
-  };
-
-  const approve = async (rc: RankedCandidate) => {
-    setApprovingFile(rc.candidate.filename);
-    setErr(null);
-    try {
-      await api.approveCandidate(track.id, rc.candidate.username, rc.candidate.filename);
-      onTrackChanged?.({ ...track, state: "approved", selected_username: rc.candidate.username, selected_filename: rc.candidate.filename });
-      await onRefresh();
-    } catch (e) {
-      setErr(String(e));
-    } finally {
-      setApprovingFile(null);
     }
   };
 
@@ -434,7 +329,6 @@ function TrackCard({
   const canSearch = track.state === "requested" || track.state === "needs_review" || track.state === "not_found";
   const isMatched = track.state === "matched";
   const needsReview = track.state === "needs_review";
-  const quality = matchQuality(candidates);
 
   return (
     <div
@@ -504,7 +398,6 @@ function TrackCard({
         >
           {noResults ? "no results" : track.state.replace(/_/g, " ")}
         </span>
-        {quality && <span title={quality.detail} style={{ color: quality.color, fontSize: 10, flexShrink: 0 }}>{quality.label}</span>}
 
         {editing ? (
           <>
@@ -569,7 +462,7 @@ function TrackCard({
                   flexShrink: 0,
                 }}
               >
-                Edit
+                Edit query
               </button>
             )}
             {canSearch && (
@@ -588,7 +481,7 @@ function TrackCard({
                   flexShrink: 0,
                 }}
               >
-                {searching ? "Searching…" : "Search"}
+                {searching ? "Searching…" : noResults ? "Search again" : "Search"}
               </button>
             )}
             {noResults && (
@@ -607,7 +500,7 @@ function TrackCard({
                   flexShrink: 0,
                 }}
               >
-                {searching ? "Searching…" : "Search harder"}
+                {searching ? "Searching…" : "Loose search"}
               </button>
             )}
             {noResults && (
@@ -626,23 +519,7 @@ function TrackCard({
                   flexShrink: 0,
                 }}
               >
-                Mark not found
-              </button>
-            )}
-            {isMatched && (
-              <button
-                onClick={() => setExpanded((v) => !v)}
-                style={{
-                  background: "transparent",
-                  color: "#6b7280",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: 13,
-                  fontFamily: "inherit",
-                  flexShrink: 0,
-                }}
-              >
-                {expanded ? "▲" : `▼ ${candidates.length} results`}
+                Mark unavailable
               </button>
             )}
             <button
@@ -686,13 +563,13 @@ function TrackCard({
           }}
         >
           <span style={{ color: "#f87171" }}>No results found.</span>
-          <span>Try: edit artist/title for accuracy, then search again. Soulseek availability varies — some tracks may not be shared by anyone online right now.</span>
+          <span>Loose search combines artist and title into a broader query. You can also edit the query, search again, or mark the track unavailable.</span>
         </div>
       )}
 
       {isMatched && candidates.length > 0 && (
         <div style={{ borderTop: "1px solid #064e3b", borderBottom: "1px solid #064e3b", background: "#062e2b", padding: "9px 14px", color: "#6ee7b7", fontSize: 12 }}>
-          Match found. Choose a file below to move this track to Download.
+          {candidates.length} candidate{candidates.length === 1 ? "" : "s"} found. Compare file facts and choose Approve &amp; next in the inspector.
         </div>
       )}
 
@@ -702,33 +579,6 @@ function TrackCard({
         </p>
       )}
 
-      {isMatched && expanded && candidates.length > 0 && (
-        <div style={{ borderTop: "1px solid #111827", padding: "0 14px 10px" }}>
-          {quality && <p style={{ color: quality.color, fontSize: 11, margin: "8px 0 2px" }}>{quality.label}: {quality.detail}</p>}
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ color: "#4b5563", fontSize: 11 }}>
-                <th style={{ padding: "6px 8px", textAlign: "left", fontWeight: 400 }}>Fmt</th>
-                <th style={{ padding: "6px 8px", textAlign: "left", fontWeight: 400 }}>Filename</th>
-                <th style={{ padding: "6px 8px", textAlign: "left", fontWeight: 400 }}>Bitrate</th>
-                <th style={{ padding: "6px 8px", textAlign: "left", fontWeight: 400 }}>Length</th>
-                <th style={{ padding: "6px 8px", textAlign: "left", fontWeight: 400 }}>Score</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.map((rc, i) => (
-                <CandidateRow
-                  key={i}
-                  rc={rc}
-                  onApprove={() => approve(rc)}
-                  approving={approvingFile === rc.candidate.filename}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
@@ -881,7 +731,7 @@ export default function ReviewView({ states = DEFAULT_REVIEW_STATES, onTrackChan
               disabled={searchingAll || approvingAll}
               style={{ background: "transparent", color: searchingAll ? "#4b5563" : "#fbbf24", border: "1px solid #92400e", borderRadius: 5, padding: "6px 14px", fontSize: 13, cursor: searchingAll ? "not-allowed" : "pointer", fontFamily: "inherit" }}
             >
-              {searchingAll ? "Searching…" : `Search harder (${looseSearchCount})`}
+              {searchingAll ? "Searching…" : `Loose search (${looseSearchCount})`}
             </button>
           )}
           <button
@@ -922,7 +772,7 @@ export default function ReviewView({ states = DEFAULT_REVIEW_STATES, onTrackChan
         </p>
       ) : (
         tracks.map((t) => (
-          <TrackCard key={t.id} track={t} onRefresh={load} onDelete={removeTrack} onTrackChanged={onTrackChanged} />
+          <TrackCard key={t.id} track={t} onRefresh={load} onDelete={removeTrack} />
         ))
       )}
     </div>

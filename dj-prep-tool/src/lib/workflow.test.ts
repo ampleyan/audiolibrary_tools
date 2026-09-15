@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TrackRow, TrackState, WorkflowMetadata } from "./types";
-import { getNextAction, getWorkflowMeta, isActionable } from "./workflow";
+import { getNextAction, getWorkflowMeta, isActionable, isWorkflowBlocked } from "./workflow";
 
 function track(state: TrackState, overrides: Partial<TrackRow> = {}): TrackRow {
   return {
@@ -63,6 +63,35 @@ describe("workflow metadata", () => {
       nextAction: { id: "loose_search", label: "Loose search" },
       actionable: true,
     });
+  });
+
+  it("uses explicit retry wording after a no-result search", () => {
+    const searchedTrack = track("requested", { search_job_id: "search-1" });
+
+    expect(getNextAction(searchedTrack).label).toBe("Loose search");
+  });
+
+  it.each([
+    track("requested", { search_job_id: "search-1", error: "No results found" }),
+    track("not_found"),
+    track("needs_review"),
+    track("quality_failed"),
+    track("tagging_review"),
+    track("picard_pending"),
+    track("failed"),
+    track("approved", { error: "Download needs attention" }),
+  ])("groups $state tracks that need remediation as blocked", (row) => {
+    expect(isWorkflowBlocked(row)).toBe(true);
+  });
+
+  it.each([
+    track("requested"),
+    track("matched"),
+    track("approved"),
+    track("downloading"),
+    track("dj_ready"),
+  ])("does not group an unblocked $state track as blocked", (row) => {
+    expect(isWorkflowBlocked(row)).toBe(false);
   });
 
   it.each(stateMappings)("derives the %s action and actionable flag from shared metadata", (state, expected) => {

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import TrackInspector from "../components/TrackInspector";
+import TrackInspector, { type InspectorMatchingAction } from "../components/TrackInspector";
 import TrackRow, { type TrackMenuAction } from "../components/TrackRow";
 import { api } from "../lib/api";
 import type { TrackActionId, TrackRow as Track, TrackState } from "../lib/types";
-import { getWorkflowMeta, isActionable } from "../lib/workflow";
+import { getWorkflowMeta, isActionable, isWorkflowBlocked } from "../lib/workflow";
 import DownloadView from "./DownloadView";
 import ReviewView from "./ReviewView";
 
@@ -14,7 +14,6 @@ type StageFilter = PrepareStage | "all";
 
 const FIND_STATES: TrackState[] = ["requested", "needs_review", "not_found"];
 const MATCH_STATES: TrackState[] = ["matched"];
-const BLOCKED_STATES = new Set<TrackState>(["needs_review", "not_found", "quality_failed", "tagging_review", "picard_pending", "failed"]);
 const STAGE_ORDER: Array<PrepareStage | "done"> = ["find", "match", "download", "convert", "quality", "tag", "rekordbox", "done"];
 
 const STAGES: Array<{ id: PrepareStage; label: string; description: string; states: TrackState[] }> = [
@@ -34,15 +33,11 @@ const FILTERS: Array<{ id: Exclude<PreparationFilter, "needs_attention" | "all">
   { id: "done", label: "Done", description: "Completed and ready for DJ use." },
 ];
 
-function isBlocked(track: Track) {
-  return BLOCKED_STATES.has(track.state) || Boolean(track.error) || (track.state === "requested" && Boolean(track.search_job_id));
-}
-
 function preparationBucket(track: Track): Exclude<PreparationFilter, "needs_attention" | "all"> {
   const metadata = getWorkflowMeta(track);
   if (metadata.bucket === "ready_to_dj") return "done";
   if (metadata.bucket === "running") return "running";
-  if (isBlocked(track)) return "blocked";
+  if (isWorkflowBlocked(track)) return "blocked";
   return "needs_action";
 }
 
@@ -57,7 +52,7 @@ export function filterPreparationTracks(tracks: Track[], filter: PreparationFilt
 
 export function prioritizeActionableTracks(tracks: Track[]) {
   return tracks.filter(isActionable).sort((a, b) => {
-    const blockedDifference = Number(isBlocked(b)) - Number(isBlocked(a));
+    const blockedDifference = Number(isWorkflowBlocked(b)) - Number(isWorkflowBlocked(a));
     if (blockedDifference) return blockedDifference;
     const stageDifference = STAGE_ORDER.indexOf(getWorkflowMeta(a).stage) - STAGE_ORDER.indexOf(getWorkflowMeta(b).stage);
     if (stageDifference) return stageDifference;
@@ -175,6 +170,36 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
     else showFallback(track);
   };
 
+  const handleMatchingAction = async (track: Track, action: InspectorMatchingAction) => {
+    setBusy([track.id], true);
+    setError(null);
+    try {
+      if (action.id === "approve") {
+        await api.approveCandidate(track.id, action.candidate.candidate.username, action.candidate.candidate.filename);
+      } else if (action.id === "loose_search") {
+        await api.searchTrackLoose(track.id);
+      } else if (action.id === "search_again") {
+        await api.searchTrack(track.id);
+      } else if (action.id === "mark_unavailable") {
+        await api.updateTrackState(track.id, "not_found");
+      } else if (action.id === "edit_query") {
+        await api.updateTrack(track.id, action.artist, action.title, action.mixVersion);
+      }
+
+      const latest = await api.listTracks();
+      setTracks(latest);
+      if (action.id === "approve") {
+        const next = prioritizeActionableTracks(filterPreparationTracks(latest, filter, stageFilter)).find((item) => item.id !== track.id);
+        onSelectedTrackChange(next?.id ?? null);
+      }
+    } catch (reason) {
+      await load();
+      setError(String(reason));
+    } finally {
+      setBusy([track.id], false);
+    }
+  };
+
   const handleMenuAction = async (track: Track, action: TrackMenuAction) => {
     if (action === "retry") return runPrimaryAction(track);
     if (action === "reveal") {
@@ -240,7 +265,7 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
           {loading ? <p className="work-queue-empty">Loading prioritized queue…</p> : orderedTracks.length ? orderedTracks.map((track) => <TrackRow key={track.id} track={track} metadata={getWorkflowMeta(track)} selected={selectedTrackId === track.id} checked={selectedIds.has(track.id)} busy={busyIds.has(track.id)} onCheckedChange={(checked) => setSelectedIds((current) => { const next = new Set(current); checked ? next.add(track.id) : next.delete(track.id); return next; })} onOpen={() => onSelectedTrackChange(track.id)} onPrimaryAction={() => runPrimaryAction(track)} onMenuAction={(action) => handleMenuAction(track, action)} />) : <p className="work-queue-empty">No tracks match this queue and stage filter.</p>}
           {orderedTracks.some((track) => track.state === "not_found" || (track.state === "requested" && track.search_job_id)) && <details className="work-queue-help"><summary>No search results?</summary><p>Use Loose search to broaden the query. Edit the artist, title, or mix in the full Find files workspace if the result is still empty.</p></details>}
         </section>
-        <TrackInspector track={selectedTrack} pathMapFrom={pathMapFrom} pathMapTo={pathMapTo} busy={selectedTrack ? busyIds.has(selectedTrack.id) : false} error={error} onClose={closeInspector} onPrimaryAction={runPrimaryAction} onMenuAction={handleMenuAction} />
+        <TrackInspector track={selectedTrack} pathMapFrom={pathMapFrom} pathMapTo={pathMapTo} busy={selectedTrack ? busyIds.has(selectedTrack.id) : false} error={error} onClose={closeInspector} onPrimaryAction={runPrimaryAction} onMenuAction={handleMenuAction} onMatchingAction={handleMatchingAction} />
       </div>
 
       <section className="legacy-stage-fallback" aria-labelledby="fallback-stage-title">

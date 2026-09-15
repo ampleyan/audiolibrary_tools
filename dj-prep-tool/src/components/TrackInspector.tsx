@@ -6,6 +6,11 @@ import { getWorkflowMeta } from "../lib/workflow";
 import type { TrackMenuAction } from "./TrackRow";
 import TrackStatusBadge from "./TrackStatusBadge";
 
+export type InspectorMatchingAction =
+  | { id: "approve"; candidate: RankedCandidate }
+  | { id: "search_again" | "loose_search" | "mark_unavailable" }
+  | { id: "edit_query"; artist: string; title: string; mixVersion: string | null };
+
 interface ActivityItem {
   id: number;
   trackId: number;
@@ -24,6 +29,7 @@ interface TrackInspectorProps {
   onClose: () => void;
   onPrimaryAction: (track: Track) => void;
   onMenuAction: (track: Track, action: TrackMenuAction) => void;
+  onMatchingAction?: (track: Track, action: InspectorMatchingAction) => void | Promise<void>;
 }
 
 function parseCandidates(value: string | null): RankedCandidate[] {
@@ -48,9 +54,25 @@ function mapPath(path: string, from?: string, to?: string) {
   return normalized.startsWith(normalizedFrom) ? normalizedTo + normalized.slice(normalizedFrom.length) : normalized;
 }
 
-export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading = false, error = null, busy = false, onClose, onPrimaryAction, onMenuAction }: TrackInspectorProps) {
+function formatDuration(seconds: number | null) {
+  if (!seconds) return "Unknown";
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function formatSize(bytes: number | null) {
+  if (!bytes) return "Unknown";
+  return bytes >= 1024 * 1024 * 1024
+    ? `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+    : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading = false, error = null, busy = false, onClose, onPrimaryAction, onMenuAction, onMatchingAction = () => {} }: TrackInspectorProps) {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [activityState, setActivityState] = useState<"idle" | "loading" | "error">("idle");
+  const [editingQuery, setEditingQuery] = useState(false);
+  const [artist, setArtist] = useState("");
+  const [title, setTitle] = useState("");
+  const [mixVersion, setMixVersion] = useState("");
 
   useEffect(() => {
     if (!track) {
@@ -70,6 +92,13 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
     return () => { active = false; };
   }, [track?.id]);
 
+  useEffect(() => {
+    setEditingQuery(false);
+    setArtist(track?.artist ?? "");
+    setTitle(track?.title ?? "");
+    setMixVersion(track?.mix_version ?? "");
+  }, [track?.id]);
+
   if (!track) {
     return (
       <aside className="track-inspector is-empty" aria-label="Track inspector">
@@ -81,6 +110,8 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
   const metadata = getWorkflowMeta(track);
   const candidates = parseCandidates(track.candidate_json);
   const rekordboxPath = track.dj_path ? mapPath(track.dj_path, pathMapFrom, pathMapTo) : null;
+  const noResults = track.state === "not_found" || (track.state === "requested" && Boolean(track.search_job_id));
+  const canEditQuery = ["requested", "needs_review", "not_found", "matched"].includes(track.state);
 
   return (
     <aside className="track-inspector" aria-labelledby="track-inspector-title" aria-busy={loading || busy}>
@@ -95,12 +126,36 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
 
       <div className="track-inspector-status">
         <TrackStatusBadge metadata={metadata} />
-        <button type="button" onClick={() => onPrimaryAction(track)} disabled={busy || !metadata.actionable}>{metadata.nextAction.label}</button>
+        <button type="button" onClick={() => track.state === "matched" ? document.querySelector<HTMLButtonElement>(".track-inspector-candidate-action")?.focus() : onPrimaryAction(track)} disabled={busy || !metadata.actionable}>{metadata.nextAction.label}</button>
       </div>
 
       {loading && <p className="track-inspector-message" role="status">Loading track details…</p>}
       {error && <p className="track-inspector-message is-error" role="alert">{error}</p>}
-      {track.error && <p className="track-inspector-message is-warning">{track.error}</p>}
+      {track.error && <p className="track-inspector-message is-warning" role="status">{track.error}</p>}
+
+      {(noResults || canEditQuery) && (
+        <section className="track-inspector-search">
+          <h4>Search query</h4>
+          {editingQuery ? (
+            <form onSubmit={(event) => { event.preventDefault(); void onMatchingAction(track, { id: "edit_query", artist: artist.trim(), title: title.trim(), mixVersion: mixVersion.trim() || null }); setEditingQuery(false); }}>
+              <label>Artist<input value={artist} onChange={(event) => setArtist(event.target.value)} required /></label>
+              <label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
+              <label>Mix version<input value={mixVersion} onChange={(event) => setMixVersion(event.target.value)} /></label>
+              <div><button type="submit" disabled={busy}>Save query</button><button type="button" onClick={() => setEditingQuery(false)}>Cancel</button></div>
+            </form>
+          ) : (
+            <>
+              {noResults && <p className="track-inspector-muted">The precise artist/title search returned no shared files. Loose search combines the artist and title into one broader query.</p>}
+              <div className="track-inspector-inline-actions">
+                {noResults && <button type="button" onClick={() => onMatchingAction(track, { id: "loose_search" })} disabled={busy}>Loose search</button>}
+                {noResults && <button type="button" onClick={() => onMatchingAction(track, { id: "search_again" })} disabled={busy}>Search again</button>}
+                <button type="button" onClick={() => setEditingQuery(true)} disabled={busy}>Edit query</button>
+                {noResults && track.state !== "not_found" && <button type="button" onClick={() => onMatchingAction(track, { id: "mark_unavailable" })} disabled={busy}>Mark unavailable</button>}
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       {candidates.length > 0 && (
         <section>
@@ -109,7 +164,16 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
             {candidates.map(({ candidate, score }, index) => (
               <div key={`${candidate.username}-${candidate.filename}-${index}`}>
                 <strong>{fileName(candidate.filename)}</strong>
-                <span>{candidate.username} · {candidate.extension.toUpperCase()}{candidate.bitRate ? ` · ${candidate.bitRate} kbps` : ""} · score {Math.round(score)}</span>
+                <dl>
+                  <dt>User</dt><dd>{candidate.username}</dd>
+                  <dt>Format</dt><dd>{candidate.extension.toUpperCase()}</dd>
+                  <dt>Bitrate</dt><dd>{candidate.bitRate ? `${candidate.bitRate} kbps` : "Unknown"}</dd>
+                  <dt>Sample rate</dt><dd>{candidate.sampleRate ? `${(candidate.sampleRate / 1000).toFixed(1)} kHz` : "Unknown"}</dd>
+                  <dt>Duration</dt><dd>{formatDuration(candidate.length)}</dd>
+                  <dt>Size</dt><dd>{formatSize(candidate.size)}</dd>
+                  <dt>Score</dt><dd>{Math.round(score)}</dd>
+                </dl>
+                <button className="track-inspector-candidate-action" type="button" onClick={() => onMatchingAction(track, { id: "approve", candidate: { candidate, score } })} disabled={busy}>Approve &amp; next</button>
               </div>
             ))}
           </div>
@@ -155,6 +219,7 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
             {activities.map((item) => <li key={item.id}><time>{item.createdAt}</time><span>{item.fromState ? `${item.fromState.replace(/_/g, " ")} → ` : ""}{item.toState.replace(/_/g, " ")}</span></li>)}
           </ol>
         ) : <p className="track-inspector-muted">No earlier activity recorded.</p>}
+        {noResults && <p className="track-inspector-muted">Latest search: no results. Retry with a broader query, edit the query, or mark the track unavailable.</p>}
       </section>
 
       <footer className="track-inspector-actions">

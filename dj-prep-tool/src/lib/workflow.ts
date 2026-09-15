@@ -122,6 +122,15 @@ const WORKFLOW_BY_STATE: Record<TrackState, WorkflowMetadata> = {
   },
 };
 
+const BLOCKED_STATES = new Set<TrackState>([
+  "needs_review",
+  "not_found",
+  "quality_failed",
+  "tagging_review",
+  "picard_pending",
+  "failed",
+]);
+
 const SEARCHED_WITHOUT_RESULTS: WorkflowMetadata = {
   bucket: "needs_attention",
   stage: "find",
@@ -141,4 +150,10 @@ export function getNextAction(track: TrackRow): TrackAction {
 
 export function isActionable(track: TrackRow): boolean {
   return getWorkflowMeta(track).actionable;
+}
+
+export function isWorkflowBlocked(track: TrackRow): boolean {
+  return BLOCKED_STATES.has(track.state)
+    || Boolean(track.error)
+    || (track.state === "requested" && Boolean(track.search_job_id));
 }
