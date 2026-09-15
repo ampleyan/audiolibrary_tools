@@ -111,6 +111,44 @@ describe("TrackInspector", () => {
 
     expect(html).toContain("Select a track to inspect its next action and available details.");
   });
+
+  it("renders the unified pipeline checklist and Rekordbox handoff actions", () => {
+    const html = renderToStaticMarkup(
+      <TrackInspector
+        track={{ ...track, state: "ready_for_rekordbox", error: null }}
+        pathMapFrom="/rekordbox"
+        pathMapTo="/Volumes/DJ"
+        onClose={() => {}}
+        onPrimaryAction={() => {}}
+        onMenuAction={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Preparation checklist");
+    expect(html).toContain("Download");
+    expect(html).toContain("Convert");
+    expect(html).toContain("Quality");
+    expect(html).toContain("Tag");
+    expect(html).toContain("Rekordbox");
+    expect(html).toContain("Copy to Rekordbox");
+    expect(html).toContain("Reveal in Finder/Explorer");
+    expect(html).toContain("A Rekordbox destination is already recorded");
+  });
+
+  it("explains how to remediate a failed quality check", () => {
+    const html = renderToStaticMarkup(
+      <TrackInspector
+        track={{ ...track, state: "quality_failed", quality_result: "fake_flac", quality_notes: "Spectral cutoff at 16 kHz", error: null, dj_path: null }}
+        onClose={() => {}}
+        onPrimaryAction={() => {}}
+        onMenuAction={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Quality remediation");
+    expect(html).toContain("Choose another candidate");
+    expect(html).toContain("Retry quality check");
+  });
 });
 
 describe("Prepare queue derivation", () => {

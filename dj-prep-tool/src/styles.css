@@ -267,6 +267,24 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .track-inspector-message { margin: 11px 16px 0; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: var(--color-muted); padding: 8px 9px; font-size: 11px; }
 .track-inspector-message.is-error { border-color: color-mix(in srgb, var(--color-destructive) 45%, var(--color-border)); color: var(--color-destructive); }
 .track-inspector-message.is-warning { border-color: color-mix(in srgb, var(--color-status-attention) 45%, var(--color-border)); color: var(--color-status-attention); }
+.track-inspector-pipeline ol { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.track-inspector-pipeline li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 6px; border: 1px solid var(--color-border-subtle); border-radius: 5px; background: var(--color-surface); color: var(--color-muted-foreground); padding: 6px 7px; font-size: 10px; }
+.track-inspector-pipeline li > span { font-size: 11px; text-align: center; }
+.track-inspector-pipeline li strong { color: inherit; font-size: 10px; font-weight: 600; }
+.track-inspector-pipeline li small { color: inherit; font-size: 9px; }
+.track-inspector-pipeline li[data-step-status="complete"] { border-color: color-mix(in srgb, var(--color-status-success) 38%, var(--color-border)); color: var(--color-status-success); }
+.track-inspector-pipeline li[data-step-status="current"] { border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border)); background: var(--color-primary-bg); color: var(--color-primary-foreground); }
+.track-inspector-download-progress { display: grid; gap: 5px; margin-top: 9px; color: var(--color-muted); font-size: 10px; }
+.track-inspector-download-progress progress { width: 100%; height: 5px; accent-color: var(--color-primary); }
+.track-inspector-inline-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.track-inspector-inline-actions button, .track-inspector-move-back button, .track-inspector-move-back select { border: 1px solid var(--color-border-muted); border-radius: 5px; background: var(--color-surface); color: var(--color-muted); padding: 5px 7px; cursor: pointer; font: inherit; font-size: 10px; }
+.track-inspector-inline-actions button:hover, .track-inspector-move-back button:hover { border-color: var(--color-primary); color: var(--color-primary-foreground); filter: none; }
+.track-inspector-inline-actions button:disabled, .track-inspector-move-back button:disabled, .track-inspector-move-back select:disabled { cursor: default; opacity: .45; }
+.track-inspector-remediation { background: color-mix(in srgb, var(--color-status-attention) 7%, var(--color-surface-raised)); }
+.track-inspector-remediation p, .track-inspector-tagging p, .track-inspector-handoff p { margin: 0; font-size: 11px; line-height: 1.5; }
+.track-inspector-move-back { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+.track-inspector-move-back h4 { grid-column: 1 / -1; }
+.track-inspector-move-back select { min-width: 0; }
 .track-inspector-candidates { display: grid; gap: 6px; }
 .track-inspector-candidates > div { min-width: 0; border: 1px solid var(--color-border-subtle); border-radius: 6px; background: var(--color-surface); padding: 8px; }
 .track-inspector-candidates strong, .track-inspector-candidates span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

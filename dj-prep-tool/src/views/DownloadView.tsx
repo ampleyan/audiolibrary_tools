@@ -27,6 +27,26 @@ const RETURN_STAGES: { state: TrackState; label: string }[] = [
   { state: "ready_for_rekordbox", label: "Rekordbox" },
 ];
 
+const PIPELINE_RANK: Partial<Record<TrackState, number>> = {
+  requested: 0,
+  needs_review: 0,
+  not_found: 0,
+  matched: 0,
+  approved: 1,
+  downloading: 1,
+  failed: 1,
+  conversion_pending: 2,
+  downloaded: 3,
+  converted: 3,
+  quality_failed: 3,
+  ready_for_conversion: 4,
+  tagging_review: 4,
+  picard_pending: 4,
+  ready_for_rekordbox: 5,
+  rekordbox_pending: 5,
+  dj_ready: 6,
+};
+
 function fmt(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -77,8 +97,9 @@ function QualityBadge({ result }: { result: QualityResult }) {
   );
 }
 
-function ProgressBar({ done, total }: { done: number; total: number }) {
+function ProgressBar({ done, total, speed }: { done: number; total: number; speed: number | null }) {
   const pct = Math.min(100, Math.round((done / total) * 100));
+  const eta = speed ? Math.max(0, Math.ceil((total - done) / speed / 60)) : null;
   return (
     <div style={{ marginTop: 6 }}>
       <div
@@ -100,7 +121,7 @@ function ProgressBar({ done, total }: { done: number; total: number }) {
         />
       </div>
       <span style={{ fontSize: 10, color: "#d97706", marginTop: 2, display: "block" }}>
-        {pct}% — {fmt(done)} / {fmt(total)}
+        {pct}% — {fmt(done)} / {fmt(total)}{speed ? ` · ${fmt(speed)}/s` : ""}{eta !== null ? ` · ETA ${eta} min` : ""}
       </span>
     </div>
   );
@@ -119,17 +140,26 @@ function DownloadCard({
   const [qualityResult, setQualityResult] = useState<QualityResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busyLabel, setBusyLabel] = useState("");
-  const [returnStage, setReturnStage] = useState<TrackState>("downloaded");
-  const [progress, setProgress] = useState<{ bytesOnDisk: number | null; bytesTotal: number | null } | null>(null);
+  const [returnStage, setReturnStage] = useState<TrackState>("requested");
+  const [progress, setProgress] = useState<{ bytesOnDisk: number | null; bytesTotal: number | null; speed: number | null } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressSample = useRef<{ bytes: number; at: number } | null>(null);
 
   useEffect(() => {
     if (track.state !== "downloading") {
       if (pollRef.current) clearInterval(pollRef.current);
+      progressSample.current = null;
       return;
     }
-    const tick = () =>
-      api.checkDownloadProgress(track.id).then(setProgress).catch(() => {});
+    const tick = () => api.checkDownloadProgress(track.id).then((next) => {
+      const now = Date.now();
+      const previous = progressSample.current;
+      const speed = previous && next.bytesOnDisk != null && next.bytesOnDisk >= previous.bytes
+        ? (next.bytesOnDisk - previous.bytes) / Math.max(1, (now - previous.at) / 1000)
+        : null;
+      if (next.bytesOnDisk != null) progressSample.current = { bytes: next.bytesOnDisk, at: now };
+      setProgress({ ...next, speed });
+    }).catch(() => {});
     tick();
     pollRef.current = setInterval(tick, 3000);
     return () => {
@@ -178,12 +208,16 @@ function DownloadCard({
   };
   const markAsTagged = () => act("…", () => api.updateTrackState(track.id, "ready_for_rekordbox"));
   const markImported = () => act("…", () => api.finishRekordbox(track.id));
-  const returnToStage = () =>
-    act("Returning…", async () => {
-      await api.updateTrackState(track.id, returnStage);
-      onUpdate({ ...track, state: returnStage, quality_result: null, quality_notes: null, error: null });
+  const availableReturnStages = RETURN_STAGES.filter((stage) => (PIPELINE_RANK[stage.state] ?? 0) < (PIPELINE_RANK[track.state] ?? 0));
+  const selectedReturnStage = availableReturnStages.find((stage) => stage.state === returnStage) ?? availableReturnStages[0];
+  const returnToStage = () => {
+    if (!selectedReturnStage || !window.confirm(`Move ${track.artist ? `${track.artist} – ` : ""}${track.title} back to ${selectedReturnStage.label}? Later-stage results may need to be repeated.`)) return;
+    act("Moving…", async () => {
+      await api.updateTrackState(track.id, selectedReturnStage.state);
+      onUpdate({ ...track, state: selectedReturnStage.state, quality_result: null, quality_notes: null, error: null });
       setQualityResult(null);
     });
+  };
 
   const isDownloading = track.state === "downloading";
 
@@ -269,7 +303,7 @@ function DownloadCard({
             </p>
           )}
           {isDownloading && progress?.bytesOnDisk != null && progress?.bytesTotal != null && (
-            <ProgressBar done={progress.bytesOnDisk} total={progress.bytesTotal} />
+            <ProgressBar done={progress.bytesOnDisk} total={progress.bytesTotal} speed={progress.speed} />
           )}
           {isDownloading && progress?.bytesOnDisk != null && progress?.bytesTotal == null && (
             <p style={{ fontSize: 10, color: "#d97706", margin: "4px 0 0" }}>
@@ -305,12 +339,15 @@ function DownloadCard({
           {track.quality_result === "fake_flac" && !qualityResult && (
             <p style={{ fontSize: 12, color: "#f87171", margin: "4px 0 0" }}>
               ✗ Fake FLAC detected
-              {track.quality_notes && ` — ${track.quality_notes}`}
+              {track.quality_notes && ` — ${track.quality_notes}`} · Choose another candidate or retry after verifying the file.
             </p>
+          )}
+          {track.quality_result === "low_spectral_cutoff" && !qualityResult && (
+            <p style={{ fontSize: 12, color: "#f87171", margin: "4px 0 0" }}>✗ Spectral check failed{track.quality_notes && ` — ${track.quality_notes}`} · Choose another candidate or retry after verifying the file.</p>
           )}
           {(track.state === "tagging_review" || track.state === "picard_pending") && (
             <p style={{ fontSize: 12, color: "#fb923c", margin: "4px 0 0" }}>
-              {track.error ?? "Beets needs a manual match review before this can continue."}
+              {track.error ?? "Beets needs a manual match review before this can continue."} Review artist, title, and mix in Picard, then mark tagging complete.
             </p>
           )}
           {track.state === "ready_for_rekordbox" && track.archive_path && (
@@ -318,6 +355,7 @@ function DownloadCard({
               {track.archive_path}
             </p>
           )}
+          {track.dj_path && <p style={{ fontSize: 11, color: "#facc15", margin: "4px 0 0" }}>A Rekordbox destination is already recorded. Confirm it before copying to avoid a collision.</p>}
           {err && (
             <div
               style={{
@@ -373,29 +411,29 @@ function DownloadCard({
             <ActionBtn label="Run Beets tagging" busy={busy} busyLabel={busyLabel} onClick={tagTrack} />
           )}
           {(track.state === "tagging_review" || track.state === "picard_pending") && (
-            <ActionBtn label="Open folder" busy={busy} busyLabel={busyLabel} onClick={() => openFolder(track.downloaded_path)} />
+            <ActionBtn label="Reveal in Finder/Explorer" busy={busy} busyLabel={busyLabel} onClick={() => openFolder(track.downloaded_path)} />
           )}
           {track.state === "ready_for_rekordbox" && (
-            <ActionBtn label="Open folder" busy={busy} busyLabel={busyLabel} onClick={() => openFolder(track.archive_path)} />
+            <ActionBtn label="Reveal in Finder/Explorer" busy={busy} busyLabel={busyLabel} onClick={() => openFolder(track.archive_path)} />
           )}
           {(track.state === "tagging_review" || track.state === "picard_pending") && (
-            <ActionBtn label="Mark ready for Rekordbox" busy={busy} busyLabel={busyLabel} onClick={markAsTagged} />
+            <ActionBtn label="Mark tagging complete" busy={busy} busyLabel={busyLabel} onClick={markAsTagged} />
           )}
           {track.state === "ready_for_rekordbox" && (
-            <ActionBtn label="Mark imported" busy={busy} busyLabel={busyLabel} onClick={markImported} />
+            <ActionBtn label="Copy to Rekordbox" busy={busy} busyLabel={busyLabel} onClick={markImported} />
           )}
-          {!isDownloading && (
+          {!isDownloading && selectedReturnStage && (
             <div style={{ display: "flex", gap: 4 }}>
               <select
                 value={returnStage}
                 disabled={busy}
                 onChange={(event) => setReturnStage(event.target.value as TrackState)}
-                aria-label="Return track to stage"
+                aria-label="Move track back to stage"
                 style={{ minWidth: 0, flex: 1, background: "#111827", color: "#9ca3af", border: "1px solid #374151", borderRadius: 4, padding: "5px 4px", fontSize: 11, fontFamily: "inherit" }}
               >
-                {RETURN_STAGES.map((stage) => <option key={stage.state} value={stage.state}>{stage.label}</option>)}
+                {availableReturnStages.map((stage) => <option key={stage.state} value={stage.state}>{stage.label}</option>)}
               </select>
-              <ActionBtn label="Return" busy={busy} busyLabel={busyLabel} onClick={returnToStage} />
+              <ActionBtn label={`Move back to ${selectedReturnStage.label}`} busy={busy} busyLabel={busyLabel} onClick={returnToStage} />
             </div>
           )}
         </div>

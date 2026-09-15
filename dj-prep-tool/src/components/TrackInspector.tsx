@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { api } from "../lib/api";
 import type { RankedCandidate, TrackRow as Track } from "../lib/types";
@@ -10,6 +10,20 @@ export type InspectorMatchingAction =
   | { id: "approve"; candidate: RankedCandidate }
   | { id: "search_again" | "loose_search" | "mark_unavailable" }
   | { id: "edit_query"; artist: string; title: string; mixVersion: string | null };
+
+export type InspectorPipelineAction =
+  | { id: "cancel_download" | "poll_download" | "retry_download" | "retry_quality" | "choose_another_candidate" | "mark_tagged" | "copy_to_rekordbox" | "reveal" }
+  | { id: "move_back"; state: Track["state"]; label: string };
+
+const PIPELINE_STAGES = ["download", "convert", "quality", "tag", "rekordbox", "done"] as const;
+const MOVE_BACK_TARGETS: Array<{ state: Track["state"]; label: string; stage: typeof PIPELINE_STAGES[number] }> = [
+  { state: "requested", label: "Find files", stage: "download" },
+  { state: "matched", label: "Match", stage: "download" },
+  { state: "approved", label: "Download", stage: "download" },
+  { state: "conversion_pending", label: "Convert", stage: "convert" },
+  { state: "downloaded", label: "Quality", stage: "quality" },
+  { state: "ready_for_conversion", label: "Tag", stage: "tag" },
+];
 
 interface ActivityItem {
   id: number;
@@ -30,6 +44,7 @@ interface TrackInspectorProps {
   onPrimaryAction: (track: Track) => void;
   onMenuAction: (track: Track, action: TrackMenuAction) => void;
   onMatchingAction?: (track: Track, action: InspectorMatchingAction) => void | Promise<void>;
+  onPipelineAction?: (track: Track, action: InspectorPipelineAction) => void | Promise<void>;
 }
 
 function parseCandidates(value: string | null): RankedCandidate[] {
@@ -61,18 +76,30 @@ function formatDuration(seconds: number | null) {
 
 function formatSize(bytes: number | null) {
   if (!bytes) return "Unknown";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return bytes >= 1024 * 1024 * 1024
     ? `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading = false, error = null, busy = false, onClose, onPrimaryAction, onMenuAction, onMatchingAction = () => {} }: TrackInspectorProps) {
+function pipelineStepStatus(currentStage: string, step: typeof PIPELINE_STAGES[number]) {
+  const current = PIPELINE_STAGES.indexOf(currentStage as typeof PIPELINE_STAGES[number]);
+  const target = PIPELINE_STAGES.indexOf(step);
+  if (current < 0) return "pending";
+  if (target < current || currentStage === "done") return "complete";
+  return target === current ? "current" : "pending";
+}
+
+export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading = false, error = null, busy = false, onClose, onPrimaryAction, onMenuAction, onMatchingAction = () => {}, onPipelineAction = () => {} }: TrackInspectorProps) {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [activityState, setActivityState] = useState<"idle" | "loading" | "error">("idle");
   const [editingQuery, setEditingQuery] = useState(false);
   const [artist, setArtist] = useState("");
   const [title, setTitle] = useState("");
   const [mixVersion, setMixVersion] = useState("");
+  const [downloadProgress, setDownloadProgress] = useState<{ bytesOnDisk: number | null; bytesTotal: number | null; speed: number | null } | null>(null);
+  const [moveBackState, setMoveBackState] = useState<Track["state"]>("requested");
+  const progressSample = useRef<{ bytes: number; at: number } | null>(null);
 
   useEffect(() => {
     if (!track) {
@@ -93,10 +120,33 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
   }, [track?.id]);
 
   useEffect(() => {
+    if (!track || track.state !== "downloading") {
+      setDownloadProgress(null);
+      progressSample.current = null;
+      return;
+    }
+    let active = true;
+    const tick = () => api.checkDownloadProgress(track.id).then((next) => {
+      if (!active) return;
+      const now = Date.now();
+      const previous = progressSample.current;
+      const speed = previous && next.bytesOnDisk != null && next.bytesOnDisk >= previous.bytes
+        ? (next.bytesOnDisk - previous.bytes) / Math.max(1, (now - previous.at) / 1000)
+        : null;
+      if (next.bytesOnDisk != null) progressSample.current = { bytes: next.bytesOnDisk, at: now };
+      setDownloadProgress({ ...next, speed });
+    }).catch(() => {});
+    void tick();
+    const interval = window.setInterval(tick, 3000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [track?.id, track?.state]);
+
+  useEffect(() => {
     setEditingQuery(false);
     setArtist(track?.artist ?? "");
     setTitle(track?.title ?? "");
     setMixVersion(track?.mix_version ?? "");
+    setMoveBackState("requested");
   }, [track?.id]);
 
   if (!track) {
@@ -112,6 +162,23 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
   const rekordboxPath = track.dj_path ? mapPath(track.dj_path, pathMapFrom, pathMapTo) : null;
   const noResults = track.state === "not_found" || (track.state === "requested" && Boolean(track.search_job_id));
   const canEditQuery = ["requested", "needs_review", "not_found", "matched"].includes(track.state);
+  const pipelineStage = metadata.stage;
+  const pipelineSteps = [
+    { id: "download", label: "Download" },
+    { id: "convert", label: "Convert" },
+    { id: "quality", label: "Quality" },
+    { id: "tag", label: "Tag" },
+    { id: "rekordbox", label: "Rekordbox" },
+  ] as const;
+  const currentStageIndex = PIPELINE_STAGES.indexOf(pipelineStage as typeof PIPELINE_STAGES[number]);
+  const moveBackTargets = MOVE_BACK_TARGETS.filter((target) => PIPELINE_STAGES.indexOf(target.stage) < currentStageIndex);
+  const selectedMoveTarget = moveBackTargets.find((target) => target.state === moveBackState) ?? moveBackTargets[0];
+  const progressPercent = downloadProgress?.bytesOnDisk != null && downloadProgress.bytesTotal
+    ? Math.min(100, Math.round(downloadProgress.bytesOnDisk / downloadProgress.bytesTotal * 100))
+    : null;
+  const etaSeconds = downloadProgress?.speed && downloadProgress.bytesOnDisk != null && downloadProgress.bytesTotal
+    ? Math.max(0, Math.round((downloadProgress.bytesTotal - downloadProgress.bytesOnDisk) / downloadProgress.speed))
+    : null;
 
   return (
     <aside className="track-inspector" aria-labelledby="track-inspector-title" aria-busy={loading || busy}>
@@ -187,10 +254,49 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
         </section>
       )}
 
+      {currentStageIndex >= 0 && (
+        <section className="track-inspector-pipeline">
+          <h4>Preparation checklist</h4>
+          <ol>
+            {pipelineSteps.map((step) => {
+              const status = pipelineStepStatus(pipelineStage, step.id);
+              return <li key={step.id} data-step-status={status}><span aria-hidden="true">{status === "complete" ? "✓" : status === "current" ? "●" : "○"}</span><strong>{step.label}</strong><small>{status === "complete" ? "Complete" : status === "current" ? "Current step" : "Pending"}</small></li>;
+            })}
+          </ol>
+          {track.state === "downloading" && (
+            <div className="track-inspector-download-progress" aria-live="polite">
+              {progressPercent !== null && <progress max="100" value={progressPercent}>{progressPercent}%</progress>}
+              <span>{progressPercent !== null ? `${progressPercent}% · ` : ""}{downloadProgress?.bytesOnDisk != null ? formatSize(downloadProgress.bytesOnDisk) : "Waiting for bytes"}{downloadProgress?.bytesTotal != null ? ` / ${formatSize(downloadProgress.bytesTotal)}` : ""}{downloadProgress?.speed ? ` · ${formatSize(downloadProgress.speed)}/s` : ""}{etaSeconds !== null ? ` · ETA ${Math.ceil(etaSeconds / 60)} min` : ""}</span>
+            </div>
+          )}
+          <div className="track-inspector-inline-actions">
+            {track.state === "downloading" && <button type="button" onClick={() => onPipelineAction(track, { id: "poll_download" })} disabled={busy}>Check completion</button>}
+            {track.state === "downloading" && <button type="button" onClick={() => onPipelineAction(track, { id: "cancel_download" })} disabled={busy}>Cancel download</button>}
+            {track.state === "failed" && track.selected_filename && <button type="button" onClick={() => onPipelineAction(track, { id: "retry_download" })} disabled={busy}>Retry download</button>}
+          </div>
+        </section>
+      )}
+
       {(track.quality_result || track.quality_notes) && (
         <section>
           <h4>Quality result</h4>
           <dl>{track.quality_result && <><dt>Result</dt><dd>{track.quality_result.replace(/_/g, " ")}</dd></>}{track.quality_notes && <><dt>Notes</dt><dd>{track.quality_notes}</dd></>}</dl>
+        </section>
+      )}
+
+      {track.state === "quality_failed" && (
+        <section className="track-inspector-remediation">
+          <h4>Quality remediation</h4>
+          <p>The authenticity or spectral check failed. Retry after verifying the file, or choose another candidate and download a different copy.</p>
+          <div className="track-inspector-inline-actions"><button type="button" onClick={() => onPipelineAction(track, { id: "retry_quality" })} disabled={busy}>Retry quality check</button><button type="button" onClick={() => onPipelineAction(track, { id: "choose_another_candidate" })} disabled={busy || candidates.length === 0}>Choose another candidate</button></div>
+        </section>
+      )}
+
+      {["ready_for_conversion", "tagging_review", "picard_pending", "ready_for_rekordbox", "rekordbox_pending", "dj_ready"].includes(track.state) && (
+        <section className="track-inspector-tagging">
+          <h4>Tagging handoff</h4>
+          <dl><dt>Artist</dt><dd>{track.artist || "Unknown"}</dd><dt>Title</dt><dd>{track.title}</dd><dt>Mix</dt><dd>{track.mix_version || "None"}</dd>{track.archive_path && <><dt>Beets file</dt><dd title={track.archive_path}>{fileName(track.archive_path)}</dd></>}</dl>
+          {(track.state === "tagging_review" || track.state === "picard_pending") && <><p className="track-inspector-muted">Manual Picard/tagging review is required. Reveal the file, finish the metadata review, then mark tagging complete.</p><div className="track-inspector-inline-actions"><button type="button" onClick={() => onPipelineAction(track, { id: "reveal" })} disabled={busy}>Reveal in Finder/Explorer</button><button type="button" onClick={() => onPipelineAction(track, { id: "mark_tagged" })} disabled={busy}>Mark tagging complete</button></div></>}
         </section>
       )}
 
@@ -209,6 +315,23 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
         <section>
           <h4>Rekordbox path</h4>
           <p className="track-inspector-path">{rekordboxPath}</p>
+          <p className="track-inspector-message is-warning">A Rekordbox destination is already recorded. Confirm the existing file before copying to avoid a collision.</p>
+        </section>
+      )}
+
+      {(track.state === "ready_for_rekordbox" || track.state === "rekordbox_pending") && (
+        <section className="track-inspector-handoff">
+          <h4>Rekordbox handoff</h4>
+          <p className="track-inspector-muted">Copy the prepared file to the configured Rekordbox destination, then verify the library handoff.</p>
+          <div className="track-inspector-inline-actions"><button type="button" onClick={() => onPipelineAction(track, { id: "reveal" })} disabled={busy}>Reveal in Finder/Explorer</button><button type="button" onClick={() => onPipelineAction(track, { id: "copy_to_rekordbox" })} disabled={busy}>Copy to Rekordbox</button></div>
+        </section>
+      )}
+
+      {moveBackTargets.length > 0 && selectedMoveTarget && (
+        <section className="track-inspector-move-back">
+          <h4>Move back</h4>
+          <select aria-label="Move track back to stage" value={selectedMoveTarget.state} onChange={(event) => setMoveBackState(event.target.value as Track["state"])}>{moveBackTargets.map((target) => <option key={target.state} value={target.state}>{target.label}</option>)}</select>
+          <button type="button" onClick={() => onPipelineAction(track, { id: "move_back", state: selectedMoveTarget.state, label: selectedMoveTarget.label })} disabled={busy}>Move back to {selectedMoveTarget.label}</button>
         </section>
       )}
 
@@ -224,7 +347,7 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
 
       <footer className="track-inspector-actions">
         <button type="button" onClick={() => onMenuAction(track, "edit")}>Edit details</button>
-        {(track.downloaded_path || track.archive_path || track.dj_path) && <button type="button" onClick={() => onMenuAction(track, "reveal")}>Reveal file</button>}
+        {(track.downloaded_path || track.archive_path || track.dj_path) && <button type="button" onClick={() => onMenuAction(track, "reveal")}>Reveal in Finder/Explorer</button>}
         <button type="button" onClick={() => onMenuAction(track, "move_stage")}>Move stage</button>
       </footer>
     </aside>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import TrackInspector, { type InspectorMatchingAction } from "../components/TrackInspector";
+import TrackInspector, { type InspectorMatchingAction, type InspectorPipelineAction } from "../components/TrackInspector";
 import TrackRow, { type TrackMenuAction } from "../components/TrackRow";
 import { api } from "../lib/api";
 import type { TrackActionId, TrackRow as Track, TrackState } from "../lib/types";
@@ -155,6 +155,7 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
       search: (item) => api.searchTrack(item.id),
       loose_search: (item) => api.searchTrackLoose(item.id),
       download: (item) => api.startDownload(item.id),
+      monitor_download: (item) => api.pollDownload(item.id),
       convert: (item) => api.convertTrack(item.id),
       quality_check: (item) => api.runQualityCheck(item.id),
       retry_quality: (item) => api.runQualityCheck(item.id),
@@ -198,6 +199,25 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
     } finally {
       setBusy([track.id], false);
     }
+  };
+
+  const handlePipelineAction = async (track: Track, action: InspectorPipelineAction) => {
+    if (action.id === "move_back" && !window.confirm(`Move ${track.artist ? `${track.artist} – ` : ""}${track.title} back to ${action.label}? Later-stage results may need to be repeated.`)) return;
+    const operations: Record<Exclude<InspectorPipelineAction["id"], "move_back">, () => Promise<unknown>> = {
+      cancel_download: () => api.cancelDownload(track.id),
+      poll_download: () => api.pollDownload(track.id),
+      retry_download: () => api.startDownload(track.id),
+      retry_quality: () => api.runQualityCheck(track.id),
+      choose_another_candidate: () => api.updateTrackState(track.id, "matched"),
+      mark_tagged: () => api.updateTrackState(track.id, "ready_for_rekordbox"),
+      copy_to_rekordbox: () => api.finishRekordbox(track.id),
+      reveal: () => {
+        const path = track.dj_path || track.archive_path || track.downloaded_path;
+        return path ? api.openFolder(localPath(path, pathMapFrom, pathMapTo)) : Promise.reject(new Error("No file path is recorded for this track."));
+      },
+    };
+    const operation = action.id === "move_back" ? () => api.updateTrackState(track.id, action.state) : operations[action.id];
+    await runOperation([track], operation);
   };
 
   const handleMenuAction = async (track: Track, action: TrackMenuAction) => {
@@ -265,7 +285,7 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
           {loading ? <p className="work-queue-empty">Loading prioritized queue…</p> : orderedTracks.length ? orderedTracks.map((track) => <TrackRow key={track.id} track={track} metadata={getWorkflowMeta(track)} selected={selectedTrackId === track.id} checked={selectedIds.has(track.id)} busy={busyIds.has(track.id)} onCheckedChange={(checked) => setSelectedIds((current) => { const next = new Set(current); checked ? next.add(track.id) : next.delete(track.id); return next; })} onOpen={() => onSelectedTrackChange(track.id)} onPrimaryAction={() => runPrimaryAction(track)} onMenuAction={(action) => handleMenuAction(track, action)} />) : <p className="work-queue-empty">No tracks match this queue and stage filter.</p>}
           {orderedTracks.some((track) => track.state === "not_found" || (track.state === "requested" && track.search_job_id)) && <details className="work-queue-help"><summary>No search results?</summary><p>Use Loose search to broaden the query. Edit the artist, title, or mix in the full Find files workspace if the result is still empty.</p></details>}
         </section>
-        <TrackInspector track={selectedTrack} pathMapFrom={pathMapFrom} pathMapTo={pathMapTo} busy={selectedTrack ? busyIds.has(selectedTrack.id) : false} error={error} onClose={closeInspector} onPrimaryAction={runPrimaryAction} onMenuAction={handleMenuAction} onMatchingAction={handleMatchingAction} />
+        <TrackInspector track={selectedTrack} pathMapFrom={pathMapFrom} pathMapTo={pathMapTo} busy={selectedTrack ? busyIds.has(selectedTrack.id) : false} error={error} onClose={closeInspector} onPrimaryAction={runPrimaryAction} onMenuAction={handleMenuAction} onMatchingAction={handleMatchingAction} onPipelineAction={handlePipelineAction} />
       </div>
 
       <section className="legacy-stage-fallback" aria-labelledby="fallback-stage-title">
