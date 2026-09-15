@@ -30,6 +30,8 @@ DATA_DIR = Path(os.environ.get("DJ_PREP_DATA_DIR", "/data"))
 DB_PATH = DATA_DIR / "dj_prep.sqlite"
 INBOX_DIR = Path(os.environ.get("DJ_PREP_INBOX_DIR", "/music/inbox"))
 ARCHIVE_DIR = Path(os.environ.get("DJ_PREP_ARCHIVE_DIR", "/music/archive"))
+LIBRARY_DIR = Path(os.environ.get("DJ_PREP_LIBRARY_DIR", "/music/library"))
+REKORDBOX_XML_PATH = os.environ.get("DJ_PREP_REKORDBOX_XML", "")
 SOCKSEEK_URL = os.environ.get("SOCKSEEK_URL", "http://sockseek:5030").rstrip("/")
 SOCKSEEK_LOG_FILE = os.environ.get("SOCKSEEK_LOG_FILE", "")
 PYTHON = os.environ.get("PYTHON", "python3")
@@ -89,8 +91,10 @@ def row_json(row):
     return dict(row)
 
 def append_log(message):
-    LOGS.append({"timestamp": datetime.datetime.now().isoformat(timespec="seconds"), "message": message})
+    ts = datetime.datetime.now().isoformat(timespec="seconds")
+    LOGS.append({"timestamp": ts, "message": message})
     del LOGS[:-300]
+    print(f"{ts} {message}", flush=True)
 
 def get_logs():
     if SOCKSEEK_LOG_FILE:
@@ -162,7 +166,18 @@ def insert(draft):
     exists = conn.execute("SELECT EXISTS(SELECT 1 FROM tracks WHERE lower(trim(artist))=lower(trim(?)) AND lower(trim(title))=lower(trim(?)))", (artist, title)).fetchone()[0]
     if exists:
         error = f"{error}; duplicate of existing track" if error else "duplicate of existing track"
-    cur = conn.execute("INSERT INTO tracks (artist,title,mix_version,source_url,import_tag,state,error) VALUES (?,?,?,?,?,?,?)", (artist, title, mix_version, source_url, None, state, error))
+    dj_path = None
+    if state != "dj_ready":
+        xml_path = rekordbox_xml_path()
+        if xml_path:
+            try:
+                location = rekordbox_location(rekordbox_index(xml_path), artist, title)
+                if location:
+                    dj_path = location
+                    state = "dj_ready"
+            except Exception:
+                pass
+    cur = conn.execute("INSERT INTO tracks (artist,title,mix_version,source_url,import_tag,state,error,dj_path) VALUES (?,?,?,?,?,?,?,?)", (artist, title, mix_version, source_url, None, state, error, dj_path))
     row = conn.execute("SELECT * FROM tracks WHERE id=?", (cur.lastrowid,)).fetchone()
     conn.commit()
     conn.close()
@@ -175,6 +190,59 @@ def track_exists(artist, title):
     return bool(exists)
 
 _rek_cache = {"mtime": None, "index": {}}
+
+def _parse_rekordbox_xml_for_discovery(xml_path):
+    tracks_by_id = {}
+    if _HAS_LXML:
+        try:
+            tree = _lxml.parse(xml_path)
+            root = tree.getroot()
+        except _lxml.XMLSyntaxError as error:
+            raise ValueError(f"Cannot read Rekordbox XML: {error}")
+    else:
+        try:
+            tree = ET.parse(xml_path)
+            root = tree.getroot()
+        except ET.ParseError as error:
+            raise ValueError(f"Cannot read Rekordbox XML: {error}")
+    for elem in root.iter("TRACK"):
+        track_id = elem.get("TrackID")
+        if not track_id:
+            continue
+        tracks_by_id[track_id] = {
+            "artist": elem.get("Artist") or "",
+            "title": elem.get("Name") or "",
+            "mixVersion": elem.get("Mix") or None,
+            "location": elem.get("Location") or None,
+            "album": elem.get("Album") or None,
+            "genre": elem.get("Genre") or None,
+            "bpm": elem.get("AverageBpm") or None,
+            "key": elem.get("Tonality") or None,
+            "rating": elem.get("Rating") or None,
+            "playCount": elem.get("PlayCount") or None,
+            "dateAdded": elem.get("DateAdded") or None,
+            "playlists": [],
+            "inLibrary": False,
+        }
+    def collect_playlists(node):
+        has_track_refs = any(child.tag == "TRACK" for child in node)
+        if has_track_refs:
+            name = node.get("Name") or ""
+            for ref in node:
+                if ref.tag == "TRACK":
+                    key = ref.get("Key")
+                    if key and key in tracks_by_id:
+                        tracks_by_id[key]["playlists"].append(name)
+        else:
+            for child in node:
+                if child.tag == "NODE":
+                    collect_playlists(child)
+    playlists_root = root.find("PLAYLISTS")
+    if playlists_root is not None:
+        for node in playlists_root:
+            if node.tag == "NODE":
+                collect_playlists(node)
+    return list(tracks_by_id.values())
 
 def _parse_rekordbox_xml(xml_path):
     index = {}
@@ -234,6 +302,27 @@ def rekordbox_location(index, artist, title):
     )
     return index.get(key) or None
 
+def import_rekordbox_xml(content):
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("Rekordbox XML is empty")
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as error:
+        raise ValueError(f"Invalid Rekordbox XML: {error}")
+    if root.tag != "DJ_PLAYLISTS":
+        raise ValueError("Invalid Rekordbox XML: root element must be DJ_PLAYLISTS")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = DATA_DIR / "rekordbox.xml"
+    temporary = path.with_suffix(".xml.tmp")
+    temporary.write_text(content, encoding="utf-8")
+    temporary.replace(path)
+    conn = db()
+    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", ("rekordbox_xml_path", str(path)))
+    conn.commit()
+    conn.close()
+    _rek_cache.update(mtime=None, index={})
+    return str(path)
+
 def tracks(state=None):
     conn = db()
     if state:
@@ -256,6 +345,9 @@ def setting(key, default=""):
     row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     conn.close()
     return row[0] if row else default
+
+def rekordbox_xml_path():
+    return setting("rekordbox_xml_path", REKORDBOX_XML_PATH)
 
 def update(track_id, sql, values):
     conn = db()
@@ -326,14 +418,14 @@ def telegram_request(payload):
     return json.loads(lines[-1])
 
 def command(name, payload):
-    if name not in {"get_logs", "list_tracks", "list_activity", "get_settings", "check_daemon", "list_backups", "search_track", "search_track_loose", "approve_candidate", "start_download", "cancel_download", "check_download_progress", "poll_download", "run_quality_check", "clear_tracks"}:
+    if name not in {"get_logs", "list_tracks", "list_activity", "get_settings", "check_daemon", "list_backups", "search_track", "search_track_loose", "approve_candidate", "start_download", "cancel_download", "check_download_progress", "poll_download", "run_quality_check", "clear_tracks", "import_rekordbox_xml", "import_rekordbox_playlist", "import_text", "import_csv", "import_youtube", "import_telegram", "update_track", "update_track_state", "delete_track", "finish_rekordbox", "tag_track", "get_similar_tracks", "get_similar_tracks_for_query"}:
         append_log(f"[app] {name}")
     if name == "get_logs": return get_logs()
     if name == "get_settings":
         conn = db()
         values = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM settings")}
         conn.close()
-        return {"sockseekPath": "", "sockseekDaemonUrl": values.get("sockseek_daemon_url", SOCKSEEK_URL), "prepInboxDir": str(INBOX_DIR), "picardPath": "", "ffmpegPath": "", "rekordboxImportDir": str(ARCHIVE_DIR), "rekordboxXmlPath": values.get("rekordbox_xml_path", ""), "pythonPath": PYTHON, "ytCookiesFile": "", "setupComplete": values.get("setup_complete") == "true", "hasSockseekCredentials": bool(values.get("sockseek_username") and values.get("sockseek_password")), "hasSpotifyCredentials": bool(values.get("spotify_client_id") and values.get("spotify_client_secret")), "hasCosineCredentials": bool(values.get("cosine_api_key")), "hasTelegramCredentials": bool(values.get("telegram_api_id") and values.get("telegram_api_hash")), "hasTelegramSession": Path(values.get("telegram_session_path", str(DATA_DIR / "telegram.session"))).exists()}
+        return {"sockseekPath": "", "sockseekDaemonUrl": values.get("sockseek_daemon_url", SOCKSEEK_URL), "prepInboxDir": str(INBOX_DIR), "musicLibraryDir": str(LIBRARY_DIR), "picardPath": "", "ffmpegPath": "", "rekordboxImportDir": str(ARCHIVE_DIR), "rekordboxXmlPath": values.get("rekordbox_xml_path", REKORDBOX_XML_PATH), "pythonPath": PYTHON, "ytCookiesFile": "", "setupComplete": values.get("setup_complete") == "true", "hasSockseekCredentials": bool(values.get("sockseek_username") and values.get("sockseek_password")), "hasSpotifyCredentials": bool(values.get("spotify_client_id") and values.get("spotify_client_secret")), "hasCosineCredentials": bool(values.get("cosine_api_key")), "hasTelegramCredentials": bool(values.get("telegram_api_id") and values.get("telegram_api_hash")), "hasTelegramSession": Path(values.get("telegram_session_path", str(DATA_DIR / "telegram.session"))).exists()}
     if name == "save_settings":
         payload = payload.get("payload", payload)
         conn = db()
@@ -342,22 +434,58 @@ def command(name, payload):
             if key in mapping and value is not None:
                 conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (mapping[key], str(value).lower() if isinstance(value, bool) else value))
         conn.commit(); conn.close(); return None
+    if name == "import_rekordbox_xml":
+        return import_rekordbox_xml(payload.get("content", ""))
     if name == "check_rekordbox":
-        xml_path = payload.get("xmlPath") or setting("rekordbox_xml_path")
+        xml_path = payload.get("xmlPath") or rekordbox_xml_path()
         if not xml_path:
             raise ValueError("Rekordbox XML path is not configured")
-        index = rekordbox_index(xml_path)
-        return [track["id"] for track in tracks() if rekordbox_location(index, track["artist"], track["title"])]
+        xml_tracks = _parse_rekordbox_xml_for_discovery(xml_path)
+        pipeline = tracks()
+        pipeline_keys = {
+            (" ".join((t["artist"] or "").split()).casefold(), " ".join((t["title"] or "").split()).casefold())
+            for t in pipeline
+        }
+        for t in xml_tracks:
+            artist_key = " ".join((t["artist"] or "").split()).casefold()
+            title_key = " ".join((t["title"] or "").split()).casefold()
+            t["inLibrary"] = (artist_key, title_key) in pipeline_keys
+        return {"tracksInXml": xml_tracks}
+    if name == "import_rekordbox_playlist":
+        inserted = []
+        for t in payload.get("tracks", []):
+            artist = t.get("artist", "")
+            title = t.get("title", "")
+            mix_version = t.get("mixVersion") or None
+            location = t.get("location") or None
+            if not artist and not title:
+                continue
+            if track_exists(artist, title):
+                continue
+            conn = db()
+            cur = conn.execute(
+                "INSERT INTO tracks (artist,title,mix_version,state,dj_path) VALUES (?,?,?,'dj_ready',?)",
+                (artist, title, mix_version, location),
+            )
+            row = conn.execute("SELECT * FROM tracks WHERE id=?", (cur.lastrowid,)).fetchone()
+            conn.commit()
+            conn.close()
+            inserted.append(row_json(row))
+        append_log(f"[import] Rekordbox playlist: {len(inserted)} track(s) added as dj_ready")
+        return inserted
     if name == "finish_rekordbox":
         track = get_track(int(payload["trackId"]))
         dj_path = track.get("dj_path")
-        xml_path = setting("rekordbox_xml_path")
+        xml_path = rekordbox_xml_path()
         if xml_path:
             dj_path = rekordbox_location(rekordbox_index(xml_path), track["artist"], track["title"]) or dj_path
+        append_log(f"[rekordbox] marked imported: {track['artist']} - {track['title']}")
         return update(track["id"], "UPDATE tracks SET dj_path=?, state='dj_ready', error=NULL WHERE id=?", (dj_path,))
     if name in ("import_text", "import_csv"):
         content = payload.get("text", "") if name == "import_text" else payload.get("content", "")
-        return [insert(draft) for draft in (parse_text(content) if name == "import_text" else parse_csv(content))]
+        inserted = [insert(draft) for draft in (parse_text(content) if name == "import_text" else parse_csv(content))]
+        append_log(f"[import] {'text' if name == 'import_text' else 'CSV'}: {len(inserted)} track(s) added")
+        return inserted
     if name == "import_youtube":
         url = payload.get("url", "")
         script = ROOT / "py" / "yt_fetch.py"
@@ -370,7 +498,9 @@ def command(name, payload):
             if value: env["SPOTIFY_CLIENT_ID" if key.endswith("id") else "SPOTIFY_CLIENT_SECRET"] = value
         result = subprocess.run(args, capture_output=True, text=True, env=env, check=False)
         if result.returncode: raise ValueError(result.stderr.strip() or "Playlist import failed")
-        return [insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), draft.get("source_url"), draft.get("state", "needs_review"), draft.get("notes"))) for draft in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
+        inserted = [insert((draft.get("artist", ""), draft.get("title", ""), draft.get("mix_version"), draft.get("source_url"), draft.get("state", "needs_review"), draft.get("notes"))) for draft in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
+        append_log(f"[import] YouTube: {len(inserted)} track(s) added from {url}")
+        return inserted
     if name == "telegram_login_start":
         return telegram_request({"action": "login_start", "phone": payload.get("phone", "")}).get("status")
     if name == "telegram_login_code":
@@ -435,9 +565,16 @@ def command(name, payload):
         rows = conn.execute("SELECT a.id,a.track_id,coalesce(t.artist,''),coalesce(t.title,''),a.from_state,a.to_state,a.created_at FROM activities a LEFT JOIN tracks t ON t.id=a.track_id ORDER BY a.id DESC LIMIT ?", (limit,)).fetchall()
         conn.close()
         return [{"id": row[0], "trackId": row[1], "artist": row[2], "title": row[3], "fromState": row[4], "toState": row[5], "createdAt": row[6]} for row in rows]
-    if name == "update_track_state": return update(int(payload["id"]), "UPDATE tracks SET state=? WHERE id=?", (payload["state"],))
+    if name == "update_track_state":
+        track = get_track(int(payload["id"]))
+        result = update(track["id"], "UPDATE tracks SET state=? WHERE id=?", (payload["state"],))
+        append_log(f"[state] {track['artist']} - {track['title']}: {track['state']} → {payload['state']}")
+        return result
     if name == "delete_track":
-        conn = db(); conn.execute("DELETE FROM tracks WHERE id=?", (payload["id"],)); conn.commit(); conn.close(); return None
+        track = get_track(int(payload["id"]))
+        conn = db(); conn.execute("DELETE FROM tracks WHERE id=?", (payload["id"],)); conn.commit(); conn.close()
+        append_log(f"[delete] removed: {track['artist']} - {track['title']} (was {track['state']})")
+        return None
     if name == "clear_tracks":
         conn = db()
         conn.execute("DELETE FROM activities")
@@ -446,13 +583,24 @@ def command(name, payload):
         append_log("[library] reset complete: tracks and activity history cleared")
         return None
     if name == "update_track":
-        return update(int(payload["id"]), "UPDATE tracks SET artist=?,title=?,mix_version=?,state=CASE WHEN state='needs_review' AND ?<>'' AND ?<>'' THEN 'requested' ELSE state END WHERE id=?", (payload["artist"], payload["title"], payload.get("mixVersion"), payload["artist"], payload["title"]))
+        before = get_track(int(payload["id"]))
+        result = update(before["id"], "UPDATE tracks SET artist=?,title=?,mix_version=?,state=CASE WHEN state='needs_review' AND ?<>'' AND ?<>'' THEN 'requested' ELSE state END WHERE id=?", (payload["artist"], payload["title"], payload.get("mixVersion"), payload["artist"], payload["title"]))
+        append_log(f"[edit] track {before['id']}: '{before['artist']} - {before['title']}' → '{payload['artist']} - {payload['title']}'")
+        return result
     if name in ("search_track", "search_track_loose"):
         track = get_track(int(payload["trackId"]))
-        query = track["title"] if name == "search_track" else f'{track["artist"]} {track["title"]}'
         label = f'{track["artist"]} - {track["title"]}'
-        append_log(f"[search] started: {label} ({'loose' if name == 'search_track_loose' else 'normal'})")
-        body = {"songQuery": {"artist": track["artist"] if name == "search_track" else None, "title": query}}
+        harder = name == "search_track_loose"
+        append_log(f"[search] started: {label} ({'harder' if harder else 'normal'})")
+        body = {
+            "songQuery": {
+                "artist": track["artist"],
+                "title": track["title"],
+                "artistMaybeWrong": harder,
+            }
+        }
+        if harder:
+            body["options"] = {"downloadSettings": {"desperateSearch": True}}
         try:
             job = request("POST", "/api/jobs/search/tracks", body)["jobId"]
         except Exception as error:
@@ -481,13 +629,21 @@ def command(name, payload):
             append_log(f"[search] completed: {label}: no results")
         return ranked
     if name == "approve_candidate":
-        result = update(int(payload["trackId"]), "UPDATE tracks SET selected_username=?,selected_filename=?,state='approved' WHERE id=?", (payload["username"], payload["filename"]))
-        append_log(f"[review] approved candidate for track {payload['trackId']}")
+        track = get_track(int(payload["trackId"]))
+        result = update(track["id"], "UPDATE tracks SET selected_username=?,selected_filename=?,state='approved' WHERE id=?", (payload["username"], payload["filename"]))
+        fname = Path(payload["filename"]).name
+        append_log(f"[review] approved: {track['artist']} - {track['title']} → {fname} (from {payload['username']})")
         return result
     if name == "start_download":
         track = get_track(int(payload["trackId"]))
         if not track.get("search_job_id") or not track.get("selected_username") or not track.get("selected_filename"): raise ValueError("Approve a candidate before downloading")
-        result = request("POST", f'/api/jobs/{track["search_job_id"]}/downloads/files', {"files": [{"username": track["selected_username"], "filename": track["selected_filename"]}]})
+        try:
+            result = request("POST", f'/api/jobs/{track["search_job_id"]}/downloads/files', {"files": [{"username": track["selected_username"], "filename": track["selected_filename"]}]})
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                append_log(f"[download] search job expired (sockseek restarted?): {track['artist']} - {track['title']}")
+                return update(track["id"], "UPDATE tracks SET state='requested',search_job_id=NULL,selected_username=NULL,selected_filename=NULL,error=? WHERE id=?", ("Search job expired — sockseek may have restarted. Re-search to continue.",))
+            raise
         job = result[0].get("jobId", "") if isinstance(result, list) and result else ""
         append_log(f"[download] started: {track['artist']} - {track['title']}")
         return update(track["id"], "UPDATE tracks SET download_job_id=?,state='downloading' WHERE id=?", (job,))
@@ -562,23 +718,33 @@ def command(name, payload):
         quality = json.loads(result.stdout)
         state = "quality_failed" if quality.get("is_real_flac") is False else "ready_for_conversion"
         update(track["id"], "UPDATE tracks SET quality_result=?,quality_notes=?,state=? WHERE id=?", ("fake_flac" if state == "quality_failed" else "ok", quality.get("notes", ""), state))
-        append_log(f"[quality] completed: {track['artist']} - {track['title']}: {state}")
+        detail = quality.get("notes") or ("fake FLAC" if state == "quality_failed" else "passed")
+        append_log(f"[quality] {track['artist']} - {track['title']}: {detail}")
         return {"isRealFlac": quality.get("is_real_flac"), "sampleRate": None, "bitDepth": None, "channels": None, "durationSecs": None, "spectralCutoffHz": None, "notes": quality.get("notes", "")}
-    if name == "get_similar_tracks":
-        track = get_track(int(payload["trackId"]))
+    if name in ("get_similar_tracks", "get_similar_tracks_for_query"):
+        if name == "get_similar_tracks":
+            track = get_track(int(payload["trackId"]))
+            artist, title = track["artist"], track["title"]
+        else:
+            artist, title = payload.get("artist", ""), payload.get("title", "")
         key = setting("cosine_api_key")
         if not key: raise ValueError("cosine_api_key not configured — add it in Settings")
         env = os.environ.copy(); env["COSINE_API_KEY"] = key
-        result = subprocess.run([PYTHON, str(ROOT / "py" / "cosine_fetch.py"), track["artist"], track["title"]], capture_output=True, text=True, env=env, check=False)
+        append_log(f"[similar] looking up: {artist} - {title}")
+        result = subprocess.run([PYTHON, str(ROOT / "py" / "cosine_fetch.py"), artist, title], capture_output=True, text=True, env=env, check=False)
         if result.returncode: raise ValueError(result.stderr.strip() or "Similarity lookup failed")
-        return [{"artist": item.get("artist", ""), "title": item.get("title", ""), "mixVersion": item.get("mix_version"), "videoUrl": item.get("video_url"), "cosineId": item.get("cosine_id", ""), "score": item.get("score", 0)} for item in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
+        items = [{"artist": item.get("artist", ""), "title": item.get("title", ""), "mixVersion": item.get("mix_version"), "videoUrl": item.get("video_url"), "cosineId": item.get("cosine_id", ""), "score": item.get("score", 0)} for item in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
+        append_log(f"[similar] {artist} - {title}: {len(items)} result(s)")
+        return items
     if name == "tag_track":
         track = get_track(int(payload["trackId"]))
         source = track.get("downloaded_path")
         if not source: raise ValueError("No downloaded file — run poll_download first")
         output = str(Path(source).with_suffix(".mp3"))
+        append_log(f"[tag] converting: {track['artist']} - {track['title']}")
         result = subprocess.run(["ffmpeg", "-i", source, "-b:a", "320k", "-y", output], capture_output=True, text=True, check=False)
         if result.returncode: raise ValueError(result.stderr.strip() or "Conversion failed")
+        append_log(f"[tag] done: {track['artist']} - {track['title']} → {Path(output).name}")
         return update(track["id"], "UPDATE tracks SET archive_path=?,state='ready_for_rekordbox',error=NULL WHERE id=?", (output,))
     if name in ("open_folder", "launch_sockseek"):
         raise ValueError("This action is only available in the desktop Tauri app")
@@ -703,7 +869,7 @@ if __name__ == "__main__":
     conn = db()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.close()
-    xml_path = setting("rekordbox_xml_path")
+    xml_path = rekordbox_xml_path()
     if xml_path:
         threading.Thread(target=rekordbox_index, args=(xml_path,), daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()

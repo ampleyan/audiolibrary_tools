@@ -288,6 +288,7 @@ export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: T
             <span style={{ color: "#6b7280", fontSize: 11 }}>{visibleTracks?.length ?? 0} of {similarTracks.length} similar tracks{selected.size > 0 && <span style={{ color: "#a78bfa" }}> · {selected.size} selected</span>}</span>
             <div style={{ display: "flex", gap: 6 }}>
               {selected.size > 0 && <button onClick={addToQueue} disabled={importing} style={{ background: importing ? "#1f2937" : "#065f46", color: importing ? "#4b5563" : "#34d399", border: "none", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: importing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{importing ? "Adding…" : `Add ${selected.size} to Library`}</button>}
+              {(visibleTracks?.filter((t) => t.videoUrl).length ?? 0) > 0 && <button onClick={() => { const playable = visibleTracks?.filter((t) => t.videoUrl) ?? []; onPlayTrack(playable, 0); }} style={{ background: "#1e3a5f", color: "#60a5fa", border: "1px solid #1e40af", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>▶ Play all</button>}
               <button onClick={savePlaylist} style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{selected.size > 0 ? `Download ${selected.size}` : "Download all"} as text playlist</button>
               <button onClick={createYoutubePlaylist} disabled={creatingYoutube} title="Create a private YouTube playlist" style={{ background: "transparent", color: creatingYoutube ? "#4b5563" : "#9ca3af", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: creatingYoutube ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{creatingYoutube ? "Connecting…" : "Create YouTube playlist"}</button>
             </div>
@@ -440,6 +441,7 @@ function TrackCard({
 
   return (
     <div
+      className={searching ? "track-searching" : undefined}
       style={{
         background: "#1f2937",
         borderRadius: 6,
@@ -608,7 +610,7 @@ function TrackCard({
                   flexShrink: 0,
                 }}
               >
-                {searching ? "Searching…" : "Search loose"}
+                {searching ? "Searching…" : "Search harder"}
               </button>
             )}
             {noResults && (
@@ -666,6 +668,13 @@ function TrackCard({
           </>
         )}
       </div>
+
+      {searching && (
+        <div style={{ borderTop: "1px solid #1e3a5f", padding: "7px 14px", background: "#0f1e38", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#60a5fa" }}>
+          <span className="search-spinner" />
+          Searching Soulseek… this takes ~30 seconds
+        </div>
+      )}
 
       {noResults && !editing && (
         <div
@@ -824,14 +833,23 @@ export default function ReviewView({ states = DEFAULT_REVIEW_STATES, onTrackChan
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {searchProgress && (
-            <span style={{ fontSize: 12, color: "#6b7280" }}>
-              {searchProgress.done}/{searchProgress.total}
-            </span>
+            <div className="search-batch-progress">
+              <span className="search-spinner" />
+              <span>{searchProgress.done} / {searchProgress.total}</span>
+              <div className="search-batch-bar">
+                <div className="search-batch-fill" style={{ width: `${Math.round((searchProgress.done / searchProgress.total) * 100)}%` }} />
+              </div>
+              <span style={{ color: "#6b7280" }}>searching…</span>
+            </div>
           )}
           {approvalProgress && (
-            <span style={{ fontSize: 12, color: "#6b7280" }}>
-              {approvalProgress.done}/{approvalProgress.total}
-            </span>
+            <div className="search-batch-progress" style={{ borderColor: "#047857", background: "#052e1c", color: "#34d399" }}>
+              <span>{approvalProgress.done} / {approvalProgress.total}</span>
+              <div className="search-batch-bar">
+                <div className="search-batch-fill" style={{ width: `${Math.round((approvalProgress.done / approvalProgress.total) * 100)}%`, background: "#22c55e" }} />
+              </div>
+              <span style={{ color: "#6b7280" }}>approving…</span>
+            </div>
           )}
           {approveableTracks.length > 0 && (
             <button
@@ -866,7 +884,7 @@ export default function ReviewView({ states = DEFAULT_REVIEW_STATES, onTrackChan
               disabled={searchingAll || approvingAll}
               style={{ background: "transparent", color: searchingAll ? "#4b5563" : "#fbbf24", border: "1px solid #92400e", borderRadius: 5, padding: "6px 14px", fontSize: 13, cursor: searchingAll ? "not-allowed" : "pointer", fontFamily: "inherit" }}
             >
-              {searchingAll ? "Searching…" : `Retry loose (${looseSearchCount})`}
+              {searchingAll ? "Searching…" : `Search harder (${looseSearchCount})`}
             </button>
           )}
           <button

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
-import type { TrackRow, TrackState } from "../lib/types";
+import type { RekordboxTrack, TrackRow, TrackState } from "../lib/types";
 
 const STATE_COLOR: Record<TrackState, string> = {
   requested: "#60a5fa",
@@ -22,7 +22,7 @@ const STATE_COLOR: Record<TrackState, string> = {
   failed: "#ef4444",
 };
 
-type ImportMode = "text" | "csv" | "playlist" | "telegram";
+type ImportMode = "text" | "csv" | "playlist" | "telegram" | "rekordbox";
 
 function StateBadge({ state }: { state: TrackState }) {
   return (
@@ -281,6 +281,72 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [xmlTracks, setXmlTracks] = useState<RekordboxTrack[] | null>(null);
+  const [xmlError, setXmlError] = useState<string | null>(null);
+  const [selectedPlaylists, setSelectedPlaylists] = useState<Set<string>>(new Set());
+  const [playlistSearch, setPlaylistSearch] = useState("");
+
+  const playlistCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of xmlTracks ?? []) for (const p of t.playlists) counts.set(p, (counts.get(p) ?? 0) + 1);
+    return counts;
+  }, [xmlTracks]);
+
+  const allPlaylists = useMemo(() => {
+    const needle = playlistSearch.trim().toLowerCase();
+    const sorted = [...playlistCounts.keys()].sort();
+    return needle ? sorted.filter((p) => p.toLowerCase().includes(needle)) : sorted;
+  }, [playlistCounts, playlistSearch]);
+
+  const rekordboxSelectedTracks = useMemo(() => {
+    if (!xmlTracks || selectedPlaylists.size === 0) return [];
+    const seen = new Set<string>();
+    return xmlTracks.filter((t) => {
+      if (!t.playlists.some((p) => selectedPlaylists.has(p))) return false;
+      const key = `${t.artist}\0${t.title}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [xmlTracks, selectedPlaylists]);
+
+  const loadXml = async () => {
+    setLoading(true);
+    setXmlError(null);
+    setXmlTracks(null);
+    setSelectedPlaylists(new Set());
+    try {
+      const preview = await api.checkRekordbox("");
+      setXmlTracks(preview.tracksInXml);
+    } catch (e) {
+      setXmlError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const importRekordbox = async () => {
+    if (!rekordboxSelectedTracks.length) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const added = await api.importRekordboxPlaylist(rekordboxSelectedTracks);
+      setTracks((prev) => {
+        const ids = new Set(added.map((t) => t.id));
+        return [...added, ...prev.filter((t) => !ids.has(t.id))];
+      });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const togglePlaylist = (p: string) => setSelectedPlaylists((current) => {
+    const next = new Set(current);
+    if (next.has(p)) next.delete(p); else next.add(p);
+    return next;
+  });
 
   useEffect(() => {
     api.listTracks().then(setTracks).catch(() => {});
@@ -457,9 +523,9 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
         }}
       >
         <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #1f2937", marginBottom: 16 }}>
-          {(["playlist", "telegram", "text", "csv"] as ImportMode[]).map((m) => (
+          {(["playlist", "rekordbox", "telegram", "text", "csv"] as ImportMode[]).map((m) => (
             <button key={m} style={tabStyle(mode === m)} onClick={() => setMode(m)}>
-              {m === "playlist" ? "Playlist URL" : m === "telegram" ? "Telegram" : m === "text" ? "Paste text" : "CSV file"}
+              {m === "playlist" ? "Playlist URL" : m === "rekordbox" ? "Rekordbox XML" : m === "telegram" ? "Telegram" : m === "text" ? "Paste text" : "CSV file"}
             </button>
           ))}
         </div>
@@ -533,6 +599,62 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
                 {loading ? "Fetching…" : "Fetch tracklist"}
               </button>
             </div>
+          </div>
+        )}
+
+        {mode === "rekordbox" && (
+          <div>
+            <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>
+              Import tracks from your Rekordbox XML directly as <strong style={{ color: "#4ade80" }}>Rekordbox ready</strong> — no download needed. Requires Rekordbox XML path configured in Settings.
+            </p>
+            {!xmlTracks && !loading && (
+              <button style={btn()} onClick={loadXml}>Load playlists from XML</button>
+            )}
+            {loading && !xmlTracks && <p style={{ color: "#60a5fa", fontSize: 12 }}>Loading…</p>}
+            {xmlError && <p style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>{xmlError}</p>}
+            {xmlTracks && (
+              <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                <div style={{ width: 220, flexShrink: 0, border: "1px solid #374151", borderRadius: 8, overflow: "hidden", background: "#111827" }}>
+                  <div style={{ padding: "10px 12px", borderBottom: "1px solid #1f2937", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <strong style={{ fontSize: 12, color: "#e5e7eb" }}>Playlists</strong>
+                    <span style={{ fontSize: 11, color: "#6b7280" }}>{selectedPlaylists.size} selected</span>
+                  </div>
+                  <div style={{ padding: 8, borderBottom: "1px solid #1f2937" }}>
+                    <input value={playlistSearch} onChange={(e) => setPlaylistSearch(e.target.value)} placeholder="Search playlists" style={{ width: "100%", boxSizing: "border-box", background: "#0d0a0f", border: "1px solid #374151", borderRadius: 5, color: "#f1dce6", padding: "6px 8px", fontSize: 12 }} />
+                  </div>
+                  <div style={{ maxHeight: 260, overflowY: "auto" }}>
+                    {allPlaylists.map((p) => {
+                      const checked = selectedPlaylists.has(p);
+                      return (
+                        <label key={p} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", background: checked ? "#1e3a5f" : "transparent", borderBottom: "1px solid #1f2937", fontSize: 12, color: checked ? "#93c5fd" : "#d1d5db" }}>
+                          <input type="checkbox" checked={checked} onChange={() => togglePlaylist(p)} style={{ accentColor: "#3b82f6" }} />
+                          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p}>{p}</span>
+                          <span style={{ color: "#6b7280", fontSize: 11, flexShrink: 0 }}>{playlistCounts.get(p)}</span>
+                        </label>
+                      );
+                    })}
+                    {allPlaylists.length === 0 && <p style={{ padding: "16px 12px", color: "#6b7280", fontSize: 12, margin: 0 }}>No playlists found.</p>}
+                  </div>
+                  <div style={{ padding: 8, borderTop: "1px solid #1f2937", display: "flex", gap: 6 }}>
+                    <button style={{ ...btn(false), fontSize: 11, padding: "4px 10px" }} onClick={() => setSelectedPlaylists(new Set(allPlaylists))}>All</button>
+                    <button style={{ ...btn(false), fontSize: 11, padding: "4px 10px" }} disabled={!selectedPlaylists.size} onClick={() => setSelectedPlaylists(new Set())}>Clear</button>
+                  </div>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 13, color: "#9ca3af", marginTop: 0 }}>
+                    {selectedPlaylists.size === 0
+                      ? "Select one or more playlists to import."
+                      : <><strong style={{ color: "#e5e7eb" }}>{rekordboxSelectedTracks.length} tracks</strong> from {selectedPlaylists.size} playlist{selectedPlaylists.size === 1 ? "" : "s"} — all will be imported as <strong style={{ color: "#4ade80" }}>Rekordbox ready</strong>. Already-imported tracks are skipped automatically.</>
+                    }
+                  </p>
+                  {rekordboxSelectedTracks.length > 0 && (
+                    <button style={btn()} disabled={loading} onClick={importRekordbox}>
+                      {loading ? "Importing…" : `Import ${rekordboxSelectedTracks.length} tracks`}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

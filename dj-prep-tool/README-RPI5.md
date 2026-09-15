@@ -1,11 +1,11 @@
-# DJ Prep Tool on Raspberry Pi 5
+# DJ Prep Tool in Docker (Raspberry Pi or macOS)
 
-This edition runs the app in a browser on a 64-bit Raspberry Pi OS installation.
+This edition runs the app in a browser. The compose file also works with Docker Desktop on macOS; the filename is retained for Raspberry Pi compatibility.
 
 ## Requirements
 
-- Raspberry Pi 5 with 64-bit Raspberry Pi OS
-- Docker Engine and Docker Compose
+- Raspberry Pi 5 with 64-bit Raspberry Pi OS, or macOS with Docker Desktop
+- Docker Compose v2
 - A Sockseek daemon reachable from the Pi
 - Enough storage for the music inbox and archive
 
@@ -15,13 +15,38 @@ From the repository root:
 
 ```bash
 cd dj-prep-tool
-mkdir -p data music-inbox music-archive
+mkdir -p data music-library music-inbox music-archive rekordbox
 SOCKSEEK_URL=http://127.0.0.1:5030 docker compose -f docker-compose.rpi5.yml up -d --build
 ```
 
 Open `http://<raspberry-pi-ip>:8080` from a computer on the same network.
 
-The database is stored in `dj-prep-tool/data`. Downloads and converted files are stored in `music-inbox` and `music-archive`.
+The database and stored Rekordbox XML are in `dj-prep-tool/data`. The library, downloads, and converted files are in `music-library`, `music-inbox`, and `music-archive`. These are bind mounts, so the same files remain available after a container rebuild and to other local tools.
+
+## Shared macOS storage
+
+The container uses these stable paths:
+
+```text
+/data             SQLite database, credentials, and uploaded rekordbox.xml
+/music/library    Music library
+/music/inbox      Sockseek download destination
+/music/archive    Converted/DJ-ready files
+/rekordbox        Optional externally exported Rekordbox XML (read-only)
+```
+
+Open `http://localhost:8080`, go to Settings, and use **Load XML into app**. The file is validated, copied to `/data/rekordbox.xml`, and selected automatically. This is the recommended way to share the XML with Docker because it avoids storing a macOS-only `/Users/...` path in settings.
+
+The native development build also uses the repository `data/` directory, so its database and uploaded XML are shared with this Docker setup. A packaged native release keeps its own OS application-data directory.
+
+To use an XML that Rekordbox exports directly into the mounted folder instead, start with:
+
+```bash
+DJ_PREP_REKORDBOX_XML=/rekordbox/rekordbox.xml \
+  docker compose -f docker-compose.rpi5.yml up -d --build
+```
+
+Stop the native app before starting Docker if both use the same `data/dj_prep.sqlite`; SQLite is shared storage but should have one active writer at a time.
 
 ## Telegram channel import
 

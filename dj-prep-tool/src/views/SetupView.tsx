@@ -69,6 +69,7 @@ export default function SetupView({ settings, onSaved }: Props) {
   const [resetting, setResetting] = useState(false);
   const [rekordboxPreview, setRekordboxPreview] = useState<RekordboxPreview | null>(null);
   const [rekordboxQuery, setRekordboxQuery] = useState("");
+  const [importingXml, setImportingXml] = useState(false);
 
   useEffect(() => {
     api.checkDaemon().then(setDaemonUp).catch(() => setDaemonUp(false));
@@ -113,6 +114,25 @@ export default function SetupView({ settings, onSaved }: Props) {
       setRekordboxPreview(await api.checkRekordbox(form.rekordboxXmlPath?.trim() ?? ""));
     } catch (e) {
       setError(String(e));
+    }
+  };
+
+  const importRekordboxXml = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setImportingXml(true);
+    setError(null);
+    setRekordboxPreview(null);
+    try {
+      const path = await api.importRekordboxXml(await file.text());
+      setForm((current) => ({ ...current, rekordboxXmlPath: path }));
+      setRekordboxPreview(await api.checkRekordbox(path));
+      onSaved();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setImportingXml(false);
     }
   };
 
@@ -255,6 +275,10 @@ export default function SetupView({ settings, onSaved }: Props) {
           >
             Preview XML
           </button>
+          <label style={{ display: "inline-flex", alignItems: "center", marginTop: 6, marginRight: 8, background: "transparent", color: "#a78bfa", border: "1px solid #4c1d95", borderRadius: 4, padding: "5px 10px", fontSize: 12, cursor: importingXml ? "wait" : "pointer" }}>
+            {importingXml ? "Loading XML…" : "Load XML into app"}
+            <input type="file" accept=".xml,text/xml,application/xml" onChange={importRekordboxXml} disabled={importingXml} style={{ display: "none" }} />
+          </label>
           {rekordboxPreview && (
             <div style={{ marginTop: 10, border: "1px solid #293548", borderRadius: 5, padding: 10 }}>
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11, marginBottom: 8 }}>
@@ -296,7 +320,7 @@ export default function SetupView({ settings, onSaved }: Props) {
               }).length && <span style={{ display: "block", color: "#6b7280", fontSize: 11, marginTop: 8 }}>Showing the first 250 matching tracks.</span>}
             </div>
           )}
-          <span style={{ fontSize: 11, color: "#4b5563", marginTop: 2 }}>Export XML from Rekordbox, then paste its path here. The file is only read.</span>
+          <span style={{ fontSize: 11, color: "#4b5563", marginTop: 2 }}>Load an exported XML to copy it into the app data directory, or paste a path to read it in place.</span>
         </div>
         <PathField label="ffmpeg executable" k="ffmpegPath" />
         <PathField label="Python executable (leave blank for .venv)" k="pythonPath" />

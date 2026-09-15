@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM node:20-slim AS frontend
+FROM node:20-slim AS frontend
 WORKDIR /app
 COPY dj-prep-tool/package.json dj-prep-tool/package-lock.json ./
 RUN npm ci
@@ -20,5 +20,6 @@ RUN pip install --no-cache-dir -r requirements.txt requests yt-dlp numpy scipy
 ENV DJ_PREP_DATA_DIR=/data
 ENV DJ_PREP_INBOX_DIR=/music/inbox
 ENV DJ_PREP_ARCHIVE_DIR=/music/archive
+ENV PYTHONPATH=/app
 EXPOSE 8080
 CMD ["python", "web/server.py"]

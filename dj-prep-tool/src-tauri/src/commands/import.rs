@@ -31,6 +31,25 @@ pub fn check_rekordbox(app: AppHandle, xml_path: String) -> Result<RekordboxPrev
     Ok(RekordboxPreview { tracks_in_xml })
 }
 
+#[tauri::command]
+pub fn import_rekordbox_xml(app: AppHandle, content: String) -> Result<String, String> {
+    if !content.contains("<DJ_PLAYLISTS") || !content.contains("</DJ_PLAYLISTS>") {
+        return Err("Invalid Rekordbox XML: missing DJ_PLAYLISTS root".into());
+    }
+    let dir = db::db_path(&app)
+        .parent()
+        .ok_or("Cannot resolve app data directory")?
+        .to_path_buf();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create app data directory: {e}"))?;
+    let path = dir.join("rekordbox.xml");
+    let temporary = dir.join("rekordbox.xml.tmp");
+    std::fs::write(&temporary, content).map_err(|e| format!("Cannot store Rekordbox XML: {e}"))?;
+    std::fs::rename(&temporary, &path).map_err(|e| format!("Cannot finalize Rekordbox XML: {e}"))?;
+    let path_string = path.to_string_lossy().to_string();
+    config_store::set(&app, "rekordbox_xml_path", &path_string).map_err(|e| e.to_string())?;
+    Ok(path_string)
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RekordboxPreview {

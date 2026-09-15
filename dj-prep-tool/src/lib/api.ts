@@ -61,6 +61,12 @@ export const api = {
   checkRekordbox: (xmlPath: string) =>
     call<RekordboxPreview>("check_rekordbox", { xmlPath }),
 
+  importRekordboxXml: (content: string) =>
+    call<string>("import_rekordbox_xml", { content }),
+
+  importRekordboxPlaylist: (tracks: Array<{ artist: string; title: string; mixVersion?: string | null; location?: string | null }>) =>
+    call<TrackRow[]>("import_rekordbox_playlist", { tracks }),
+
   importText: (text: string) => call<TrackRow[]>("import_text", { text }),
 
   importCsv: (content: string) =>

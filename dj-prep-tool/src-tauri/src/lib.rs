@@ -27,6 +27,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::import::get_settings,
             commands::import::check_rekordbox,
+            commands::import::import_rekordbox_xml,
             commands::import::save_settings,
             commands::import::import_text,
             commands::import::import_csv,

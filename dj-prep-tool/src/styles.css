@@ -1,3 +1,51 @@
+@keyframes search-pulse {
+  0%, 100% { border-left-color: #3b82f6; box-shadow: 0 0 0 0 #3b82f622; }
+  50% { border-left-color: #93c5fd; box-shadow: 0 0 0 4px #3b82f611; }
+}
+@keyframes spinner {
+  to { transform: rotate(360deg); }
+}
+.track-searching {
+  animation: search-pulse 1.4s ease-in-out infinite;
+  border-left: 3px solid #3b82f6 !important;
+  background: #111d30 !important;
+}
+.search-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #3b82f644;
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: spinner 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+.search-batch-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #0f1e38;
+  border: 1px solid #1e40af;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #93c5fd;
+}
+.search-batch-bar {
+  width: 120px;
+  height: 4px;
+  background: #1e3a5f;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.search-batch-fill {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #f8f4f7;
@@ -51,6 +99,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .pipeline-seed select { min-width: 0; flex: 1; background: #0d0a0f; border: 1px solid #513343; border-radius: 6px; color: #f1dce6; padding: 8px 10px; font-size: 12px; }
 .inline-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 10px 12px; border: 1px solid #7f1d1d; border-radius: 6px; background: #1a0c0c; color: #fca5a5; font-size: 12px; }
 .inline-error button { border: 0; background: transparent; color: #ff6fb5; cursor: pointer; white-space: nowrap; }
+.discovery-library-layout { display: flex; gap: 14px; align-items: flex-start; }
+.discovery-library-layout > div { min-width: 0; flex: 1; }
+.playlist-picker { width: 150px; min-width: 0; flex-shrink: 0; position: sticky; top: 12px; max-height: calc(100vh - 120px); display: flex; flex-direction: column; }
+.playlist-picker .seed-picker-list { flex: 1; overflow-y: auto; max-height: none; }
+.playlist-picker .seed-picker-option { grid-template-columns: 16px minmax(0, 1fr) auto; gap: 5px; padding: 7px 6px; font-size: 11px; }
+.playlist-picker .seed-picker-header { padding: 8px 10px; }
+.playlist-picker .seed-picker-search { padding: 6px; }
+.playlist-picker .seed-picker-search input { padding: 5px 6px; font-size: 11px; }
 .discovery-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
 .discovery-toolbar input, .discovery-toolbar select { background: #0d0a0f; border: 1px solid #513343; border-radius: 6px; color: #f1dce6; padding: 9px 10px; font-size: 12px; }
 .discovery-toolbar input { flex: 1; min-width: 0; }
@@ -117,6 +173,8 @@ button.rekordbox-row { cursor: pointer; }
 .similar-player-meta button { border: 1px solid #6b3152; border-radius: 5px; background: transparent; color: #d9b8c9; padding: 4px 8px; cursor: pointer; font-size: 11px; }
 .similar-player iframe { display: block; width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; border-radius: 6px; }
 .persistent-player { position: fixed; right: 18px; bottom: 18px; z-index: 15; width: min(440px, calc(100vw - 36px)); padding: 10px; border: 1px solid #ff4fa3; border-radius: 9px; background: #20101b; box-shadow: 0 12px 32px rgba(0, 0, 0, .45); }
+.persistent-player-drag { text-align: center; color: #6b3152; font-size: 14px; cursor: grab; user-select: none; margin-bottom: 6px; line-height: 1; }
+.persistent-player-drag:active { cursor: grabbing; }
 .persistent-player-info { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 8px; }
 .persistent-player-info span { color: #ff6fb5; font-size: 10px; white-space: nowrap; }
 .persistent-player-info strong { min-width: 0; flex: 1; overflow: hidden; color: #fff0f7; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

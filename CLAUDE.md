@@ -30,6 +30,12 @@ audiolibrary_tools/
 ├── tools/
 │   ├── sldl/                  ← sldl binary + sldl.conf
 │   └── sockseek/              ← Sockseek binary, config, and MP3 conversion hook
+├── dj-prep-tool/              ← Web-based DJ prep pipeline (see below)
+│   ├── docker-compose.yml     ← Runs dj-prep + sockseek containers
+│   ├── sockseek-config/       ← Sockseek daemon config + convert-to-mp3.sh hook
+│   ├── web/server.py          ← Python HTTP server (API + static file serving)
+│   ├── py/                    ← Helper scripts called by server (yt_fetch, audio_check…)
+│   └── src/                   ← React/TypeScript frontend (Vite)
 ├── tests/
 │   └── test_yt_slsk.py
 └── run_organizer.bat          ← Quick launcher for organize_music.py
@@ -101,3 +107,88 @@ All shared helpers live in `lib/` — do not duplicate across scripts:
 - `lib/downloader.py`: `SoulseekDownloader.run()` — wraps sldl subprocess, parses output line-by-line
 - `lib/queue.py`: `QueueManager`, `clean_title()`, CSV read/write helpers
 - `lib/red_api.py`: `RedAPI` (rate-limited RED REST client), `parse_red_filelist()`
+
+## DJ Prep Tool
+
+A web-based pipeline for preparing DJ tracks: import → search Soulseek → review candidates → download → quality check → tag → Rekordbox.
+
+### Running with Docker
+
+```bash
+cd dj-prep-tool
+DOCKER_BUILDKIT=0 docker compose up -d --build
+```
+
+App runs at **http://localhost:8080**. Uses two containers:
+- `dj-prep` — Python server + React frontend
+- `sockseek` — Soulseek daemon (heiso/sockseek image, runs as linux/amd64 via Rosetta on Apple Silicon)
+
+If Docker Hub is unreachable: `DOCKER_BUILDKIT=0 docker compose up -d --build dj-prep`
+
+### Sockseek
+
+Config lives in `dj-prep-tool/sockseek-config/sockseek.conf`. Key settings:
+- `path = "/data"` — downloads land in `dj-prep-tool/music-inbox/`
+- `server-ip = 0.0.0.0` — required for container networking
+- `on-complete` — calls `convert-to-mp3.sh` to convert non-MP3 files to 320k MP3
+
+The `sockseek-config/Dockerfile` extends `heiso/sockseek` with ffmpeg and uuid-runtime for the conversion hook.
+
+### App Settings
+
+| Setting | Value |
+|---|---|
+| Sockseek daemon URL | `http://localhost:5030` (or `http://sockseek:5030` inside Docker) |
+| Sockseek.exe path | leave blank (daemon runs separately) |
+
+### YouTube Cookies
+
+For private playlists or age-restricted content, export a Netscape-format `cookies.txt` from your browser (use the "Get cookies.txt" extension), place it in `dj-prep-tool/data/`, and set the path to `/data/cookies.txt` in Settings.
+
+### YouTube OAuth (Create Playlist feature)
+
+Set in a `.env` file next to `docker-compose.yml`:
+```
+YOUTUBE_CLIENT_ID=...
+YOUTUBE_CLIENT_SECRET=...
+YOUTUBE_REDIRECT_URI=http://localhost:8080/api/youtube/callback
+```
+Get credentials from Google Cloud Console → APIs & Services → OAuth 2.0 Client IDs.
+
+### PYTHONPATH
+
+The server container sets `PYTHONPATH=/app` so that `py/*.py` scripts can import from `lib/` without path hacks.
+
+### Features (current state as of 2026-09)
+
+**Import tab** (keyboard shortcut 2):
+- Text paste, CSV, YouTube/Spotify/Apple Music playlist URL, Telegram channel
+- **Rekordbox XML tab**: load XML, search/multi-select playlists with track counts, bulk import selected tracks as `dj_ready`
+- Auto-detect on insert: if imported track is already in Rekordbox XML → mark `dj_ready` immediately
+
+**Search (Prepare tab)**:
+- Normal search: `{ artist, title }` with strict Soulseek artist matching
+- "Search harder": uses sockseek `artistMaybeWrong: true` + `options.downloadSettings.desperateSearch: true`
+- 404 handling: if sockseek restarts mid-session, download resets track to `requested` with a clear error
+
+**Discovery tab** (keyboard shortcut 5):
+- Rekordbox XML browser: full track data (artist, title, BPM, key, genre, playlists)
+- Playlist picker sidebar (150px, searchable, sticky) — single-select to filter the track table
+- `check_rekordbox` returns `{ tracksInXml: RekordboxTrack[] }` with `inLibrary` flag
+
+**Player (floating)**:
+- Draggable via ⠿ handle at top of player window
+- YouTube IFrame API preloaded at module load for autoplay with sound
+- Auto-advances to next track on `ENDED`
+
+**Logs**:
+- `append_log` prints to stdout → visible in `docker logs dj-prep-tool-dj-prep-1 -f`
+- "Logs" button in top nav opens centered modal (newest first, click outside or ✕ to close)
+
+### Sockseek API reference
+
+- Search: `POST /api/jobs/search/tracks` — body: `{ songQuery: { artist, title, artistMaybeWrong }, options: { downloadSettings: { desperateSearch } } }`
+- Download: `POST /api/jobs/{searchJobId}/downloads/files` — body: `{ files: [{ username, filename }] }`
+  - `filename` must exactly match `ref.filename` from search results (backslash paths, e.g. `user\folder\file.flac`)
+- Poll result: `GET /api/jobs/{jobId}` → `summary.terminalOutcome === "Succeeded"`, download path in `payload.downloadPath`
+- Job IDs are in-memory; lost on sockseek restart → 404 on download → app resets track to `requested`

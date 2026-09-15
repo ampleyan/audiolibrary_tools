@@ -23,6 +23,7 @@ export default function DiscoveryView({ onNavigate, onPlayTrack }: { onNavigate:
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [filter, setFilter] = useState("all");
+  const [playlistFilter, setPlaylistFilter] = useState<string | null>(null);
   const [renderedTrackCount, setRenderedTrackCount] = useState(200);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -58,15 +59,24 @@ export default function DiscoveryView({ onNavigate, onPlayTrack }: { onNavigate:
 
   const inPipeline = (track: { artist: string; title: string }) => tracks.some((item) => nameOf(item) === nameOf(track) && item.inLibrary) || pipeline.some((item) => nameOf(item) === nameOf(track));
 
+  const playlistCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of tracks) for (const p of t.playlists) counts.set(p, (counts.get(p) ?? 0) + 1);
+    return counts;
+  }, [tracks]);
+
+  const allPlaylists = useMemo(() => [...playlistCounts.keys()].sort(), [playlistCounts]);
+
   const visibleTracks = useMemo(() => {
     const needle = deferredQuery.trim().toLowerCase();
     return tracks.filter((track) => {
       if (filter === "library" && !inPipeline(track)) return false;
       if (filter === "gap" && inPipeline(track)) return false;
+      if (playlistFilter && !track.playlists.includes(playlistFilter)) return false;
       if (!needle) return true;
       return `${track.artist} ${track.title} ${track.album ?? ""} ${track.genre ?? ""} ${track.playlists.join(" ")}`.toLowerCase().includes(needle);
     });
-  }, [deferredQuery, filter, tracks]);
+  }, [deferredQuery, filter, playlistFilter, tracks]);
 
   const renderedTracks = visibleTracks.slice(0, renderedTrackCount);
   const selectRekordboxTrack = useCallback((track: RekordboxTrack) => {
@@ -129,7 +139,13 @@ export default function DiscoveryView({ onNavigate, onPlayTrack }: { onNavigate:
     {pipeline.length > 0 && <div className="pipeline-seed"><label>Explore Pipeline tracks</label><span>Choose multiple seeds and build a playlist.</span><button className="button primary" onClick={openPipelineRelated}>Choose tracks</button></div>}
     {error && <div className="inline-error" role="alert"><span>{error}</span><button onClick={() => onNavigate("setup")}>Open Settings</button></div>}
     {loading ? <div className="empty-state">Loading Pipeline tracks…</div> : mode === "library" && !xmlLoaded && !error ? <div className="empty-state"><p>Rekordbox library is not loaded.</p><button className="button primary" onClick={() => load(true)}>Load XML</button></div> : !error && !tracks.length && mode !== "related" ? <div className="empty-state">No tracks were found in this Rekordbox XML.</div> : <>
-      {mode === "library" && <><div className="discovery-toolbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search artist, title, genre, playlist" aria-label="Search Rekordbox library" /><select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Filter Rekordbox library"><option value="all">All tracks · {tracks.length}</option><option value="library">In Pipeline · {tracks.length - gapCount}</option><option value="gap">Library gaps · {gapCount}</option></select></div><div className="discovery-browser"><div className="rekordbox-table" role="table" aria-label="Rekordbox tracks"><div className="rekordbox-row rekordbox-header" role="row"><span>Artist</span><span>Title</span><span>BPM</span><span>Key</span><span>Status</span></div>{renderedTracks.map((track) => <RekordboxRow key={`${track.artist}-${track.title}-${track.location}`} track={track} selected={!!selected && nameOf(selected) === nameOf(track)} onSelect={selectRekordboxTrack} />)}{!visibleTracks.length && <div className="table-empty">No tracks match this search.</div>}{renderedTrackCount < visibleTracks.length && <button className="table-load-more" onClick={() => setRenderedTrackCount((current) => current + 200)}>Load more ({visibleTracks.length - renderedTrackCount} remaining)</button>}</div><TrackDetail track={selected} adding={adding} onFindRelated={findRelated} onAdd={addToPipeline} /></div></>}
+      {mode === "library" && <div className={allPlaylists.length ? "discovery-library-layout" : ""}>
+        {allPlaylists.length > 0 && <PlaylistPicker playlists={allPlaylists} counts={playlistCounts} selected={playlistFilter} onChange={setPlaylistFilter} />}
+        <div>
+          <div className="discovery-toolbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search artist, title, genre, playlist" aria-label="Search Rekordbox library" /><select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Filter Rekordbox library"><option value="all">All tracks · {tracks.length}</option><option value="library">In Pipeline · {tracks.length - gapCount}</option><option value="gap">Library gaps · {gapCount}</option></select></div>
+          <div className="discovery-browser"><div className="rekordbox-table" role="table" aria-label="Rekordbox tracks"><div className="rekordbox-row rekordbox-header" role="row"><span>Artist</span><span>Title</span><span>BPM</span><span>Key</span><span>Status</span></div>{renderedTracks.map((track) => <RekordboxRow key={`${track.artist}-${track.title}-${track.location}`} track={track} selected={!!selected && nameOf(selected) === nameOf(track)} onSelect={selectRekordboxTrack} />)}{!visibleTracks.length && <div className="table-empty">No tracks match this search.</div>}{renderedTrackCount < visibleTracks.length && <button className="table-load-more" onClick={() => setRenderedTrackCount((current) => current + 200)}>Load more ({visibleTracks.length - renderedTrackCount} remaining)</button>}</div><TrackDetail track={selected} adding={adding} onFindRelated={findRelated} onAdd={addToPipeline} /></div>
+        </div>
+      </div>}
       {mode === "related" && (relatedSource === "pipeline" ? <SimilarPanel tracks={pipeline} onOpenLibrary={() => onNavigate("library")} onPlayTrack={onPlayTrack} /> : <RelatedResults seed={relatedSeed} results={results} finding={finding} adding={adding} onBack={() => setMode("library")} onAdd={addToPipeline} onPlayTrack={onPlayTrack} />)}
     </>}
   </div>;
@@ -183,4 +199,27 @@ function RelatedResults({ seed, results, finding, adding, onBack, onAdd, onPlayT
   };
 
   return <div className="related-view"><div className="related-heading"><div><p className="detail-kicker">Related music</p><h3>{seed ? nameOf(seed) : "Select a seed track"}</h3></div><button className="button secondary" onClick={onBack}>Back to library</button></div>{finding ? <div className="empty-state">Finding related tracks…</div> : results && <><div className="related-actions"><span>{visibleTracks.length} tracks{selectedRows.size > 0 && ` · ${selectedRows.size} selected`}</span><button className="button secondary" onClick={() => setSelectedRows(selectedRows.size === visibleTracks.length ? new Set() : new Set(visibleTracks.map((_, index) => index)))}>{selectedRows.size === visibleTracks.length ? "Clear selection" : "Select all"}</button><button className="button primary" onClick={createYoutubePlaylist} disabled={creatingYoutube}>{creatingYoutube ? "Connecting…" : selectedRows.size ? "Create playlist from selection" : "Create YouTube playlist"}</button></div>{youtubeError && <p className="youtube-message error">{youtubeError}</p>}{youtubeResult && <p className="youtube-message success">Created playlist with {youtubeResult.added} tracks. <a href={youtubeResult.playlistUrl} target="_blank" rel="noreferrer">Open YouTube playlist</a>{youtubeResult.skipped.length > 0 && ` · Skipped ${youtubeResult.skipped.length}`}</p>}<div className="similar-results">{visibleTracks.map((track, index) => { const videoId = track.videoUrl ? getVideoId(track.videoUrl) : null; return <div className={`similar-row${selectedRows.has(index) ? " selected" : ""}`} key={track.cosineId}><input type="checkbox" checked={selectedRows.has(index)} onChange={() => toggleRow(index)} aria-label={`Select ${nameOf(track)}`} /><div><strong>{nameOf(track)}</strong>{track.mixVersion && <small>{track.mixVersion}</small>}</div><span>{Math.round(track.score * 100)}%</span>{videoId && <button className="button listen" onClick={() => onPlayTrack(visibleTracks, index)}>Listen</button>}<button className="button secondary" disabled={adding} onClick={() => onAdd(track)}>Add to Pipeline</button></div>; })}</div></>}</div>;
+}
+
+function PlaylistPicker({ playlists, counts, selected, onChange }: { playlists: string[]; counts: Map<string, number>; selected: string | null; onChange: (pl: string | null) => void }) {
+  const [query, setQuery] = useState("");
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return playlists;
+    return playlists.filter((p) => p.toLowerCase().includes(needle));
+  }, [query, playlists]);
+  return <div className="seed-picker playlist-picker">
+    <div className="seed-picker-header">
+      <div><strong>Playlists</strong><span>{playlists.length} playlists{selected ? ` · filtered` : ""}</span></div>
+      {selected && <b onClick={() => onChange(null)} style={{ cursor: "pointer" }} title="Clear filter">✕</b>}
+    </div>
+    <div className="seed-picker-search">
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search playlists" aria-label="Search playlists" />
+      {selected && <button type="button" onClick={() => onChange(null)}>Clear</button>}
+    </div>
+    <div className="seed-picker-list" role="listbox" aria-label="Rekordbox playlists">
+      {visible.map((p) => { const isSelected = selected === p; return <button type="button" role="option" aria-selected={isSelected} className={`seed-picker-option${isSelected ? " selected" : ""}`} key={p} onClick={() => onChange(isSelected ? null : p)}><span className="seed-picker-check">{isSelected ? "✓" : ""}</span><span className="seed-picker-name" title={p}>{p}</span><span className="seed-picker-state">{counts.get(p) ?? 0}</span></button>; })}
+      {!visible.length && <span className="seed-picker-empty">No playlists match.</span>}
+    </div>
+  </div>;
 }

@@ -15,6 +15,8 @@ services:
       DJ_PREP_DATA_DIR: /data
       DJ_PREP_INBOX_DIR: /music/inbox
       DJ_PREP_ARCHIVE_DIR: /music/archive
+      DJ_PREP_LIBRARY_DIR: /music/library
+      DJ_PREP_REKORDBOX_XML: ${DJ_PREP_REKORDBOX_XML:-}
       SOCKSEEK_URL: ${SOCKSEEK_URL:-http://host.docker.internal:5030}
       YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
       YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
@@ -23,6 +25,8 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
+      - ./music-library:/music/library
       - ./music-inbox:/music/inbox
       - ./music-archive:/music/archive
+      - ./rekordbox:/rekordbox:ro
     restart: unless-stopped

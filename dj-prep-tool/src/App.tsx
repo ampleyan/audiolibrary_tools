@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./lib/api";
 import type { LogEntry, PublicSettings, SimilarTrack } from "./lib/types";
 import DiscoveryView from "./views/DiscoveryView";
@@ -16,6 +16,7 @@ function getVideoId(url: string) {
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "pipeline", label: "Overview" },
+  { id: "import", label: "Import" },
   { id: "library", label: "Library" },
   { id: "prepare", label: "Prepare" },
   { id: "discover", label: "Discover" },
@@ -48,10 +49,11 @@ export default function App() {
   useEffect(() => {
     const shortcuts: Record<string, Tab> = {
       "1": "pipeline",
-      "2": "library",
-      "3": "prepare",
-      "4": "discover",
-      "5": "setup",
+      "2": "import",
+      "3": "library",
+      "4": "prepare",
+      "5": "discover",
+      "6": "setup",
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
@@ -143,9 +145,7 @@ export default function App() {
         ))}
         </nav>
         <div>
-          <label style={{ color: "#8190a0", fontSize: 12, marginRight: 12, userSelect: "none" }}>
-            <input type="checkbox" checked={showLogs} onChange={(event) => setShowLogs(event.target.checked)} /> Show logs
-          </label>
+          <button onClick={() => setShowLogs((v) => !v)} style={{ background: "transparent", border: "1px solid #344454", borderRadius: 5, color: "#8190a0", cursor: "pointer", fontSize: 12, padding: "4px 10px", fontFamily: "inherit" }}>Logs</button>
         </div>
         </div>
       </header>
@@ -177,23 +177,112 @@ export default function App() {
           setPlayerMessage(String(e));
         }
       }} />}
-      {showLogs && <section aria-label="Application logs" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 20, background: "#0d131a", borderTop: "1px solid #344454", padding: "10px 18px", boxShadow: "0 -8px 24px #0008" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><strong style={{ color: "#d5e6ef", fontSize: 12 }}>Logs</strong><span style={{ color: "#6f8293", fontSize: 11 }}>{logs.length} recent entries</span></div>
-        <pre style={{ maxHeight: 180, overflow: "auto", margin: 0, color: "#9fb2bf", font: "11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace", whiteSpace: "pre-wrap" }}>{logs.length ? logs.map((entry, index) => <div key={`${index}-${entry.message}`}>{entry.timestamp && `${entry.timestamp} `}{entry.message}</div>) : "No logs yet."}</pre>
-      </section>}
+      {showLogs && (
+        <div role="dialog" aria-modal="true" aria-label="Application logs" style={{ position: "fixed", inset: 0, zIndex: 30, background: "#0008", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={(e) => { if (e.target === e.currentTarget) setShowLogs(false); }}>
+          <div style={{ background: "#0d131a", border: "1px solid #344454", borderRadius: 10, width: "min(860px, 94vw)", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px #000c" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid #1f2f3f" }}>
+              <strong style={{ color: "#d5e6ef", fontSize: 13 }}>Logs</strong>
+              <span style={{ color: "#6f8293", fontSize: 11 }}>{logs.length} recent entries</span>
+              <button onClick={() => setShowLogs(false)} style={{ background: "transparent", border: "none", color: "#6f8293", cursor: "pointer", fontSize: 16, padding: "0 4px", lineHeight: 1 }}>✕</button>
+            </div>
+            <pre style={{ flex: 1, overflow: "auto", margin: 0, padding: "12px 16px", color: "#9fb2bf", font: "12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace", whiteSpace: "pre-wrap" }}>
+              {logs.length ? [...logs].reverse().map((entry, index) => <div key={`${index}-${entry.message}`} style={{ borderBottom: "1px solid #111d27", padding: "2px 0" }}><span style={{ color: "#4b6070", marginRight: 8 }}>{entry.timestamp}</span>{entry.message}</div>) : "No logs yet."}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
+// Preload the YouTube IFrame API as early as possible so it is ready
+// by the time the user clicks play — autoplay with sound requires the
+// player to be created synchronously inside a user-gesture call stack.
+const ytReady: Promise<void> = new Promise((resolve) => {
+  const win = window as unknown as Record<string, unknown>;
+  if (win.YT && (win.YT as Record<string, unknown>).Player) { resolve(); return; }
+  const prev = win.onYouTubeIframeAPIReady as (() => void) | undefined;
+  win.onYouTubeIframeAPIReady = () => { prev?.(); resolve(); };
+  if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+    const tag = document.createElement("script");
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(tag);
+  }
+});
+
 function PersistentPlayer({ player, onChange, onStop, message, onAdd }: { player: { tracks: SimilarTrack[]; index: number }; onChange: (player: { tracks: SimilarTrack[]; index: number }) => void; onStop: () => void; message: string | null; onAdd: () => Promise<void> }) {
   const track = player.tracks[player.index];
   const videoId = track?.videoUrl ? getVideoId(track.videoUrl) : null;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const ytPlayerRef = useRef<YT.Player | null>(null);
+  const onChangeRef = useRef(onChange);
+  const playerRef = useRef(player);
+  const dragRef = useRef<{ startX: number; startY: number; origRight: number; origBottom: number } | null>(null);
+  const posRef = useRef<{ right: number; bottom: number }>({ right: 18, bottom: 18 });
+  const wrapperRef = useRef<HTMLElement>(null);
+  onChangeRef.current = onChange;
+  playerRef.current = player;
+
+  const onDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const el = wrapperRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origRight: window.innerWidth - rect.right, origBottom: window.innerHeight - rect.bottom };
+    const onMove = (me: MouseEvent) => {
+      if (!dragRef.current || !wrapperRef.current) return;
+      const dx = me.clientX - dragRef.current.startX;
+      const dy = me.clientY - dragRef.current.startY;
+      posRef.current = { right: Math.max(0, dragRef.current.origRight - dx), bottom: Math.max(0, dragRef.current.origBottom - dy) };
+      wrapperRef.current.style.right = `${posRef.current.right}px`;
+      wrapperRef.current.style.bottom = `${posRef.current.bottom}px`;
+    };
+    const onUp = () => { dragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  useEffect(() => {
+    if (!videoId) return;
+    let cancelled = false;
+    ytReady.then(() => {
+      if (cancelled || !containerRef.current) return;
+      ytPlayerRef.current?.destroy();
+      const win = window as unknown as { YT: typeof YT };
+      ytPlayerRef.current = new win.YT.Player(containerRef.current, {
+        videoId,
+        playerVars: { autoplay: 1, rel: 0 },
+        events: {
+          onStateChange: (event: YT.OnStateChangeEvent) => {
+            if (event.data === win.YT.PlayerState.ENDED) {
+              const current = playerRef.current;
+              if (current.index < current.tracks.length - 1) {
+                onChangeRef.current({ ...current, index: current.index + 1 });
+              }
+            }
+          },
+        },
+      });
+    });
+    return () => {
+      cancelled = true;
+      ytPlayerRef.current?.destroy();
+      ytPlayerRef.current = null;
+    };
+  }, [videoId]);
+
   if (!track || !videoId) return null;
   const hasPrevious = player.index > 0;
   const hasNext = player.index < player.tracks.length - 1;
-  return <section className="persistent-player" aria-label={`Previewing ${track.artist} ${track.title}`}>
+  return <section ref={wrapperRef} className="persistent-player" aria-label={`Previewing ${track.artist} ${track.title}`}>
+    <div className="persistent-player-drag" onMouseDown={onDragStart} title="Drag to move">⠿</div>
     <div className="persistent-player-info"><span>Previewing now</span><strong>{track.artist} – {track.title}</strong><small>{player.index + 1} of {player.tracks.length}</small>{message && <em aria-live="polite">{message}</em>}</div>
-    <div className="persistent-player-actions"><button type="button" onClick={() => onChange({ ...player, index: player.index - 1 })} disabled={!hasPrevious} aria-label="Play previous similar track">Previous</button><button type="button" onClick={() => onChange({ ...player, index: player.index + 1 })} disabled={!hasNext} aria-label="Play next similar track">Next</button><button type="button" onClick={onAdd}>Add to Library</button><button type="button" onClick={onStop}>Stop</button></div>
-    <iframe title={`Preview ${track.artist} ${track.title}`} src={`https://www.youtube.com/embed/${videoId}?autoplay=1`} allow="autoplay; encrypted-media" />
+    <div className="persistent-player-actions">
+      <button type="button" onClick={() => onChange({ ...player, index: player.index - 1 })} disabled={!hasPrevious} aria-label="Play previous similar track">Previous</button>
+      <button type="button" onClick={() => onChange({ ...player, index: player.index + 1 })} disabled={!hasNext} aria-label="Play next similar track">Next</button>
+      <button type="button" onClick={onAdd}>Add to Library</button>
+      <button type="button" onClick={onStop}>Stop</button>
+    </div>
+    <div ref={containerRef} />
   </section>;
 }

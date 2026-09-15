@@ -41,6 +41,18 @@ class WebSmokeTest(unittest.TestCase):
         self.assertTrue(next(check["ok"] for check in checks if check["name"] == "Prep inbox"))
         self.assertTrue(any(check["name"] == "Free storage" for check in checks))
 
+    def test_import_rekordbox_xml_stores_validated_copy_in_data_dir(self):
+        xml = "<?xml version=\"1.0\"?><DJ_PLAYLISTS><COLLECTION Entries=\"0\" /></DJ_PLAYLISTS>"
+
+        path = self.server.command("import_rekordbox_xml", {"content": xml})
+
+        self.assertEqual(Path(path).read_text(encoding="utf-8"), xml)
+        self.assertEqual(self.server.setting("rekordbox_xml_path"), path)
+
+    def test_import_rekordbox_xml_rejects_invalid_xml(self):
+        with self.assertRaises(ValueError):
+            self.server.command("import_rekordbox_xml", {"content": "not xml"})
+
 
 if __name__ == "__main__":
     unittest.main()
