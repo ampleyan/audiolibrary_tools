@@ -9,19 +9,6 @@ services:
       - ./music-archive:/music/archive
     restart: unless-stopped
 
-  sockseek:
-    build:
-      context: ./sockseek-config
-      platforms:
-        - linux/amd64
-    command: ["daemon", "--config", "/config/sockseek.conf"]
-    ports:
-      - "5030:5030"
-    volumes:
-      - ./sockseek-config:/config
-      - ./music-inbox:/data
-    restart: unless-stopped
-
   dj-prep:
     build:
       context: ..
@@ -34,7 +21,7 @@ services:
       DJ_PREP_ARCHIVE_DIR: /music/archive
       DJ_PREP_LIBRARY_DIR: /music/library
       DJ_PREP_REKORDBOX_XML: ${DJ_PREP_REKORDBOX_XML:-}
-      SOCKSEEK_URL: http://sockseek:5030
+      SOCKSEEK_URL: ${SOCKSEEK_URL:-http://kodisrv:5030}
       BEETS_URL: http://beets:8337
       YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
       YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
@@ -47,6 +34,4 @@ services:
       - ./music-inbox:/music/inbox
       - ./music-archive:/music/archive
       - ./rekordbox:/rekordbox:ro
-    depends_on:
-      - sockseek
     restart: unless-stopped
