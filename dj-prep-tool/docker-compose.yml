@@ -30,6 +30,16 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://audiotool@host.docker.internal:5432/audiotool}
       DATABASE_SSLMODE: ${DATABASE_SSLMODE:-disable}
       AUDIOTOOL_PASSWORD: ${AUDIOTOOL_PASSWORD:-}
+      YT_COOKIES_FILE: ${YT_COOKIES_FILE:-}
+      SOCKSEEK_USERNAME: ${SOCKSEEK_USERNAME:-}
+      SOCKSEEK_PASSWORD: ${SOCKSEEK_PASSWORD:-}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      COSINE_API_KEY: ${COSINE_API_KEY:-}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
+      PATH_MAP_FROM: ${PATH_MAP_FROM:-}
+      PATH_MAP_TO: ${PATH_MAP_TO:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
