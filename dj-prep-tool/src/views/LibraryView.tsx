@@ -1,35 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
+import TrackRow from "../components/TrackRow";
 import { api } from "../lib/api";
-import type { TrackRow } from "../lib/types";
+import type { TrackRow as Track, TrackState } from "../lib/types";
+import { getWorkflowMeta } from "../lib/workflow";
 
-const buttonStyle = { background: "#1e3a5f", color: "#93c5fd", border: "1px solid #1e40af", borderRadius: 5, padding: "7px 12px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" };
-const secondaryButtonStyle = { ...buttonStyle, background: "transparent", color: "#9ca3af", borderColor: "#374151" };
+type SortKey = "priority" | "artist" | "title" | "status" | "updated" | "created";
 
-function trackName(track: TrackRow) {
-  return track.artist ? `${track.artist} – ${track.title}` : track.title;
-}
-
-function actionLabel(track: TrackRow) {
-  if (track.state === "not_found") return "Search again";
-  if (["requested", "needs_review", "matched"].includes(track.state)) return "Review match";
-  if (track.state === "approved") return "Start download";
-  if (track.state === "downloading") return "Monitor download";
-  if (["downloaded", "quality_failed"].includes(track.state)) return "Quality check";
-  if (track.state === "ready_for_conversion") return "Beets tagging";
-  if (["tagging_review", "picard_pending"].includes(track.state)) return "Review tagging";
-  if (["ready_for_rekordbox", "rekordbox_pending"].includes(track.state)) return "Rekordbox";
-  if (track.state === "dj_ready") return "Open DJ-ready file";
-  return "Review error";
-}
-
-function workViewFor(track: TrackRow) {
+function workViewFor(track: Track) {
   return ["requested", "needs_review", "matched", "not_found"].includes(track.state) ? "review" : "downloads";
 }
 
 export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string) => void }) {
-  const [tracks, setTracks] = useState<TrackRow[]>([]);
+  const [tracks, setTracks] = useState<Track[]>([]);
   const [query, setQuery] = useState("");
-  const [stateFilter, setStateFilter] = useState("all");
+  const [stateFilter, setStateFilter] = useState<TrackState | "all">("all");
+  const [sortKey, setSortKey] = useState<SortKey>("priority");
+  const [descending, setDescending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,15 +28,27 @@ export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string)
   useEffect(load, []);
 
   const filteredTracks = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return tracks.filter((track) => {
+    const needle = query.trim().toLocaleLowerCase();
+    const result = tracks.filter((track) => {
       if (stateFilter !== "all" && track.state !== stateFilter) return false;
       if (!needle) return true;
-      return `${track.artist} ${track.title} ${track.mix_version ?? ""}`.toLowerCase().includes(needle);
+      return [track.artist, track.title, track.mix_version ?? "", track.error ?? "", track.state]
+        .some((value) => value.toLocaleLowerCase().includes(needle));
     });
-  }, [query, stateFilter, tracks]);
+    const compare = (left: Track, right: Track) => {
+      if (sortKey === "status") return getWorkflowMeta(left).statusLabel.localeCompare(getWorkflowMeta(right).statusLabel);
+      if (sortKey === "updated" || sortKey === "created") {
+        const leftDate = sortKey === "updated" ? left.updated_at : left.created_at;
+        const rightDate = sortKey === "updated" ? right.updated_at : right.created_at;
+        return (Date.parse(leftDate) || 0) - (Date.parse(rightDate) || 0);
+      }
+      if (sortKey === "priority") return Number(getWorkflowMeta(right).actionable) - Number(getWorkflowMeta(left).actionable) || getWorkflowMeta(left).statusLabel.localeCompare(getWorkflowMeta(right).statusLabel);
+      return left[sortKey].localeCompare(right[sortKey]);
+    };
+    return result.sort((left, right) => (descending ? -1 : 1) * compare(left, right) || left.id - right.id);
+  }, [descending, query, sortKey, stateFilter, tracks]);
 
-  const openTrack = async (track: TrackRow) => {
+  const openTrack = async (track: Track) => {
     setError(null);
     try {
       if (track.state === "not_found") {
@@ -70,37 +68,17 @@ export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string)
     }
   };
 
-  return (
-    <div className="view library-view" style={{ padding: 24, color: "#f9fafb" }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
-        <div className="view-heading"><h2>Library</h2><p>Every imported track in one searchable place.</p></div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => onNavigate?.("import")} style={buttonStyle}>Add tracks</button>
-          <button onClick={load} style={secondaryButtonStyle}>Refresh</button>
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search artist, title, or mix" aria-label="Search library" style={{ flex: 1, background: "#111827", color: "#e5e7eb", border: "1px solid #374151", borderRadius: 5, padding: "8px 10px", font: "12px inherit" }} />
-        <select value={stateFilter} onChange={(event) => setStateFilter(event.target.value)} aria-label="Filter library by stage" style={{ background: "#111827", color: "#9ca3af", border: "1px solid #374151", borderRadius: 5, padding: "8px 10px", fontSize: 12, fontFamily: "inherit" }}>
-          <option value="all">All stages</option>
-          {[...new Set(tracks.map((track) => track.state))].sort().map((state) => <option key={state} value={state}>{state.replace(/_/g, " ")}</option>)}
-        </select>
-      </div>
-      {error && <p style={{ color: "#f87171", background: "#1a0c0c", border: "1px solid #7f1d1d", padding: 8, borderRadius: 5, fontSize: 12 }}>{error}</p>}
-      {loading ? <p style={{ color: "#4b5563", fontSize: 14 }}>Loading…</p> : filteredTracks.length === 0 ? <p style={{ color: "#4b5563", fontSize: 14 }}>{tracks.length ? "No tracks match this filter." : "No tracks in your library yet. Add tracks to get started."}</p> : (
-        <div style={{ display: "grid", gap: 7 }}>
-          {filteredTracks.map((track) => (
-            <div key={track.id} style={{ display: "flex", alignItems: "center", gap: 12, background: "#111827", border: "1px solid #293548", borderRadius: 6, padding: "10px 12px" }}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ color: "#e5e7eb", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={trackName(track)}>{trackName(track)}</div>
-                {track.mix_version && <div style={{ color: "#6b7280", fontSize: 11, marginTop: 3 }}>{track.mix_version}</div>}
-              </div>
-              <span style={{ color: track.state === "dj_ready" ? "#34d399" : track.state === "failed" || track.state === "quality_failed" ? "#f59e0b" : "#93c5fd", fontSize: 11, whiteSpace: "nowrap" }}>{track.state.replace(/_/g, " ")}</span>
-              <button onClick={() => openTrack(track)} style={{ ...secondaryButtonStyle, whiteSpace: "nowrap" }}>{actionLabel(track)}</button>
-            </div>
-          ))}
-        </div>
-      )}
+  return <div className="view library-view">
+    <header className="work-queue-heading"><div className="view-heading"><h2>Library</h2><p>Every imported track in one searchable place.</p></div><div className="library-heading-actions"><button className="button primary" type="button" onClick={() => onNavigate?.("import")}>Add tracks</button><button className="button secondary" type="button" onClick={load}>Refresh</button></div></header>
+    {error && <div className="inline-error" role="alert"><span>{error}</span><button type="button" onClick={load}>Reload</button></div>}
+    <div className="workbench-table-toolbar" aria-label="Filter and sort library tracks">
+      <label className="workbench-table-search"><span>Filter tracks</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Artist, title, mix, status…" aria-label="Search library" /></label>
+      <label className="workbench-table-select"><span>Status</span><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TrackState | "all")}><option value="all">All statuses</option>{Array.from(new Set(tracks.map((track) => track.state))).sort().map((state) => <option key={state} value={state}>{getWorkflowMeta({ state } as Track).statusLabel}</option>)}</select></label>
+      <label className="workbench-table-select"><span>Sort by</span><select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)}><option value="priority">Priority</option><option value="artist">Artist</option><option value="title">Title</option><option value="status">Status</option><option value="updated">Last updated</option><option value="created">Date added</option></select></label>
+      <button className="workbench-sort-direction" type="button" onClick={() => setDescending((value) => !value)} aria-label={`Sort ${descending ? "ascending" : "descending"}`}>{descending ? "↓ Descending" : "↑ Ascending"}</button>
+      {(query || stateFilter !== "all") && <button className="workbench-clear-filters" type="button" onClick={() => { setQuery(""); setStateFilter("all"); }}>Clear</button>}
+      <span className="workbench-table-result-count">{filteredTracks.length} of {tracks.length} shown</span>
     </div>
-  );
+    <div className="work-queue-layout library-workbench-layout"><section className="work-queue-list" aria-label="Library track table"><div className="work-queue-columns" aria-hidden="true"><span /><span>Track</span><span>Mix</span><span>Status</span><span>Blocker</span><span>Updated</span><span>Next action</span><span /></div>{loading ? <p className="work-queue-empty">Loading library…</p> : filteredTracks.length ? filteredTracks.map((track) => <TrackRow key={track.id} track={track} metadata={getWorkflowMeta(track)} selected={false} showSelection={false} showMenu={false} onOpen={() => openTrack(track)} onPrimaryAction={() => openTrack(track)} onMenuAction={() => {}} />) : <p className="work-queue-empty">{tracks.length ? "No tracks match this filter." : "No tracks in your library yet. Add tracks to get started."}</p>}</section></div>
+  </div>;
 }

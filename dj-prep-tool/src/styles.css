@@ -224,6 +224,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .workbench-sort-direction, .workbench-clear-filters { min-height: 30px; border: 1px solid #513343; border-radius: 5px; background: #1b121a; color: #d0b7c4; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 11px; }
 .workbench-sort-direction:hover, .workbench-clear-filters:hover { border-color: #ff4fa3; color: #ff6fb5; }
 .workbench-table-result-count { margin-left: auto; padding-bottom: 7px; color: #7a6570; font-size: 11px; white-space: nowrap; }
+.library-heading-actions { display: flex; gap: 8px; }
+.library-workbench-layout { display: block; }
+.library-view .work-queue-list { width: 100%; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 .track-status-badge { display: inline-flex; width: fit-content; max-width: 100%; align-items: center; gap: 5px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface-raised); color: var(--color-status-neutral); padding: 3px 7px; font-size: 10px; line-height: 1.2; white-space: nowrap; }
 .track-status-badge svg { flex: 0 0 auto; }
