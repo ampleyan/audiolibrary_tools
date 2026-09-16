@@ -33,13 +33,6 @@ function TrackList({
   const [sortKey, setSortKey] = useState<"id" | "artist" | "title" | "source" | "tag" | "status">("id");
   const [descending, setDescending] = useState(false);
 
-  if (tracks.length === 0)
-    return (
-      <p style={{ color: "#4b5563", fontSize: 13, marginTop: 24 }}>
-        No tracks yet. Import a tracklist above.
-      </p>
-    );
-
   const handleDelete = async (id: number) => {
     setDeletingId(id);
     try {
@@ -64,6 +57,13 @@ function TrackList({
       return (descending ? -1 : 1) * result || left.id - right.id;
     });
   }, [descending, query, sortKey, stateFilter, tracks]);
+
+  if (tracks.length === 0)
+    return (
+      <p style={{ color: "#4b5563", fontSize: 13, marginTop: 24 }}>
+        No tracks yet. Import a tracklist above.
+      </p>
+    );
 
   return (
     <>
