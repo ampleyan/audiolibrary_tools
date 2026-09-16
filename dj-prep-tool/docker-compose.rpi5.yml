@@ -1,10 +1,5 @@
 services:
   dj-prep:
-    build:
-      context: ..
-      dockerfile: dj-prep-tool/web/Dockerfile
-    ports:
-      - "8080:8080"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3)"]
       interval: 30s
@@ -12,20 +7,8 @@ services:
       retries: 3
       start_period: 15s
     environment:
-      DJ_PREP_DATA_DIR: /data
-      DJ_PREP_INBOX_DIR: /music/inbox
-      DJ_PREP_ARCHIVE_DIR: /music/archive
-      DJ_PREP_LIBRARY_DIR: /music/library
-      DJ_PREP_REKORDBOX_XML: ${DJ_PREP_REKORDBOX_XML:-}
-      SOCKSEEK_URL: ${SOCKSEEK_URL:-http://host.docker.internal:5030}
-      BEETS_URL: ${BEETS_URL:-http://host.docker.internal:8337}
-      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
-      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
-      YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-}
       DATABASE_MODE: local
-      AUDIOTOOL_PASSWORD: ${AUDIOTOOL_PASSWORD:-}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      BEETS_URL: ${BEETS_URL:-http://host.docker.internal:8337}
     volumes:
       - ./data:/data
       - ./music-library:/music/library
@@ -33,4 +16,3 @@ services:
       - /mnt/media/MUSIC/RECENT:/music/archive
       - ./rekordbox:/rekordbox:ro
       - /home/ampleyan/projects/rpi-postgresql/infrastructure/postgres/run:/var/run/postgresql
-    restart: unless-stopped
