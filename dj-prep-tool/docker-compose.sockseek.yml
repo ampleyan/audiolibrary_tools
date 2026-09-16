@@ -1,0 +1,12 @@
+services:
+  sockseek:
+    build:
+      context: ../../sockseek
+      dockerfile: Dockerfile
+    command: ["sockseek", "daemon", "--server-ip", "0.0.0.0", "--server-port", "5030", "--config", "/config/sockseek.conf"]
+    ports:
+      - "${SOCKSEEK_BIND_IP:-0.0.0.0}:5030:5030"
+    volumes:
+      - /home/ampleyan/projects/sockseek/config:/config
+      - /mnt/media/MUSIC/FROMTOOL:/music/inbox
+    restart: unless-stopped
