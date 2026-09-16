@@ -5,8 +5,8 @@ services:
     volumes:
       - ./beets-config:/config:ro
       - ./data:/data
-      - ./music-inbox:/music/inbox
-      - ./music-archive:/music/archive
+      - ${MUSIC_INBOX_DIR:-./music-inbox}:/music/inbox
+      - ${MUSIC_ARCHIVE_DIR:-./music-archive}:/music/archive
     restart: unless-stopped
 
   dj-prep:
@@ -45,7 +45,7 @@ services:
     volumes:
       - ./data:/data
       - ./music-library:/music/library
-      - ./music-inbox:/music/inbox
-      - ./music-archive:/music/archive
+      - ${MUSIC_INBOX_DIR:-./music-inbox}:/music/inbox
+      - ${MUSIC_ARCHIVE_DIR:-./music-archive}:/music/archive
       - ./rekordbox:/rekordbox:ro
     restart: unless-stopped

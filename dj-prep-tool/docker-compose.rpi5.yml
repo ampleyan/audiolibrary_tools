@@ -16,3 +16,4 @@ services:
       - /mnt/media/MUSIC/RECENT:/music/archive
       - ./rekordbox:/rekordbox:ro
       - /home/ampleyan/projects/rpi-postgresql/infrastructure/postgres/run:/var/run/postgresql
+
