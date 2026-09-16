@@ -1,48 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ImportPreview, { buildImportPreview } from "../components/ImportPreview";
+import TrackStatusBadge from "../components/TrackStatusBadge";
+import { BlockerIndicator } from "../components/TrackRow";
 import { api } from "../lib/api";
 import type { ImportPreviewRow, RekordboxTrack, TrackRow, TrackState } from "../lib/types";
-
-const STATE_COLOR: Record<TrackState, string> = {
-  requested: "#60a5fa",
-  needs_review: "#fb923c",
-  not_found: "#9ca3af",
-  matched: "#c084fc",
-  approved: "#34d399",
-  downloading: "#facc15",
-  downloaded: "#22d3ee",
-  conversion_pending: "#f97316",
-  converted: "#2dd4bf",
-  quality_failed: "#f87171",
-  picard_pending: "#818cf8",
-  ready_for_conversion: "#a3e635",
-  tagging_review: "#f59e0b",
-  ready_for_rekordbox: "#86efac",
-  dj_ready: "#4ade80",
-  rekordbox_pending: "#38bdf8",
-  failed: "#ef4444",
-};
+import { getWorkflowMeta } from "../lib/workflow";
 
 type ImportMode = "text" | "csv" | "playlist" | "telegram" | "rekordbox";
-
-function StateBadge({ state }: { state: TrackState }) {
-  return (
-    <span
-      style={{
-        fontSize: 10,
-        padding: "2px 7px",
-        borderRadius: 999,
-        background: `${STATE_COLOR[state]}22`,
-        color: STATE_COLOR[state],
-        fontWeight: 600,
-        letterSpacing: "0.04em",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {state.replace(/_/g, " ")}
-    </span>
-  );
-}
 
 function sourceLabel(sourceUrl: string | null) {
   if (!sourceUrl) return "—";
@@ -64,6 +28,10 @@ function TrackList({
   onGoReview: () => void;
 }) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+  const [stateFilter, setStateFilter] = useState<TrackState | "all">("all");
+  const [sortKey, setSortKey] = useState<"id" | "artist" | "title" | "source" | "tag" | "status">("id");
+  const [descending, setDescending] = useState(false);
 
   if (tracks.length === 0)
     return (
@@ -84,6 +52,18 @@ function TrackList({
 
   const needsReviewCount = tracks.filter((t) => t.state === "needs_review").length;
   const duplicateCount = tracks.filter((t) => t.error?.toLowerCase().includes("duplicate")).length;
+  const visibleTracks = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    const result = tracks.filter((track) => {
+      if (stateFilter !== "all" && track.state !== stateFilter) return false;
+      return !needle || [track.artist, track.title, track.mix_version ?? "", track.import_tag ?? "", track.state, sourceLabel(track.source_url)].some((value) => value.toLocaleLowerCase().includes(needle));
+    });
+    return result.sort((left, right) => {
+      const values = (track: TrackRow) => ({ id: String(track.id), artist: track.artist, title: track.title, source: sourceLabel(track.source_url), tag: track.import_tag ?? "", status: getWorkflowMeta(track).statusLabel });
+      const result = values(left)[sortKey].localeCompare(values(right)[sortKey], undefined, { numeric: sortKey === "id" });
+      return (descending ? -1 : 1) * result || left.id - right.id;
+    });
+  }, [descending, query, sortKey, stateFilter, tracks]);
 
   return (
     <>
@@ -126,103 +106,8 @@ function TrackList({
           <span style={{ color: "#9ca3af" }}>Remove the imported copy if you do not want to keep both.</span>
         </div>
       )}
-      <table
-        style={{
-          width: "100%",
-          borderCollapse: "collapse",
-          fontSize: 13,
-        }}
-      >
-        <thead>
-          <tr style={{ color: "#6b7280", textAlign: "left" }}>
-            <th style={{ padding: "6px 10px 6px 0", fontWeight: 500 }}>#</th>
-            <th style={{ padding: "6px 10px", fontWeight: 500 }}>Artist</th>
-            <th style={{ padding: "6px 10px", fontWeight: 500 }}>Title</th>
-            <th style={{ padding: "6px 10px", fontWeight: 500 }}>Mix</th>
-            <th style={{ padding: "6px 10px", fontWeight: 500 }}>Source</th>
-            <th style={{ padding: "6px 10px", fontWeight: 500 }}>Tag</th>
-            <th style={{ padding: "6px 10px", fontWeight: 500 }}>State</th>
-            <th style={{ padding: "6px 0", fontWeight: 500 }} />
-          </tr>
-        </thead>
-        <tbody>
-          {tracks.map((t) => (
-            <tr
-              key={t.id}
-              style={{
-                borderTop: "1px solid #1f2937",
-                color: t.state === "failed" ? "#6b7280" : "#e5e7eb",
-              }}
-            >
-              <td style={{ padding: "7px 10px 7px 0", color: "#4b5563" }}>
-                {t.id}
-              </td>
-              <td style={{ padding: "7px 10px" }}>{t.artist || "—"}</td>
-              <td style={{ padding: "7px 10px" }}>
-                {t.title}
-                {t.source_url && (
-                  <span
-                    title={t.source_url}
-                    style={{ marginLeft: 6, fontSize: 10, color: "#374151" }}
-                  >
-                    ▶
-                  </span>
-                )}
-              </td>
-              <td style={{ padding: "7px 10px", color: "#6b7280" }}>
-                {t.mix_version || ""}
-              </td>
-              <td style={{ padding: "7px 10px" }}>
-                {t.source_url ? (
-                  <a href={t.source_url} target="_blank" rel="noreferrer" title={t.source_url} style={{ color: "#60a5fa", fontSize: 12 }}>
-                    {sourceLabel(t.source_url)}
-                  </a>
-                ) : "—"}
-              </td>
-              <td style={{ padding: "7px 10px", color: "#a78bfa", fontSize: 11 }}>{t.import_tag || "—"}</td>
-              <td style={{ padding: "7px 10px" }}>
-                <StateBadge state={t.state} />
-                {t.error && (
-                  <span
-                    title={t.error}
-                    style={{ marginLeft: 6, color: t.state === "not_found" ? "#9ca3af" : "#ef4444", fontSize: 10 }}
-                  >
-                    {t.state === "not_found" ? "ⓘ" : "⚠"}
-                  </span>
-                )}
-              </td>
-              <td style={{ padding: "7px 0", textAlign: "right" }}>
-                {t.error?.toLowerCase().includes("duplicate") && (
-                  <button
-                    disabled={deletingId === t.id}
-                    onClick={() => handleDelete(t.id)}
-                    style={{ background: "transparent", border: "1px solid #92400e", borderRadius: 4, color: "#fbbf24", cursor: deletingId === t.id ? "not-allowed" : "pointer", fontSize: 11, padding: "3px 6px", fontFamily: "inherit", marginRight: 4 }}
-                    title="Remove imported duplicate"
-                  >
-                    Remove duplicate
-                  </button>
-                )}
-                <button
-                  disabled={deletingId === t.id}
-                  onClick={() => handleDelete(t.id)}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: deletingId === t.id ? "#374151" : "#4b5563",
-                    cursor: deletingId === t.id ? "not-allowed" : "pointer",
-                    fontSize: 13,
-                    padding: "2px 6px",
-                    fontFamily: "inherit",
-                  }}
-                  title="Delete track"
-                >
-                  ✕
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="workbench-table-toolbar" aria-label="Filter and sort inbox tracks"><label className="workbench-table-search"><span>Filter tracks</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Artist, title, source, tag…" /></label><label className="workbench-table-select"><span>Status</span><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TrackState | "all")}><option value="all">All statuses</option>{Array.from(new Set(tracks.map((track) => track.state))).sort().map((state) => <option key={state} value={state}>{getWorkflowMeta({ state } as TrackRow).statusLabel}</option>)}</select></label><label className="workbench-table-select"><span>Sort by</span><select value={sortKey} onChange={(event) => setSortKey(event.target.value as typeof sortKey)}><option value="id">Date imported</option><option value="artist">Artist</option><option value="title">Title</option><option value="source">Source</option><option value="tag">Tag</option><option value="status">Status</option></select></label><button className="workbench-sort-direction" type="button" onClick={() => setDescending((value) => !value)}>{descending ? "↓ Descending" : "↑ Ascending"}</button><span className="workbench-table-result-count">{visibleTracks.length} of {tracks.length} shown</span></div>
+      <div className="work-queue-list inbox-track-table"><div className="work-queue-columns inbox-track-columns" aria-hidden="true"><span>#</span><span>Track</span><span>Mix</span><span>Source</span><span>Tag</span><span>Status</span><span>Blocker</span><span /></div>{visibleTracks.map((t) => <div key={t.id} className="workbench-track-row inbox-track-row"><span className="inbox-track-id">{t.id}</span><span className="inbox-track-name" title={t.title}><strong>{t.artist || "Unknown artist"}</strong><span>{t.title}{t.source_url && <a href={t.source_url} target="_blank" rel="noreferrer" title={t.source_url} className="inbox-source-link">↗</a>}</span></span><span className="workbench-track-mix">{t.mix_version || "—"}</span><span className="inbox-track-source">{t.source_url ? <a href={t.source_url} target="_blank" rel="noreferrer">{sourceLabel(t.source_url)}</a> : "—"}</span><span className="inbox-track-tag">{t.import_tag || "—"}</span><TrackStatusBadge metadata={getWorkflowMeta(t)} /><BlockerIndicator track={t} /><span className="inbox-track-actions">{t.error?.toLowerCase().includes("duplicate") && <button type="button" onClick={() => handleDelete(t.id)} disabled={deletingId === t.id} title="Remove imported duplicate">Remove</button>}<button type="button" onClick={() => handleDelete(t.id)} disabled={deletingId === t.id} title="Delete track">✕</button></span></div>)}</div>
     </>
   );
 }

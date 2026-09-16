@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { TrackRow as Track } from "../lib/types";
 import { getWorkflowMeta } from "../lib/workflow";
 import TrackInspector from "./TrackInspector";
-import TrackRow from "./TrackRow";
+import TrackRow, { BlockerIndicator } from "./TrackRow";
 import TrackStatusBadge from "./TrackStatusBadge";
 import { filterAndSortTracks, filterPreparationTracks, prioritizeActionableTracks } from "../views/PrepareView";
 
@@ -74,6 +74,12 @@ describe("TrackRow", () => {
     expect(html).toContain("Approve a candidate");
     expect(html).toContain('aria-label="Delete Night Drive – Signal"');
     expect(html).toContain('aria-selected="true"');
+  });
+
+  it("uses compact accessible blocker icons", () => {
+    const html = renderToStaticMarkup(<BlockerIndicator track={{ ...track, error: "Duplicate import" }} />);
+    expect(html).toContain("Duplicate track");
+    expect(html).toContain("aria-label");
   });
 });
 

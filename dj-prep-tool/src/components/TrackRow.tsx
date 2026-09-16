@@ -1,4 +1,4 @@
-import { MoreHorizontal } from "lucide-react";
+import { AlertTriangle, CircleHelp, CheckCircle2, Copy, MoreHorizontal } from "lucide-react";
 import type { TrackRow as Track, WorkflowMetadata } from "../lib/types";
 import TrackStatusBadge from "./TrackStatusBadge";
 
@@ -36,6 +36,15 @@ const MENU_ACTIONS: Array<{ id: TrackMenuAction; label: string }> = [
   { id: "delete", label: "Delete" },
 ];
 
+export function BlockerIndicator({ track }: { track: Track }) {
+  if (!track.error) return <span className="workbench-blocker-icon clear" title="No blocker" aria-label="No blocker"><CheckCircle2 aria-hidden="true" size={14} /></span>;
+  const duplicate = track.error.toLowerCase().includes("duplicate");
+  const notFound = track.state === "not_found";
+  const label = duplicate ? "Duplicate track" : notFound ? "Search returned no file" : track.error;
+  const Icon = duplicate ? Copy : notFound ? CircleHelp : AlertTriangle;
+  return <span className={`workbench-blocker-icon ${duplicate || notFound ? "attention" : "error"}`} title={label} aria-label={label}><Icon aria-hidden="true" size={14} /></span>;
+}
+
 export default function TrackRow({ track, metadata, selected, checked = false, busy = false, onCheckedChange, onOpen, onPrimaryAction, onMenuAction, showSelection = true, showMenu = true }: TrackRowProps) {
   const name = trackName(track);
 
@@ -48,7 +57,7 @@ export default function TrackRow({ track, metadata, selected, checked = false, b
       </button>
       <span className="workbench-track-mix" title={track.mix_version ?? undefined}>{track.mix_version || "—"}</span>
       <TrackStatusBadge metadata={metadata} />
-      <span className={`workbench-track-blocker${track.error ? " has-error" : ""}`} title={track.error ?? undefined}>{track.error || "No blocker"}</span>
+      <BlockerIndicator track={track} />
       <time className="workbench-track-updated" dateTime={track.updated_at} title={track.updated_at}>{formatUpdatedAt(track.updated_at)}</time>
       <button className="workbench-track-primary" type="button" onClick={onPrimaryAction} disabled={busy || !metadata.actionable}>{metadata.nextAction.label}</button>
       {showMenu ? <details className="workbench-track-menu"><summary aria-label={`More actions for ${name}`}><MoreHorizontal aria-hidden="true" size={16} /></summary><div role="menu">{MENU_ACTIONS.map((action) => <button key={action.id} type="button" role="menuitem" className={action.id === "delete" ? "destructive" : undefined} aria-label={action.id === "delete" ? `Delete ${name}` : `${action.label} for ${name}`} onClick={() => onMenuAction(action.id)} disabled={busy || (action.id === "reveal" && !track.downloaded_path && !track.archive_path && !track.dj_path)}>{action.label}</button>)}</div></details> : <span aria-hidden="true" />}
