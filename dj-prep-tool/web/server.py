@@ -7,7 +7,6 @@ import os
 import re
 import secrets
 import shutil
-import sqlite3
 import subprocess
 import sys
 import threading
@@ -19,21 +18,29 @@ import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import psycopg2
+import psycopg2.extras
+import psycopg2.errors
+
 try:
-    from lxml import etree as _lxml
-    _HAS_LXML = True
+    from lxml import etree as lxml_etree
+    has_lxml = True
 except ImportError:
-    _HAS_LXML = False
+    has_lxml = False
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("DJ_PREP_DATA_DIR", "/data"))
-DB_PATH = DATA_DIR / "dj_prep.sqlite"
 INBOX_DIR = Path(os.environ.get("DJ_PREP_INBOX_DIR", "/music/inbox"))
 ARCHIVE_DIR = Path(os.environ.get("DJ_PREP_ARCHIVE_DIR", "/music/archive"))
 LIBRARY_DIR = Path(os.environ.get("DJ_PREP_LIBRARY_DIR", "/music/library"))
 REKORDBOX_XML_PATH = os.environ.get("DJ_PREP_REKORDBOX_XML", "")
 SOCKSEEK_URL = os.environ.get("SOCKSEEK_URL", "http://sockseek:5030").rstrip("/")
 BEETS_URL = os.environ.get("BEETS_URL", "http://beets:8337").rstrip("/")
+DATABASE_MODE = os.environ.get("DATABASE_MODE", "local")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://audiotool@192.168.129.39:5432/audiotool")
+DATABASE_SSLMODE = os.environ.get("DATABASE_SSLMODE", "verify-full")
+DATABASE_SSLROOTCERT = os.environ.get("DATABASE_SSLROOTCERT", "")
+AUDIOTOOL_PASSWORD = os.environ.get("AUDIOTOOL_PASSWORD", "")
 SOCKSEEK_LOG_FILE = os.environ.get("SOCKSEEK_LOG_FILE", "")
 PYTHON = os.environ.get("PYTHON", "python3")
 YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "")
@@ -44,63 +51,36 @@ YOUTUBE_STATES = {}
 LOGS = []
 DOWNLOAD_PROGRESS = {}
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS tracks (
- id INTEGER PRIMARY KEY AUTOINCREMENT, artist TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
- mix_version TEXT, source_url TEXT, import_tag TEXT, state TEXT NOT NULL DEFAULT 'requested', candidate_json TEXT,
- selected_username TEXT, selected_filename TEXT, downloaded_path TEXT, quality_result TEXT,
- quality_notes TEXT, archive_path TEXT, dj_path TEXT, search_job_id TEXT, download_job_id TEXT,
- error TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS activities (
- id INTEGER PRIMARY KEY AUTOINCREMENT, track_id INTEGER NOT NULL, from_state TEXT,
- to_state TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE TABLE IF NOT EXISTS playlists (
- id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, source TEXT NOT NULL DEFAULT 'manual', source_ref TEXT,
- created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE TABLE IF NOT EXISTS playlist_tracks (
- playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
- track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
- position INTEGER NOT NULL DEFAULT 0,
- added_at TEXT NOT NULL DEFAULT (datetime('now')),
- PRIMARY KEY (playlist_id, track_id)
-);
-CREATE TRIGGER IF NOT EXISTS tracks_updated_at AFTER UPDATE ON tracks FOR EACH ROW
-BEGIN UPDATE tracks SET updated_at = datetime('now') WHERE id = NEW.id; END;
-CREATE TRIGGER IF NOT EXISTS tracks_activity_insert AFTER INSERT ON tracks
-BEGIN INSERT INTO activities (track_id, to_state) VALUES (NEW.id, NEW.state); END;
-CREATE TRIGGER IF NOT EXISTS tracks_activity_state_change AFTER UPDATE OF state ON tracks
-WHEN OLD.state <> NEW.state
-BEGIN INSERT INTO activities (track_id, from_state, to_state) VALUES (NEW.id, OLD.state, NEW.state); END;
-"""
-
 NOISE = re.compile(r"(?i)[\[\(][^\[\(\]\)]*?(official|lyric|hd|hq|4k|video|audio|free\s*download|320kbps)[^\[\(\]\)]*?[\]\)]")
 MIX = re.compile(r"(?i)\s*[\(\[]([\w\s\-'&]* (?:original|extended|radio|club|dub|instrumental|vocal|acapella|vip|remix|rmx|mix|edit|version|rework|bootleg|re-?edit|re-?work|re-?mix))[\)\]]\s*$")
 EXT = re.compile(r"(?i)\.(mp3|flac|aac|ogg|wav|m4a|aif{1,2}|wma|opus)\s*$")
 PREFIX = re.compile(r"^(?:(?:[-*•]\s+)|(?:\d{1,3}(?:[.\):]\s*|\s+-\s+)))+")
 
-_db_migrated = False
-
 def db():
-    global _db_migrated
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    if not _db_migrated:
-        conn.executescript(SCHEMA)
-        try:
-            conn.execute("ALTER TABLE tracks ADD COLUMN import_tag TEXT")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass
-        _db_migrated = True
+    if DATABASE_MODE == "local":
+        conn = psycopg2.connect(
+            host="/var/run/postgresql",
+            dbname="audiotool",
+            user="audiotool",
+            cursor_factory=psycopg2.extras.DictCursor,
+        )
+    else:
+        conn = psycopg2.connect(
+            DATABASE_URL,
+            password=AUDIOTOOL_PASSWORD,
+            sslmode=DATABASE_SSLMODE,
+            sslrootcert=DATABASE_SSLROOTCERT or None,
+            cursor_factory=psycopg2.extras.DictCursor,
+        )
+    conn.autocommit = False
     return conn
 
 def row_json(row):
-    return dict(row)
+    result = dict(row)
+    for k, v in result.items():
+        if hasattr(v, 'isoformat'):
+            result[k] = v.isoformat()
+    return result
 
 def append_log(message):
     ts = datetime.datetime.now().isoformat(timespec="seconds")
@@ -149,7 +129,7 @@ def parse_text(text):
     return drafts
 
 def parse_csv(content):
-    reader = csv.DictReader(io.StringIO(content.lstrip("\ufeff")))
+    reader = csv.DictReader(io.StringIO(content.lstrip("﻿")))
     aliases = {
         "artist": ("artist", "artist_name", "artist name"),
         "title": ("title", "track", "track_name", "track name", "song", "name"),
@@ -175,7 +155,12 @@ def parse_csv(content):
 def insert(draft):
     conn = db()
     artist, title, mix_version, source_url, state, error = draft
-    exists = conn.execute("SELECT EXISTS(SELECT 1 FROM tracks WHERE lower(trim(artist))=lower(trim(?)) AND lower(trim(title))=lower(trim(?)))", (artist, title)).fetchone()[0]
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT EXISTS(SELECT 1 FROM tracks WHERE lower(trim(artist))=lower(trim(%s)) AND lower(trim(title))=lower(trim(%s)))",
+        (artist, title),
+    )
+    exists = cur.fetchone()[0]
     if exists:
         error = f"{error}; duplicate of existing track" if error else "duplicate of existing track"
     dj_path = None
@@ -189,27 +174,37 @@ def insert(draft):
                     state = "dj_ready"
             except Exception:
                 pass
-    cur = conn.execute("INSERT INTO tracks (artist,title,mix_version,source_url,import_tag,state,error,dj_path) VALUES (?,?,?,?,?,?,?,?)", (artist, title, mix_version, source_url, None, state, error, dj_path))
-    row = conn.execute("SELECT * FROM tracks WHERE id=?", (cur.lastrowid,)).fetchone()
+    cur.execute(
+        "INSERT INTO tracks (artist,title,mix_version,source_url,import_tag,state,error,dj_path) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+        (artist, title, mix_version, source_url, None, state, error, dj_path),
+    )
+    new_id = cur.fetchone()[0]
+    cur.execute("SELECT * FROM tracks WHERE id=%s", (new_id,))
+    row = cur.fetchone()
     conn.commit()
     conn.close()
     return row_json(row)
 
 def track_exists(artist, title):
     conn = db()
-    exists = conn.execute("SELECT EXISTS(SELECT 1 FROM tracks WHERE lower(trim(artist))=lower(trim(?)) AND lower(trim(title))=lower(trim(?)))", (artist, title)).fetchone()[0]
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT EXISTS(SELECT 1 FROM tracks WHERE lower(trim(artist))=lower(trim(%s)) AND lower(trim(title))=lower(trim(%s)))",
+        (artist, title),
+    )
+    exists = cur.fetchone()[0]
     conn.close()
     return bool(exists)
 
-_rek_cache = {"mtime": None, "index": {}}
+rek_cache = {"mtime": None, "index": {}}
 
-def _parse_rekordbox_xml_for_discovery(xml_path):
+def parse_rekordbox_xml_for_discovery(xml_path):
     tracks_by_id = {}
-    if _HAS_LXML:
+    if has_lxml:
         try:
-            tree = _lxml.parse(xml_path)
+            tree = lxml_etree.parse(xml_path)
             root = tree.getroot()
-        except _lxml.XMLSyntaxError as error:
+        except lxml_etree.XMLSyntaxError as error:
             raise ValueError(f"Cannot read Rekordbox XML: {error}")
     else:
         try:
@@ -256,16 +251,16 @@ def _parse_rekordbox_xml_for_discovery(xml_path):
                 collect_playlists(node)
     return list(tracks_by_id.values())
 
-def _parse_rekordbox_xml(xml_path):
+def parse_rekordbox_xml(xml_path):
     index = {}
-    if _HAS_LXML:
+    if has_lxml:
         try:
-            for _, elem in _lxml.iterparse(xml_path, tag="TRACK"):
+            for _, elem in lxml_etree.iterparse(xml_path, tag="TRACK"):
                 artist = " ".join((elem.get("Artist") or "").split()).casefold()
                 title = " ".join((elem.get("Name") or "").split()).casefold()
                 index[(artist, title)] = elem.get("Location") or ""
                 elem.clear()
-        except _lxml.XMLSyntaxError as error:
+        except lxml_etree.XMLSyntaxError as error:
             raise ValueError(f"Cannot read Rekordbox XML: {error}")
     else:
         try:
@@ -284,27 +279,38 @@ def rekordbox_index(xml_path):
         mtime = Path(xml_path).stat().st_mtime
     except OSError as error:
         raise ValueError(f"Cannot read Rekordbox XML: {error}")
-    if _rek_cache["mtime"] == mtime:
-        return _rek_cache["index"]
+    if rek_cache["mtime"] == mtime:
+        return rek_cache["index"]
     conn = db()
-    stored = conn.execute("SELECT value FROM settings WHERE key='rek_index_mtime'").fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM settings WHERE key='rek_index_mtime'")
+    stored = cur.fetchone()
     stored_mtime = float(stored[0]) if stored else None
     if stored_mtime == mtime:
-        blob = conn.execute("SELECT value FROM settings WHERE key='rek_index_blob'").fetchone()
+        cur.execute("SELECT value FROM settings WHERE key='rek_index_blob'")
+        blob = cur.fetchone()
         conn.close()
         if blob:
             index = {(r[0], r[1]): r[2] for r in json.loads(blob[0])}
-            _rek_cache.update(mtime=mtime, index=index)
+            rek_cache.update(mtime=mtime, index=index)
             return index
-    conn.close()
-    index = _parse_rekordbox_xml(xml_path)
+    else:
+        conn.close()
+    index = parse_rekordbox_xml(xml_path)
     serialized = json.dumps([[k[0], k[1], v] for k, v in index.items()])
     conn = db()
-    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('rek_index_mtime',?)", (str(mtime),))
-    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('rek_index_blob',?)", (serialized,))
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        ("rek_index_mtime", str(mtime)),
+    )
+    cur.execute(
+        "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        ("rek_index_blob", serialized),
+    )
     conn.commit()
     conn.close()
-    _rek_cache.update(mtime=mtime, index=index)
+    rek_cache.update(mtime=mtime, index=index)
     return index
 
 def rekordbox_location(index, artist, title):
@@ -329,24 +335,32 @@ def import_rekordbox_xml(content):
     temporary.write_text(content, encoding="utf-8")
     temporary.replace(path)
     conn = db()
-    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", ("rekordbox_xml_path", str(path)))
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        ("rekordbox_xml_path", str(path)),
+    )
     conn.commit()
     conn.close()
-    _rek_cache.update(mtime=None, index={})
+    rek_cache.update(mtime=None, index={})
     return str(path)
 
 def tracks(state=None):
     conn = db()
+    cur = conn.cursor()
     if state:
-        rows = conn.execute("SELECT * FROM tracks WHERE state=? ORDER BY created_at DESC", (state,)).fetchall()
+        cur.execute("SELECT * FROM tracks WHERE state=%s ORDER BY created_at DESC", (state,))
     else:
-        rows = conn.execute("SELECT * FROM tracks ORDER BY created_at DESC").fetchall()
+        cur.execute("SELECT * FROM tracks ORDER BY created_at DESC")
+    rows = cur.fetchall()
     conn.close()
     return [row_json(row) for row in rows]
 
 def get_track(track_id):
     conn = db()
-    row = conn.execute("SELECT * FROM tracks WHERE id=?", (track_id,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM tracks WHERE id=%s", (track_id,))
+    row = cur.fetchone()
     conn.close()
     if not row:
         raise ValueError("track not found")
@@ -354,13 +368,17 @@ def get_track(track_id):
 
 def list_playlists():
     conn = db()
-    rows = conn.execute("SELECT p.*, COUNT(pt.track_id) AS track_count FROM playlists p LEFT JOIN playlist_tracks pt ON pt.playlist_id=p.id GROUP BY p.id ORDER BY lower(p.name)").fetchall()
+    cur = conn.cursor()
+    cur.execute("SELECT p.*, COUNT(pt.track_id) AS track_count FROM playlists p LEFT JOIN playlist_tracks pt ON pt.playlist_id=p.id GROUP BY p.id ORDER BY lower(p.name)")
+    rows = cur.fetchall()
     conn.close()
     return [row_json(row) for row in rows]
 
 def playlist_tracks(playlist_id):
     conn = db()
-    rows = conn.execute("SELECT t.* FROM tracks t JOIN playlist_tracks pt ON pt.track_id=t.id WHERE pt.playlist_id=? ORDER BY pt.position, t.id", (playlist_id,)).fetchall()
+    cur = conn.cursor()
+    cur.execute("SELECT t.* FROM tracks t JOIN playlist_tracks pt ON pt.track_id=t.id WHERE pt.playlist_id=%s ORDER BY pt.position, t.id", (playlist_id,))
+    rows = cur.fetchall()
     conn.close()
     return [row_json(row) for row in rows]
 
@@ -372,7 +390,9 @@ def playlist_id(value):
 
 def setting(key, default=""):
     conn = db()
-    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM settings WHERE key=%s", (key,))
+    row = cur.fetchone()
     conn.close()
     return row[0] if row else default
 
@@ -381,8 +401,10 @@ def rekordbox_xml_path():
 
 def update(track_id, sql, values):
     conn = db()
-    conn.execute(sql, (*values, track_id))
-    row = conn.execute("SELECT * FROM tracks WHERE id=?", (track_id,)).fetchone()
+    cur = conn.cursor()
+    cur.execute(sql, (*values, track_id))
+    cur.execute("SELECT * FROM tracks WHERE id=%s", (track_id,))
+    row = cur.fetchone()
     conn.commit()
     conn.close()
     return row_json(row) if row else None
@@ -432,9 +454,17 @@ def youtube_token():
     with urllib.request.urlopen(req, timeout=20) as response:
         token = json.loads(response.read().decode())
     conn = db()
-    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", ("youtube_access_token", token["access_token"]))
-    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", ("youtube_token_expires_at", str(time.time() + token.get("expires_in", 3600))))
-    conn.commit(); conn.close()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        ("youtube_access_token", token["access_token"]),
+    )
+    cur.execute(
+        "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        ("youtube_token_expires_at", str(time.time() + token.get("expires_in", 3600))),
+    )
+    conn.commit()
+    conn.close()
     return token["access_token"]
 
 def youtube_request(url, token, payload):
@@ -485,12 +515,19 @@ def command(name, payload):
         if len(playlist_name) > 120: raise ValueError("playlist name is too long")
         conn = db()
         try:
-            cur = conn.execute("INSERT INTO playlists(name,source) VALUES(?,?)", (playlist_name, payload.get("source") or "manual"))
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO playlists (name, source) VALUES (%s, %s) RETURNING id",
+                (playlist_name, payload.get("source") or "manual"),
+            )
+            new_id = cur.fetchone()[0]
             conn.commit()
-        except sqlite3.IntegrityError:
+        except psycopg2.errors.UniqueViolation:
+            conn.rollback()
             conn.close()
             raise ValueError("a playlist with that name already exists")
-        row = conn.execute("SELECT p.*, 0 AS track_count FROM playlists p WHERE p.id=?", (cur.lastrowid,)).fetchone()
+        cur.execute("SELECT p.*, 0 AS track_count FROM playlists p WHERE p.id=%s", (new_id,))
+        row = cur.fetchone()
         conn.close()
         return row_json(row)
     if name == "rename_playlist":
@@ -498,46 +535,77 @@ def command(name, payload):
         if not playlist_name: raise ValueError("playlist name is required")
         conn = db()
         try:
-            conn.execute("UPDATE playlists SET name=?,updated_at=datetime('now') WHERE id=?", (playlist_name, playlist_id(payload.get("playlistId"))))
+            cur = conn.cursor()
+            cur.execute("UPDATE playlists SET name=%s WHERE id=%s", (playlist_name, playlist_id(payload.get("playlistId"))))
             conn.commit()
-        except sqlite3.IntegrityError:
+        except psycopg2.errors.UniqueViolation:
+            conn.rollback()
             conn.close()
             raise ValueError("a playlist with that name already exists")
         conn.close()
         return None
     if name == "delete_playlist":
-        conn = db(); conn.execute("DELETE FROM playlists WHERE id=?", (playlist_id(payload.get("playlistId")),)); conn.commit(); conn.close(); return None
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM playlists WHERE id=%s", (playlist_id(payload.get("playlistId")),))
+        conn.commit()
+        conn.close()
+        return None
     if name == "add_tracks_to_playlist":
         pid = playlist_id(payload.get("playlistId"))
         ids = [int(value) for value in payload.get("trackIds", [])]
         conn = db()
-        current = conn.execute("SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id=?", (pid,)).fetchone()[0] + 1
+        cur = conn.cursor()
+        cur.execute("SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id=%s", (pid,))
+        current = cur.fetchone()[0] + 1
         for offset, track_id in enumerate(dict.fromkeys(ids)):
-            conn.execute("INSERT OR IGNORE INTO playlist_tracks(playlist_id,track_id,position) VALUES(?,?,?)", (pid, track_id, current + offset))
-        conn.execute("UPDATE playlists SET updated_at=datetime('now') WHERE id=?", (pid,)); conn.commit(); conn.close(); return None
+            cur.execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                (pid, track_id, current + offset),
+            )
+        cur.execute("UPDATE playlists SET updated_at=NOW() WHERE id=%s", (pid,))
+        conn.commit()
+        conn.close()
+        return None
     if name == "remove_tracks_from_playlist":
-        pid = playlist_id(payload.get("playlistId")); ids = [int(value) for value in payload.get("trackIds", [])]
-        conn = db(); conn.executemany("DELETE FROM playlist_tracks WHERE playlist_id=? AND track_id=?", [(pid, track_id) for track_id in ids]); conn.execute("UPDATE playlists SET updated_at=datetime('now') WHERE id=?", (pid,)); conn.commit(); conn.close(); return None
+        pid = playlist_id(payload.get("playlistId"))
+        ids = [int(value) for value in payload.get("trackIds", [])]
+        conn = db()
+        cur = conn.cursor()
+        for track_id in ids:
+            cur.execute("DELETE FROM playlist_tracks WHERE playlist_id=%s AND track_id=%s", (pid, track_id))
+        cur.execute("UPDATE playlists SET updated_at=NOW() WHERE id=%s", (pid,))
+        conn.commit()
+        conn.close()
+        return None
     if name == "get_settings":
         conn = db()
-        values = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM settings")}
+        cur = conn.cursor()
+        cur.execute("SELECT key,value FROM settings")
+        values = {row["key"]: row["value"] for row in cur.fetchall()}
         conn.close()
         return {"sockseekPath": "", "sockseekDaemonUrl": values.get("sockseek_daemon_url", SOCKSEEK_URL), "prepInboxDir": str(INBOX_DIR), "musicLibraryDir": str(LIBRARY_DIR), "picardPath": "", "ffmpegPath": "", "rekordboxImportDir": str(ARCHIVE_DIR), "rekordboxXmlPath": values.get("rekordbox_xml_path", REKORDBOX_XML_PATH), "pythonPath": PYTHON, "ytCookiesFile": values.get("yt_cookies_file", ""), "setupComplete": values.get("setup_complete") == "true", "hasSockseekCredentials": bool(values.get("sockseek_username") and values.get("sockseek_password")), "hasSpotifyCredentials": bool(values.get("spotify_client_id") and values.get("spotify_client_secret")), "hasCosineCredentials": bool(values.get("cosine_api_key")), "hasTelegramCredentials": bool(values.get("telegram_api_id") and values.get("telegram_api_hash")), "hasTelegramSession": Path(values.get("telegram_session_path", str(DATA_DIR / "telegram.session"))).exists(), "pathMapFrom": values.get("path_map_from", ""), "pathMapTo": values.get("path_map_to", ""), "beetsUrl": values.get("beets_url", "")}
     if name == "save_settings":
         payload = payload.get("payload", payload)
         conn = db()
+        cur = conn.cursor()
         mapping = {"sockseekDaemonUrl": "sockseek_daemon_url", "rekordboxXmlPath": "rekordbox_xml_path", "setupComplete": "setup_complete", "sockseekUsername": "sockseek_username", "sockseekPassword": "sockseek_password", "spotifyClientId": "spotify_client_id", "spotifyClientSecret": "spotify_client_secret", "cosineApiKey": "cosine_api_key", "telegramApiId": "telegram_api_id", "telegramApiHash": "telegram_api_hash", "telegramSessionPath": "telegram_session_path", "pathMapFrom": "path_map_from", "pathMapTo": "path_map_to", "ytCookiesFile": "yt_cookies_file", "beetsUrl": "beets_url"}
         for key, value in payload.items():
             if key in mapping and value is not None:
-                conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (mapping[key], str(value).lower() if isinstance(value, bool) else value))
-        conn.commit(); conn.close(); return None
+                cur.execute(
+                    "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                    (mapping[key], str(value).lower() if isinstance(value, bool) else value),
+                )
+        conn.commit()
+        conn.close()
+        return None
     if name == "import_rekordbox_xml":
         return import_rekordbox_xml(payload.get("content", ""))
     if name == "check_rekordbox":
         xml_path = payload.get("xmlPath") or rekordbox_xml_path()
         if not xml_path:
             raise ValueError("Rekordbox XML path is not configured")
-        xml_tracks = _parse_rekordbox_xml_for_discovery(xml_path)
+        xml_tracks = parse_rekordbox_xml_for_discovery(xml_path)
         pipeline = tracks()
         pipeline_keys = {
             (" ".join((t["artist"] or "").split()).casefold(), " ".join((t["title"] or "").split()).casefold())
@@ -560,19 +628,38 @@ def command(name, payload):
             if track_exists(artist, title):
                 continue
             conn = db()
-            existing = conn.execute("SELECT * FROM tracks WHERE lower(trim(artist))=lower(trim(?)) AND lower(trim(title))=lower(trim(?)) LIMIT 1", (artist, title)).fetchone()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM tracks WHERE lower(trim(artist))=lower(trim(%s)) AND lower(trim(title))=lower(trim(%s)) LIMIT 1",
+                (artist, title),
+            )
+            existing = cur.fetchone()
             if existing:
                 row = existing
             else:
-                cur = conn.execute("INSERT INTO tracks (artist,title,mix_version,source_url,import_tag,state,dj_path) VALUES (?,?,?,'rekordbox://library','Rekordbox','dj_ready',?)", (artist, title, mix_version, location))
-                row = conn.execute("SELECT * FROM tracks WHERE id=?", (cur.lastrowid,)).fetchone()
+                cur.execute(
+                    "INSERT INTO tracks (artist,title,mix_version,source_url,import_tag,state,dj_path) VALUES (%s,%s,%s,'rekordbox://library','Rekordbox','dj_ready',%s) RETURNING id",
+                    (artist, title, mix_version, location),
+                )
+                new_id = cur.fetchone()[0]
+                cur.execute("SELECT * FROM tracks WHERE id=%s", (new_id,))
+                row = cur.fetchone()
             playlist_names = [str(value).strip() for value in t.get("playlists", []) if str(value).strip()]
             for playlist_name in playlist_names:
-                conn.execute("INSERT OR IGNORE INTO playlists(name,source,source_ref) VALUES(?, 'rekordbox', ?)", (playlist_name, playlist_name))
-                pid = conn.execute("SELECT id FROM playlists WHERE name=?", (playlist_name,)).fetchone()[0]
-                position = conn.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id=?", (pid,)).fetchone()[0]
-                conn.execute("INSERT OR IGNORE INTO playlist_tracks(playlist_id,track_id,position) VALUES(?,?,?)", (pid, row["id"], position))
-            conn.commit(); conn.close()
+                cur.execute(
+                    "INSERT INTO playlists (name, source, source_ref) VALUES (%s, 'rekordbox', %s) ON CONFLICT (name) DO NOTHING",
+                    (playlist_name, playlist_name),
+                )
+                cur.execute("SELECT id FROM playlists WHERE name=%s", (playlist_name,))
+                pid = cur.fetchone()[0]
+                cur.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id=%s", (pid,))
+                position = cur.fetchone()[0]
+                cur.execute(
+                    "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                    (pid, row["id"], position),
+                )
+            conn.commit()
+            conn.close()
             inserted.append(row_json(row))
         append_log(f"[import] Rekordbox playlist: {len(inserted)} track(s) added as dj_ready")
         return inserted
@@ -583,7 +670,7 @@ def command(name, payload):
         if xml_path:
             dj_path = rekordbox_location(rekordbox_index(xml_path), track["artist"], track["title"]) or dj_path
         append_log(f"[rekordbox] marked imported: {track['artist']} - {track['title']}")
-        return update(track["id"], "UPDATE tracks SET dj_path=?, state='dj_ready', error=NULL WHERE id=?", (dj_path,))
+        return update(track["id"], "UPDATE tracks SET dj_path=%s, state='dj_ready', error=NULL WHERE id=%s", (dj_path,))
     if name in ("import_text", "import_csv"):
         content = payload.get("text", "") if name == "import_text" else payload.get("content", "")
         inserted = [insert(draft) for draft in (parse_text(content) if name == "import_text" else parse_csv(content))]
@@ -630,10 +717,12 @@ def command(name, payload):
             rows.append(insert((artist, title, draft.get("mix_version"), message_url, draft.get("state", "needs_review"), draft.get("notes"))))
         import_tag = payload.get("importTag") or "Telegram"
         conn = db()
+        cur = conn.cursor()
         for row in rows:
-            conn.execute("UPDATE tracks SET import_tag=? WHERE id=?", (import_tag, row["id"]))
+            cur.execute("UPDATE tracks SET import_tag=%s WHERE id=%s", (import_tag, row["id"]))
             row["import_tag"] = import_tag
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return rows
     if name == "import_telegram":
         messages = telegram_request({"action": "fetch", "channel_id": payload.get("channelId", ""), "limit": max(1, min(int(payload.get("limit", 100)), 1000))}).get("messages", [])
@@ -665,29 +754,40 @@ def command(name, payload):
     if name == "list_activity":
         limit = max(1, min(int(payload.get("limit", 30)), 100))
         conn = db()
-        rows = conn.execute("SELECT a.id,a.track_id,coalesce(t.artist,''),coalesce(t.title,''),a.from_state,a.to_state,a.created_at FROM activities a LEFT JOIN tracks t ON t.id=a.track_id ORDER BY a.id DESC LIMIT ?", (limit,)).fetchall()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT a.id,a.track_id,coalesce(t.artist,''),coalesce(t.title,''),a.from_state,a.to_state,a.created_at FROM activities a LEFT JOIN tracks t ON t.id=a.track_id ORDER BY a.id DESC LIMIT %s",
+            (limit,),
+        )
+        rows = cur.fetchall()
         conn.close()
-        return [{"id": row[0], "trackId": row[1], "artist": row[2], "title": row[3], "fromState": row[4], "toState": row[5], "createdAt": row[6]} for row in rows]
+        return [{"id": row[0], "trackId": row[1], "artist": row[2], "title": row[3], "fromState": row[4], "toState": row[5], "createdAt": row[6].isoformat() if row[6] else None} for row in rows]
     if name == "update_track_state":
         track = get_track(int(payload["id"]))
-        result = update(track["id"], "UPDATE tracks SET state=? WHERE id=?", (payload["state"],))
+        result = update(track["id"], "UPDATE tracks SET state=%s WHERE id=%s", (payload["state"],))
         append_log(f"[state] {track['artist']} - {track['title']}: {track['state']} → {payload['state']}")
         return result
     if name == "delete_track":
         track = get_track(int(payload["id"]))
-        conn = db(); conn.execute("DELETE FROM tracks WHERE id=?", (payload["id"],)); conn.commit(); conn.close()
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM tracks WHERE id=%s", (payload["id"],))
+        conn.commit()
+        conn.close()
         append_log(f"[delete] removed: {track['artist']} - {track['title']} (was {track['state']})")
         return None
     if name == "clear_tracks":
         conn = db()
-        conn.execute("DELETE FROM activities")
-        conn.execute("DELETE FROM tracks")
-        conn.commit(); conn.close()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM activities")
+        cur.execute("DELETE FROM tracks")
+        conn.commit()
+        conn.close()
         append_log("[library] reset complete: tracks and activity history cleared")
         return None
     if name == "update_track":
         before = get_track(int(payload["id"]))
-        result = update(before["id"], "UPDATE tracks SET artist=?,title=?,mix_version=?,state=CASE WHEN state='needs_review' AND ?<>'' AND ?<>'' THEN 'requested' ELSE state END WHERE id=?", (payload["artist"], payload["title"], payload.get("mixVersion"), payload["artist"], payload["title"]))
+        result = update(before["id"], "UPDATE tracks SET artist=%s,title=%s,mix_version=%s,state=CASE WHEN state='needs_review' AND %s<>'' AND %s<>'' THEN 'requested' ELSE state END WHERE id=%s", (payload["artist"], payload["title"], payload.get("mixVersion"), payload["artist"], payload["title"]))
         append_log(f"[edit] track {before['id']}: '{before['artist']} - {before['title']}' → '{payload['artist']} - {payload['title']}'")
         return result
     if name in ("search_track", "search_track_loose"):
@@ -709,7 +809,7 @@ def command(name, payload):
         except Exception as error:
             append_log(f"[search] failed to start: {label}: {error}")
             raise
-        update(track["id"], "UPDATE tracks SET search_job_id=?,state='matched',error=NULL WHERE id=?", (job,))
+        update(track["id"], "UPDATE tracks SET search_job_id=%s,state='matched',error=NULL WHERE id=%s", (job,))
         results = []
         for _ in range(15):
             time.sleep(2)
@@ -725,15 +825,15 @@ def command(name, payload):
             ranked.append({"candidate": candidate, "score": score})
         ranked.sort(key=lambda item: item["score"], reverse=True)
         if ranked:
-            update(track["id"], "UPDATE tracks SET candidate_json=? WHERE id=?", (json.dumps(ranked),))
+            update(track["id"], "UPDATE tracks SET candidate_json=%s WHERE id=%s", (json.dumps(ranked),))
             append_log(f"[search] completed: {label}: {len(ranked)} candidates")
         else:
-            update(track["id"], "UPDATE tracks SET state='requested',error=? WHERE id=?", ("No results found — try editing the artist/title or search again later",))
+            update(track["id"], "UPDATE tracks SET state='requested',error=%s WHERE id=%s", ("No results found — try editing the artist/title or search again later",))
             append_log(f"[search] completed: {label}: no results")
         return ranked
     if name == "approve_candidate":
         track = get_track(int(payload["trackId"]))
-        result = update(track["id"], "UPDATE tracks SET selected_username=?,selected_filename=?,state='approved' WHERE id=?", (payload["username"], payload["filename"]))
+        result = update(track["id"], "UPDATE tracks SET selected_username=%s,selected_filename=%s,state='approved' WHERE id=%s", (payload["username"], payload["filename"]))
         fname = Path(payload["filename"]).name
         append_log(f"[review] approved: {track['artist']} - {track['title']} → {fname} (from {payload['username']})")
         return result
@@ -745,11 +845,11 @@ def command(name, payload):
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 append_log(f"[download] search job expired (sockseek restarted?): {track['artist']} - {track['title']}")
-                return update(track["id"], "UPDATE tracks SET state='requested',search_job_id=NULL,selected_username=NULL,selected_filename=NULL,error=? WHERE id=?", ("Search job expired — sockseek may have restarted. Re-search to continue.",))
+                return update(track["id"], "UPDATE tracks SET state='requested',search_job_id=NULL,selected_username=NULL,selected_filename=NULL,error=%s WHERE id=%s", ("Search job expired — sockseek may have restarted. Re-search to continue.",))
             raise
         job = result[0].get("jobId", "") if isinstance(result, list) and result else ""
         append_log(f"[download] started: {track['artist']} - {track['title']}")
-        return update(track["id"], "UPDATE tracks SET download_job_id=?,state='downloading' WHERE id=?", (job,))
+        return update(track["id"], "UPDATE tracks SET download_job_id=%s,state='downloading' WHERE id=%s", (job,))
     if name == "cancel_download":
         track = get_track(int(payload["trackId"]))
         job_id = track.get("download_job_id")
@@ -757,7 +857,7 @@ def command(name, payload):
             raise ValueError("track has no download job")
         request("POST", f"/api/jobs/{job_id}/cancel")
         append_log(f"[download] cancelled: {track['artist']} - {track['title']}")
-        return update(track["id"], "UPDATE tracks SET state='failed',error=? WHERE id=?", ("Download cancelled by user",))
+        return update(track["id"], "UPDATE tracks SET state='failed',error=%s WHERE id=%s", ("Download cancelled by user",))
     if name == "check_download_progress":
         track = get_track(int(payload["trackId"]))
         name_part = Path(track.get("selected_filename") or "").name
@@ -808,7 +908,7 @@ def command(name, payload):
             found = next((path for path in INBOX_DIR.iterdir() if path.name.lower() == expected.lower()), None) if INBOX_DIR.exists() else None
             if found:
                 append_log(f"[download] completed: {track['artist']} - {track['title']}")
-                return update(track["id"], "UPDATE tracks SET downloaded_path=?,state='downloaded' WHERE id=?", (str(found),))["downloaded_path"]
+                return update(track["id"], "UPDATE tracks SET downloaded_path=%s,state='downloaded' WHERE id=%s", (str(found),))["downloaded_path"]
             time.sleep(5)
         append_log(f"[download] timed out: {track['artist']} - {track['title']}")
         raise ValueError("download timed out after 10 minutes")
@@ -820,7 +920,7 @@ def command(name, payload):
         if result.returncode: raise ValueError(result.stderr.strip() or "Quality check failed")
         quality = json.loads(result.stdout)
         state = "quality_failed" if quality.get("is_real_flac") is False else "ready_for_conversion"
-        update(track["id"], "UPDATE tracks SET quality_result=?,quality_notes=?,state=? WHERE id=?", ("fake_flac" if state == "quality_failed" else "ok", quality.get("notes", ""), state))
+        update(track["id"], "UPDATE tracks SET quality_result=%s,quality_notes=%s,state=%s WHERE id=%s", ("fake_flac" if state == "quality_failed" else "ok", quality.get("notes", ""), state))
         detail = quality.get("notes") or ("fake FLAC" if state == "quality_failed" else "passed")
         append_log(f"[quality] {track['artist']} - {track['title']}: {detail}")
         return {"isRealFlac": quality.get("is_real_flac"), "sampleRate": None, "bitDepth": None, "channels": None, "durationSecs": None, "spectralCutoffHz": None, "notes": quality.get("notes", "")}
@@ -831,7 +931,7 @@ def command(name, payload):
             raise ValueError("No downloaded file — run poll_download first")
         mp3_path = convert_to_mp3(source, track["artist"], track["title"])
         append_log(f"[convert] completed: {track['artist']} - {track['title']}")
-        return update(track["id"], "UPDATE tracks SET downloaded_path=?,state='converted',quality_result=NULL,quality_notes=NULL,error=NULL WHERE id=?", (mp3_path,))
+        return update(track["id"], "UPDATE tracks SET downloaded_path=%s,state='converted',quality_result=NULL,quality_notes=NULL,error=NULL WHERE id=%s", (mp3_path,))
     if name in ("get_similar_tracks", "get_similar_tracks_for_query"):
         if name == "get_similar_tracks":
             track = get_track(int(payload["trackId"]))
@@ -865,7 +965,7 @@ def command(name, payload):
         output_line = next((l for l in result.get("output", "").splitlines() if "/music/archive" in l), None)
         tagged_path = output_line.strip() if output_line else str(Path(source).with_suffix(".mp3"))
         append_log(f"[beets] done: {track['artist']} - {track['title']} → {Path(tagged_path).name}")
-        return update(track["id"], "UPDATE tracks SET archive_path=?,state='ready_for_rekordbox',error=NULL WHERE id=?", (tagged_path,))
+        return update(track["id"], "UPDATE tracks SET archive_path=%s,state='ready_for_rekordbox',error=NULL WHERE id=%s", (tagged_path,))
     if name in ("open_folder", "launch_sockseek"):
         raise ValueError("This action is only available in the desktop Tauri app")
     if name == "check_daemon":
@@ -879,7 +979,9 @@ def command(name, payload):
             daemon_ok = False
         checks = [{"name": "Sockseek daemon", "ok": daemon_ok, "detail": SOCKSEEK_URL}]
         conn = db()
-        values = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM settings")}
+        cur = conn.cursor()
+        cur.execute("SELECT key,value FROM settings")
+        values = {row["key"]: row["value"] for row in cur.fetchall()}
         conn.close()
         credentials_ok = bool(values.get("sockseek_username") and values.get("sockseek_password"))
         checks.append({"name": "Sockseek credentials", "ok": credentials_ok, "detail": "credentials saved" if credentials_ok else "username and password required"})
@@ -893,34 +995,47 @@ def command(name, payload):
     if name == "backup_database":
         backup_dir = DATA_DIR / "backups"
         backup_dir.mkdir(parents=True, exist_ok=True)
-        destination = backup_dir / f"dj_prep-{int(time.time())}.sqlite"
-        source = db()
-        target = sqlite3.connect(destination)
-        try:
-            source.backup(target)
-        finally:
-            target.close()
-            source.close()
+        ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        destination = backup_dir / f"dj_prep-{ts}.dump"
+        if DATABASE_MODE == "local":
+            dsn_args = ["-h", "/var/run/postgresql", "-U", "audiotool", "audiotool"]
+        else:
+            dsn_args = ["-d", DATABASE_URL]
+        result = subprocess.run(
+            ["pg_dump", "--format=custom", "--compress=zstd", "-f", str(destination)] + dsn_args,
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "PGPASSWORD": AUDIOTOOL_PASSWORD} if AUDIOTOOL_PASSWORD else os.environ,
+        )
+        if result.returncode:
+            raise ValueError(result.stderr.strip() or "pg_dump failed")
         return str(destination)
     if name == "list_backups":
         backup_dir = DATA_DIR / "backups"
         if not backup_dir.exists():
             return []
-        return sorted((path.name for path in backup_dir.iterdir() if path.is_file() and path.name.startswith("dj_prep-") and path.suffix == ".sqlite"), reverse=True)
+        return sorted((path.name for path in backup_dir.iterdir() if path.is_file() and path.name.startswith("dj_prep-") and path.suffix == ".dump"), reverse=True)
     if name == "restore_database":
         backup_name = payload.get("backupName", "")
-        if Path(backup_name).name != backup_name or not backup_name.startswith("dj_prep-") or not backup_name.endswith(".sqlite"):
+        if Path(backup_name).name != backup_name or not backup_name.startswith("dj_prep-") or not backup_name.endswith(".dump"):
             raise ValueError("invalid backup name")
         source_path = DATA_DIR / "backups" / backup_name
         if not source_path.is_file():
             raise ValueError("backup not found")
-        source = sqlite3.connect(source_path)
-        destination = sqlite3.connect(DB_PATH)
-        try:
-            source.backup(destination)
-        finally:
-            destination.close()
-            source.close()
+        if DATABASE_MODE == "local":
+            dsn_args = ["-h", "/var/run/postgresql", "-U", "audiotool", "-d", "audiotool"]
+        else:
+            dsn_args = ["-d", DATABASE_URL]
+        result = subprocess.run(
+            ["pg_restore", "--clean", "--if-exists", "--no-owner"] + dsn_args + [str(source_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "PGPASSWORD": AUDIOTOOL_PASSWORD} if AUDIOTOOL_PASSWORD else os.environ,
+        )
+        if result.returncode:
+            raise ValueError(result.stderr.strip() or "pg_restore failed")
         return None
     raise ValueError(f"Unsupported web command: {name}")
 
@@ -935,9 +1050,15 @@ def youtube_callback(query):
     try:
         with urllib.request.urlopen(req, timeout=20) as response: token = json.loads(response.read().decode())
         conn = db()
+        cur = conn.cursor()
         for key, value in (("youtube_access_token", token.get("access_token", "")), ("youtube_refresh_token", token.get("refresh_token", setting("youtube_refresh_token"))), ("youtube_token_expires_at", str(time.time() + token.get("expires_in", 3600)))):
-            if value: conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (key, value))
-        conn.commit(); conn.close()
+            if value:
+                cur.execute(
+                    "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                    (key, value),
+                )
+        conn.commit()
+        conn.close()
         return "youtube=connected"
     except Exception: return "youtube=error&message=Authorization+failed"
 
@@ -951,9 +1072,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/health":
             try:
                 conn = db()
-                conn.execute("SELECT 1")
-                conn.close()
-                database_ok = True
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT 1")
+                    database_ok = True
+                finally:
+                    conn.close()
             except Exception:
                 database_ok = False
             try:
@@ -992,10 +1116,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": str(error)})
 
 if __name__ == "__main__":
-    conn = db()
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.close()
-    xml_path = rekordbox_xml_path()
+    try:
+        xml_path = rekordbox_xml_path()
+    except Exception:
+        xml_path = REKORDBOX_XML_PATH
     if xml_path:
         threading.Thread(target=rekordbox_index, args=(xml_path,), daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()
