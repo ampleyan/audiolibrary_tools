@@ -237,6 +237,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .inbox-source-link { display: inline !important; margin-left: 6px; color: var(--color-primary) !important; }
 .inbox-track-source, .inbox-track-tag { overflow: hidden; color: var(--color-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .inbox-track-source a { color: var(--color-primary); }
+.inbox-source-icon { display: inline-grid; width: 26px; height: 26px; place-items: center; border: 1px solid var(--color-border-subtle); border-radius: 6px; color: var(--color-muted); background: var(--color-surface-raised); }
+.source-youtube { color: #ff6b8a; }
+.source-spotify { color: #4ade80; }
+.source-apple-music { color: #c4b5fd; }
+.source-telegram { color: #60a5fa; }
+.source-rekordbox { color: var(--color-primary); }
+.source-text { color: #facc15; }
 .inbox-track-actions { display: flex; justify-content: flex-end; gap: 4px; }
 .inbox-track-actions button { border: 1px solid var(--color-border-muted); border-radius: 5px; background: transparent; color: var(--color-muted); padding: 4px 7px; cursor: pointer; font: inherit; font-size: 11px; }
 .inbox-track-actions button:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }

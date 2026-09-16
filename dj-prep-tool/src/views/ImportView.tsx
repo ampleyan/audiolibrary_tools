@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Apple, Disc3, FileText, Link2, Music2, Send, Video } from "lucide-react";
 import ImportPreview, { buildImportPreview } from "../components/ImportPreview";
 import TrackStatusBadge from "../components/TrackStatusBadge";
 import { BlockerIndicator } from "../components/TrackRow";
@@ -9,13 +10,20 @@ import { getWorkflowMeta } from "../lib/workflow";
 type ImportMode = "text" | "csv" | "playlist" | "telegram" | "rekordbox";
 
 function sourceLabel(sourceUrl: string | null) {
-  if (!sourceUrl) return "—";
+  if (!sourceUrl) return "Text";
   const value = sourceUrl.toLowerCase();
+  if (value.startsWith("rekordbox:")) return "Rekordbox";
   if (value.includes("t.me/")) return "Telegram";
   if (value.includes("youtube.com") || value.includes("youtu.be")) return "YouTube";
   if (value.includes("spotify.com")) return "Spotify";
   if (value.includes("apple.com")) return "Apple Music";
   return "Link";
+}
+
+function SourceIcon({ sourceUrl }: { sourceUrl: string | null }) {
+  const label = sourceLabel(sourceUrl);
+  const Icon = label === "YouTube" ? Video : label === "Telegram" ? Send : label === "Rekordbox" ? Disc3 : label === "Text" ? FileText : label === "Apple Music" ? Apple : label === "Link" ? Link2 : Music2;
+  return <span className={`inbox-source-icon source-${label.toLowerCase().replace(/\s/g, "-")}`} title={label} aria-label={label}><Icon aria-hidden="true" size={15} strokeWidth={1.8} /></span>;
 }
 
 function TrackList({
@@ -107,7 +115,7 @@ function TrackList({
         </div>
       )}
       <div className="workbench-table-toolbar" aria-label="Filter and sort inbox tracks"><label className="workbench-table-search"><span>Filter tracks</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Artist, title, source, tag…" /></label><label className="workbench-table-select"><span>Status</span><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TrackState | "all")}><option value="all">All statuses</option>{Array.from(new Set(tracks.map((track) => track.state))).sort().map((state) => <option key={state} value={state}>{getWorkflowMeta({ state } as TrackRow).statusLabel}</option>)}</select></label><label className="workbench-table-select"><span>Sort by</span><select value={sortKey} onChange={(event) => setSortKey(event.target.value as typeof sortKey)}><option value="id">Date imported</option><option value="artist">Artist</option><option value="title">Title</option><option value="source">Source</option><option value="tag">Tag</option><option value="status">Status</option></select></label><button className="workbench-sort-direction" type="button" onClick={() => setDescending((value) => !value)}>{descending ? "↓ Descending" : "↑ Ascending"}</button><span className="workbench-table-result-count">{visibleTracks.length} of {tracks.length} shown</span></div>
-      <div className="work-queue-list inbox-track-table"><div className="work-queue-columns inbox-track-columns" aria-hidden="true"><span>#</span><span>Track</span><span>Mix</span><span>Source</span><span>Tag</span><span>Status</span><span>Blocker</span><span /></div>{visibleTracks.map((t) => <div key={t.id} className="workbench-track-row inbox-track-row"><span className="inbox-track-id">{t.id}</span><span className="inbox-track-name" title={t.title}><strong>{t.artist || "Unknown artist"}</strong><span>{t.title}{t.source_url && <a href={t.source_url} target="_blank" rel="noreferrer" title={t.source_url} className="inbox-source-link">↗</a>}</span></span><span className="workbench-track-mix">{t.mix_version || "—"}</span><span className="inbox-track-source">{t.source_url ? <a href={t.source_url} target="_blank" rel="noreferrer">{sourceLabel(t.source_url)}</a> : "—"}</span><span className="inbox-track-tag">{t.import_tag || "—"}</span><TrackStatusBadge metadata={getWorkflowMeta(t)} /><BlockerIndicator track={t} /><span className="inbox-track-actions">{t.error?.toLowerCase().includes("duplicate") && <button type="button" onClick={() => handleDelete(t.id)} disabled={deletingId === t.id} title="Remove imported duplicate">Remove</button>}<button type="button" onClick={() => handleDelete(t.id)} disabled={deletingId === t.id} title="Delete track">✕</button></span></div>)}</div>
+      <div className="work-queue-list inbox-track-table"><div className="work-queue-columns inbox-track-columns" aria-hidden="true"><span>#</span><span>Track</span><span>Mix</span><span>Source</span><span>Tag</span><span>Status</span><span>Blocker</span><span /></div>{visibleTracks.map((t) => <div key={t.id} className="workbench-track-row inbox-track-row"><span className="inbox-track-id">{t.id}</span><span className="inbox-track-name" title={t.title}><strong>{t.artist || "Unknown artist"}</strong><span>{t.title}{t.source_url && !t.source_url.startsWith("rekordbox:") && <a href={t.source_url} target="_blank" rel="noreferrer" title={t.source_url} className="inbox-source-link">↗</a>}</span></span><span className="workbench-track-mix">{t.mix_version || "—"}</span><span className="inbox-track-source"><SourceIcon sourceUrl={t.source_url} /></span><span className="inbox-track-tag">{t.import_tag || "—"}</span><TrackStatusBadge metadata={getWorkflowMeta(t)} /><BlockerIndicator track={t} /><span className="inbox-track-actions">{t.error?.toLowerCase().includes("duplicate") && <button type="button" onClick={() => handleDelete(t.id)} disabled={deletingId === t.id} title="Remove imported duplicate">Remove</button>}<button type="button" onClick={() => handleDelete(t.id)} disabled={deletingId === t.id} title="Delete track">✕</button></span></div>)}</div>
     </>
   );
 }

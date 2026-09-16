@@ -491,7 +491,7 @@ def command(name, payload):
                 continue
             conn = db()
             cur = conn.execute(
-                "INSERT INTO tracks (artist,title,mix_version,state,dj_path) VALUES (?,?,?,'dj_ready',?)",
+                "INSERT INTO tracks (artist,title,mix_version,source_url,import_tag,state,dj_path) VALUES (?,?,?,'rekordbox://library','Rekordbox','dj_ready',?)",
                 (artist, title, mix_version, location),
             )
             row = conn.execute("SELECT * FROM tracks WHERE id=?", (cur.lastrowid,)).fetchone()
