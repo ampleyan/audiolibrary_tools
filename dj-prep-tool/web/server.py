@@ -38,6 +38,8 @@ SOCKSEEK_URL = os.environ.get("SOCKSEEK_URL", "http://sockseek:5030").rstrip("/"
 BEETS_URL = os.environ.get("BEETS_URL", "http://beets:8337").rstrip("/")
 DATABASE_MODE = os.environ.get("DATABASE_MODE", "local")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://audiotool@192.168.129.39:5432/audiotool")
+DATABASE_SSLMODE = os.environ.get("DATABASE_SSLMODE", "verify-full")
+DATABASE_SSLROOTCERT = os.environ.get("DATABASE_SSLROOTCERT", "")
 AUDIOTOOL_PASSWORD = os.environ.get("AUDIOTOOL_PASSWORD", "")
 SOCKSEEK_LOG_FILE = os.environ.get("SOCKSEEK_LOG_FILE", "")
 PYTHON = os.environ.get("PYTHON", "python3")
@@ -66,7 +68,8 @@ def db():
         conn = psycopg2.connect(
             DATABASE_URL,
             password=AUDIOTOOL_PASSWORD,
-            sslmode="verify-full",
+            sslmode=DATABASE_SSLMODE,
+            sslrootcert=DATABASE_SSLROOTCERT or None,
             cursor_factory=psycopg2.extras.DictCursor,
         )
     conn.autocommit = False
@@ -1113,7 +1116,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": str(error)})
 
 if __name__ == "__main__":
-    xml_path = rekordbox_xml_path()
+    try:
+        xml_path = rekordbox_xml_path()
+    except Exception:
+        xml_path = REKORDBOX_XML_PATH
     if xml_path:
         threading.Thread(target=rekordbox_index, args=(xml_path,), daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()

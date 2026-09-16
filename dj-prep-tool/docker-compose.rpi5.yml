@@ -31,5 +31,5 @@ services:
       - /mnt/media/MUSIC/FROMTOOL:/music/inbox
       - /mnt/media/MUSIC/RECENT:/music/archive
       - ./rekordbox:/rekordbox:ro
-      - /var/run/postgresql:/var/run/postgresql
+      - /home/ampleyan/projects/rpi-postgresql/infrastructure/postgres/run:/var/run/postgresql
     restart: unless-stopped
