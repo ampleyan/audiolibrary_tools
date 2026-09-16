@@ -103,6 +103,7 @@ describe("TrackInspector", () => {
     expect(html).toContain("Rekordbox path");
     expect(html).toContain("/Volumes/DJ/Night Drive - Signal.flac");
     expect(html).toContain("Recent activity");
+    expect(html).toContain("Playlists");
   });
 
   it("renders a useful empty state when no track is selected", () => {

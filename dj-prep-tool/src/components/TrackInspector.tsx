@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { api } from "../lib/api";
-import type { RankedCandidate, TrackRow as Track } from "../lib/types";
+import type { Playlist, RankedCandidate, TrackRow as Track } from "../lib/types";
 import { getWorkflowMeta } from "../lib/workflow";
 import type { TrackMenuAction } from "./TrackRow";
 import TrackStatusBadge from "./TrackStatusBadge";
@@ -99,6 +99,9 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
   const [mixVersion, setMixVersion] = useState("");
   const [downloadProgress, setDownloadProgress] = useState<{ bytesOnDisk: number | null; bytesTotal: number | null; speed: number | null } | null>(null);
   const [moveBackState, setMoveBackState] = useState<Track["state"]>("requested");
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState("");
+  const [playlistMessage, setPlaylistMessage] = useState<string | null>(null);
   const progressSample = useRef<{ bytes: number; at: number } | null>(null);
 
   useEffect(() => {
@@ -116,6 +119,12 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
     }).catch(() => {
       if (active) setActivityState("error");
     });
+    return () => { active = false; };
+  }, [track?.id]);
+
+  useEffect(() => {
+    let active = true;
+    api.listPlaylists().then((items) => { if (active) setPlaylists(items); }).catch(() => {});
     return () => { active = false; };
   }, [track?.id]);
 
@@ -180,6 +189,27 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
     ? Math.max(0, Math.round((downloadProgress.bytesTotal - downloadProgress.bytesOnDisk) / downloadProgress.speed))
     : null;
 
+  const addToPlaylist = async () => {
+    if (!track || !selectedPlaylistId) return;
+    try {
+      await api.addTracksToPlaylist(Number(selectedPlaylistId), [track.id]);
+      const playlist = playlists.find((item) => item.id === Number(selectedPlaylistId));
+      setPlaylistMessage(`Added to ${playlist?.name ?? "playlist"}`);
+      setPlaylists(await api.listPlaylists());
+    } catch (reason) { setPlaylistMessage(String(reason)); }
+  };
+
+  const createPlaylist = async () => {
+    const name = window.prompt("New playlist name")?.trim();
+    if (!name) return;
+    try {
+      const playlist = await api.createPlaylist(name);
+      setPlaylists((current) => [...current, playlist].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedPlaylistId(String(playlist.id));
+      setPlaylistMessage(`Created ${playlist.name}`);
+    } catch (reason) { setPlaylistMessage(String(reason)); }
+  };
+
   return (
     <aside className="track-inspector" aria-labelledby="track-inspector-title" aria-busy={loading || busy}>
       <header className="track-inspector-header">
@@ -199,6 +229,19 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
       {loading && <p className="track-inspector-message" role="status">Loading track details…</p>}
       {error && <p className="track-inspector-message is-error" role="alert">{error}</p>}
       {track.error && <p className="track-inspector-message is-warning" role="status">{track.error}</p>}
+
+      <section className="track-inspector-playlists">
+        <h4>Playlists</h4>
+        <div className="track-inspector-playlist-controls">
+          <select value={selectedPlaylistId} onChange={(event) => setSelectedPlaylistId(event.target.value)} disabled={busy} aria-label="Choose playlist">
+            <option value="">Choose playlist…</option>
+            {playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}
+          </select>
+          <button type="button" onClick={addToPlaylist} disabled={busy || !selectedPlaylistId}>Add</button>
+          <button type="button" onClick={createPlaylist} disabled={busy}>New</button>
+        </div>
+        {playlistMessage && <p className="track-inspector-muted" role="status">{playlistMessage}</p>}
+      </section>
 
       {(noResults || canEditQuery) && (
         <section className="track-inspector-search">
