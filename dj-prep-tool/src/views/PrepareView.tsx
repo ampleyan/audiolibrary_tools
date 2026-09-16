@@ -68,10 +68,12 @@ export function filterAndSortTracks(
   state: TrackState | "all",
   sortKey: TrackSortKey,
   direction: TrackSortDirection,
+  unknownArtistOnly = false,
 ) {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filtered = tracks.filter((track) => {
     if (state !== "all" && track.state !== state) return false;
+    if (unknownArtistOnly && track.artist) return false;
     if (!normalizedQuery) return true;
     return [track.artist, track.title, track.mix_version ?? "", track.error ?? "", track.state]
       .some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
@@ -135,6 +137,7 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
   const [trackState, setTrackState] = useState<TrackState | "all">("all");
   const [sortKey, setSortKey] = useState<TrackSortKey>("updated");
   const [sortDirection, setSortDirection] = useState<TrackSortDirection>("desc");
+  const [unknownArtistOnly, setUnknownArtistOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [moveTarget, setMoveTarget] = useState<TrackState>("requested");
   const [loading, setLoading] = useState(true);
@@ -169,7 +172,7 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
 
   const selectedTrack = tracks.find((track) => track.id === selectedTrackId) ?? null;
   const baseVisibleTracks = useMemo(() => filterPreparationTracks(tracks, filter, stageFilter), [filter, stageFilter, tracks]);
-  const visibleTracks = useMemo(() => filterAndSortTracks(baseVisibleTracks, trackQuery, trackState, sortKey, sortDirection), [baseVisibleTracks, sortDirection, sortKey, trackQuery, trackState]);
+  const visibleTracks = useMemo(() => filterAndSortTracks(baseVisibleTracks, trackQuery, trackState, sortKey, sortDirection, unknownArtistOnly), [baseVisibleTracks, sortDirection, sortKey, trackQuery, trackState, unknownArtistOnly]);
   const actionableTracks = useMemo(() => prioritizeActionableTracks(visibleTracks), [visibleTracks]);
   const orderedTracks = visibleTracks;
   const selectedTracks = tracks.filter((track) => selectedIds.has(track.id));
@@ -335,7 +338,8 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
         <label className="workbench-table-select"><span>Status</span><select value={trackState} onChange={(event) => setTrackState(event.target.value as TrackState | "all")}><option value="all">All statuses</option>{Array.from(new Set(tracks.map((track) => track.state))).sort().map((state) => <option key={state} value={state}>{getWorkflowMeta({ state } as Track).statusLabel}</option>)}</select></label>
         <label className="workbench-table-select"><span>Sort by</span><select value={sortKey} onChange={(event) => setSortKey(event.target.value as TrackSortKey)}><option value="priority">Priority</option><option value="artist">Artist</option><option value="title">Title</option><option value="status">Status</option><option value="updated">Last updated</option><option value="created">Date added</option></select></label>
         <button className="workbench-sort-direction" type="button" onClick={() => setSortDirection((current) => current === "asc" ? "desc" : "asc")} aria-label={`Sort ${sortDirection === "asc" ? "descending" : "ascending"}`}>{sortDirection === "asc" ? "↑ Ascending" : "↓ Descending"}</button>
-        {(trackQuery || trackState !== "all") && <button className="workbench-clear-filters" type="button" onClick={() => { setTrackQuery(""); setTrackState("all"); }}>Clear</button>}
+        <button className={`workbench-filter-toggle${unknownArtistOnly ? " is-active" : ""}`} type="button" aria-pressed={unknownArtistOnly} onClick={() => setUnknownArtistOnly((v) => !v)}>No artist</button>
+        {(trackQuery || trackState !== "all" || unknownArtistOnly) && <button className="workbench-clear-filters" type="button" onClick={() => { setTrackQuery(""); setTrackState("all"); setUnknownArtistOnly(false); }}>Clear</button>}
         <span className="workbench-table-result-count">{orderedTracks.length} of {baseVisibleTracks.length} shown</span>
       </div>
 

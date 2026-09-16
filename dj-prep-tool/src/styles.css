@@ -221,8 +221,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .workbench-table-toolbar input, .workbench-table-toolbar select { min-height: 30px; border: 1px solid #513343; border-radius: 5px; background: #0d0a0f; color: #f1dce6; padding: 5px 8px; font: inherit; font-size: 12px; text-transform: none; }
 .workbench-table-toolbar input:focus, .workbench-table-toolbar select:focus { outline: 2px solid #ff6fb5; outline-offset: -1px; border-color: #ff4fa3; }
 .workbench-table-select { flex: 0 1 150px; }
-.workbench-sort-direction, .workbench-clear-filters { min-height: 30px; border: 1px solid #513343; border-radius: 5px; background: #1b121a; color: #d0b7c4; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 11px; }
-.workbench-sort-direction:hover, .workbench-clear-filters:hover { border-color: #ff4fa3; color: #ff6fb5; }
+.workbench-sort-direction, .workbench-clear-filters, .workbench-filter-toggle { min-height: 30px; border: 1px solid #513343; border-radius: 5px; background: #1b121a; color: #d0b7c4; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 11px; }
+.workbench-sort-direction:hover, .workbench-clear-filters:hover, .workbench-filter-toggle:hover { border-color: #ff4fa3; color: #ff6fb5; }
+.workbench-filter-toggle.is-active { border-color: #f59e0b; color: #f59e0b; background: #2a1f0a; }
 .workbench-table-result-count { margin-left: auto; padding-bottom: 7px; color: #7a6570; font-size: 11px; white-space: nowrap; }
 .library-heading-actions { display: flex; gap: 8px; }
 .library-workbench-layout { display: grid; }
@@ -257,7 +258,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .track-status-badge[data-semantic-state="attention"] { border-color: color-mix(in srgb, var(--color-status-attention) 42%, var(--color-border)); color: var(--color-status-attention); }
 .track-status-badge[data-semantic-state="running"] { border-color: color-mix(in srgb, var(--color-status-running) 42%, var(--color-border)); color: var(--color-status-running); }
 .track-status-badge[data-semantic-state="success"] { border-color: color-mix(in srgb, var(--color-status-success) 42%, var(--color-border)); color: var(--color-status-success); }
-.workbench-track-row { position: relative; display: grid; grid-template-columns: 28px minmax(180px, 1.4fr) minmax(90px, .65fr) minmax(130px, .85fr) 34px 110px minmax(130px, auto) 34px; align-items: center; gap: 10px; min-width: 820px; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-surface); padding: 9px 10px; color: var(--color-foreground); }
+.workbench-track-row { position: relative; display: grid; grid-template-columns: 28px minmax(180px, 1.4fr) minmax(90px, .65fr) minmax(130px, .85fr) 34px 110px minmax(130px, auto) 34px; align-items: center; gap: 10px; min-width: 820px; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-surface); padding: 9px 60px; color: var(--color-foreground); }
 .workbench-track-row:last-child { border-bottom: 0; }
 .workbench-track-row:hover { background: var(--color-surface-raised); }
 .workbench-track-row.is-selected { background: color-mix(in srgb, var(--color-primary-bg) 48%, var(--color-surface)); box-shadow: inset 3px 0 var(--color-primary); }
@@ -322,6 +323,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .track-inspector-pipeline li[data-step-status="current"] { border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border)); background: var(--color-primary-bg); color: var(--color-primary-foreground); }
 .track-inspector-download-progress { display: grid; gap: 5px; margin-top: 9px; color: var(--color-muted); font-size: 10px; }
 .track-inspector-download-progress progress { width: 100%; height: 5px; accent-color: var(--color-primary); }
+.track-inspector-edit-form { display: grid; gap: 8px; }
+.track-inspector-edit-form label { display: grid; gap: 4px; color: var(--color-muted-foreground); font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+.track-inspector-edit-form input { border: 1px solid var(--color-border-muted); border-radius: 5px; background: var(--color-surface); color: var(--color-foreground); padding: 6px 8px; font: inherit; font-size: 12px; outline: none; }
+.track-inspector-edit-form input:focus { border-color: var(--color-primary); }
 .track-inspector-inline-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .track-inspector-inline-actions button, .track-inspector-move-back button, .track-inspector-move-back select { border: 1px solid var(--color-border-muted); border-radius: 5px; background: var(--color-surface); color: var(--color-muted); padding: 5px 7px; cursor: pointer; font: inherit; font-size: 10px; }
 .track-inspector-inline-actions button:hover, .track-inspector-move-back button:hover { border-color: var(--color-primary); color: var(--color-primary-foreground); filter: none; }

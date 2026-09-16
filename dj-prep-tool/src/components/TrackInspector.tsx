@@ -243,13 +243,13 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
       </section>
 
       <section className="track-inspector-search">
-        <h4>Search query</h4>
+        <h4>{editingQuery ? "Edit track details" : "Search query"}</h4>
         {editingQuery ? (
-          <form onSubmit={(event) => { event.preventDefault(); void onMatchingAction(track, { id: "edit_query", artist: artist.trim(), title: title.trim(), mixVersion: mixVersion.trim() || null }); setEditingQuery(false); }}>
+          <form className="track-inspector-edit-form" onSubmit={(event) => { event.preventDefault(); void onMatchingAction(track, { id: "edit_query", artist: artist.trim(), title: title.trim(), mixVersion: mixVersion.trim() || null }); setEditingQuery(false); }}>
             <label>Artist<input value={artist} onChange={(event) => setArtist(event.target.value)} required /></label>
             <label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
             <label>Mix version<input value={mixVersion} onChange={(event) => setMixVersion(event.target.value)} /></label>
-            <div><button type="submit" disabled={busy}>Save query</button><button type="button" onClick={() => setEditingQuery(false)}>Cancel</button></div>
+            <div className="track-inspector-inline-actions"><button type="submit" disabled={busy}>Save</button><button type="button" onClick={() => setEditingQuery(false)}>Cancel</button></div>
           </form>
         ) : (
           <>

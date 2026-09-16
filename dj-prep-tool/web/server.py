@@ -826,11 +826,21 @@ def command(name, payload):
             raise
         update(track["id"], "UPDATE tracks SET search_job_id=%s,state='matched',error=NULL WHERE id=%s", (job,))
         results = []
-        for _ in range(15):
-            time.sleep(2)
+        for _ in range(25):
+            time.sleep(3)
             try:
                 results = request("GET", f"/api/jobs/{job}/results/files").get("items", [])
                 if results: break
+            except Exception: pass
+        if not results:
+            try:
+                job_status = request("GET", f"/api/jobs/{job}")
+                terminal = job_status.get("summary", {}).get("terminalOutcome")
+                if terminal is None:
+                    update(track["id"], "UPDATE tracks SET error=%s WHERE id=%s", ("Search still running in Sockseek — click 'Search again' to re-check results",))
+                    append_log(f"[search] pending: {label}: no results yet, Sockseek job still running")
+                    return []
+                results = request("GET", f"/api/jobs/{job}/results/files").get("items", [])
             except Exception: pass
         wanted = f'{track["artist"]} {track["title"]}'.lower()
         ranked = []
