@@ -27,7 +27,7 @@ services:
       YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
       YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-}
       DATABASE_MODE: remote
-      DATABASE_URL: postgresql://audiotool@192.168.129.39:5432/audiotool
+      DATABASE_URL: postgresql://audiotool@host.docker.internal:5432/audiotool
       DATABASE_SSLMODE: disable
       AUDIOTOOL_PASSWORD: ${AUDIOTOOL_PASSWORD}
     extra_hosts:
