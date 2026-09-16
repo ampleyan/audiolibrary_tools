@@ -1159,6 +1159,8 @@ if __name__ == "__main__":
         xml_path = rekordbox_xml_path()
     except Exception:
         xml_path = REKORDBOX_XML_PATH
-    if xml_path:
+    if xml_path and Path(xml_path).is_file():
         threading.Thread(target=rekordbox_index, args=(xml_path,), daemon=True).start()
+    elif xml_path:
+        append_log(f"[rekordbox] XML path configured but file not found: {xml_path}")
     ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()
