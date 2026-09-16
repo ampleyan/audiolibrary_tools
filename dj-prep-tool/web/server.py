@@ -842,6 +842,15 @@ def command(name, payload):
                     return []
                 results = request("GET", f"/api/jobs/{job}/results/files").get("items", [])
             except Exception: pass
+        LOSSLESS_EXTS = {"flac", "wav", "aif", "aiff", "ape", "wv", "alac"}
+        def quality_ok(c):
+            ext = c.get("extension", "").lower().lstrip(".")
+            if ext in LOSSLESS_EXTS:
+                return True
+            if ext == "mp3":
+                return (c.get("bitRate") or 0) >= 300
+            return False
+        results = [c for c in results if quality_ok(c)]
         wanted = f'{track["artist"]} {track["title"]}'.lower()
         ranked = []
         for candidate in results:

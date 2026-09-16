@@ -256,7 +256,7 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
             {noResults && <p className="track-inspector-muted">The precise artist/title search returned no shared files. Loose search combines the artist and title into one broader query.</p>}
             <div className="track-inspector-inline-actions">
               <button type="button" onClick={() => onMatchingAction(track, { id: "search_again" })} disabled={busy}>{noResults ? "Search again" : "Search"}</button>
-              {noResults && <button type="button" onClick={() => onMatchingAction(track, { id: "loose_search" })} disabled={busy}>Loose search</button>}
+              <button type="button" onClick={() => onMatchingAction(track, { id: "loose_search" })} disabled={busy}>Loose search</button>
               <button type="button" onClick={() => setEditingQuery(true)} disabled={busy}>Edit query</button>
               {noResults && track.state !== "not_found" && <button type="button" onClick={() => onMatchingAction(track, { id: "mark_unavailable" })} disabled={busy}>Mark unavailable</button>}
             </div>
