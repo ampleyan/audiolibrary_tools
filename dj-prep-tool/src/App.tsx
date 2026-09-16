@@ -30,6 +30,7 @@ export default function App() {
   const [view, setView] = useState<WorkbenchView>(() => viewFromPath(window.location.pathname));
   const [prepareStage, setPrepareStage] = useState<PrepareStage>("find");
   const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
+  const [prepareHandoffIds, setPrepareHandoffIds] = useState<number[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -61,6 +62,13 @@ export default function App() {
   }, [settings?.setupComplete, view]);
 
   const navigate = (nextTab: string) => {
+    if (nextTab.startsWith("prepare:")) {
+      const ids = nextTab.slice("prepare:".length).split(",").map(Number).filter(Number.isInteger);
+      setPrepareHandoffIds(ids);
+      setSelectedTrackId(ids[0] ?? null);
+      selectView("needs_attention");
+      return;
+    }
     if (nextTab === "review") {
       selectView("needs_attention");
       return;
@@ -173,7 +181,7 @@ export default function App() {
           {view === "inbox" && <ImportView onNavigate={navigate} />}
           {view === "library" && <LibraryView onNavigate={navigate} />}
           {view === "playlists" && <PlaylistsView onNavigate={navigate} />}
-          {(view === "needs_attention" || view === "running" || view === "ready_to_dj") && <PrepareView stage={prepareStage} queueView={view} selectedTrackId={selectedTrackId} onStageChange={setPrepareStage} onSelectedTrackChange={setSelectedTrackId} pathMapFrom={settings.pathMapFrom} pathMapTo={settings.pathMapTo} />}
+          {(view === "needs_attention" || view === "running" || view === "ready_to_dj") && <PrepareView stage={prepareStage} queueView={view} selectedTrackId={selectedTrackId} onStageChange={setPrepareStage} onSelectedTrackChange={setSelectedTrackId} handoffTrackIds={prepareHandoffIds} onHandoffConsumed={() => setPrepareHandoffIds([])} pathMapFrom={settings.pathMapFrom} pathMapTo={settings.pathMapTo} />}
           {view === "discover" && <DiscoveryView onNavigate={navigate} onPlayTrack={(tracks, index) => { setPlayer({ tracks, index }); setPlayerMessage(null); }} />}
           {view === "settings" && (
             <SetupView

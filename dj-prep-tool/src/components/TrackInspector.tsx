@@ -170,7 +170,6 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
   const candidates = parseCandidates(track.candidate_json);
   const rekordboxPath = track.dj_path ? mapPath(track.dj_path, pathMapFrom, pathMapTo) : null;
   const noResults = track.state === "not_found" || (track.state === "requested" && Boolean(track.search_job_id));
-  const canEditQuery = ["requested", "needs_review", "not_found", "matched"].includes(track.state);
   const pipelineStage = metadata.stage;
   const pipelineSteps = [
     { id: "download", label: "Download" },
@@ -243,29 +242,27 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
         {playlistMessage && <p className="track-inspector-muted" role="status">{playlistMessage}</p>}
       </section>
 
-      {(noResults || canEditQuery) && (
-        <section className="track-inspector-search">
-          <h4>Search query</h4>
-          {editingQuery ? (
-            <form onSubmit={(event) => { event.preventDefault(); void onMatchingAction(track, { id: "edit_query", artist: artist.trim(), title: title.trim(), mixVersion: mixVersion.trim() || null }); setEditingQuery(false); }}>
-              <label>Artist<input value={artist} onChange={(event) => setArtist(event.target.value)} required /></label>
-              <label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
-              <label>Mix version<input value={mixVersion} onChange={(event) => setMixVersion(event.target.value)} /></label>
-              <div><button type="submit" disabled={busy}>Save query</button><button type="button" onClick={() => setEditingQuery(false)}>Cancel</button></div>
-            </form>
-          ) : (
-            <>
-              {noResults && <p className="track-inspector-muted">The precise artist/title search returned no shared files. Loose search combines the artist and title into one broader query.</p>}
-              <div className="track-inspector-inline-actions">
-                {noResults && <button type="button" onClick={() => onMatchingAction(track, { id: "loose_search" })} disabled={busy}>Loose search</button>}
-                {noResults && <button type="button" onClick={() => onMatchingAction(track, { id: "search_again" })} disabled={busy}>Search again</button>}
-                <button type="button" onClick={() => setEditingQuery(true)} disabled={busy}>Edit query</button>
-                {noResults && track.state !== "not_found" && <button type="button" onClick={() => onMatchingAction(track, { id: "mark_unavailable" })} disabled={busy}>Mark unavailable</button>}
-              </div>
-            </>
-          )}
-        </section>
-      )}
+      <section className="track-inspector-search">
+        <h4>Search query</h4>
+        {editingQuery ? (
+          <form onSubmit={(event) => { event.preventDefault(); void onMatchingAction(track, { id: "edit_query", artist: artist.trim(), title: title.trim(), mixVersion: mixVersion.trim() || null }); setEditingQuery(false); }}>
+            <label>Artist<input value={artist} onChange={(event) => setArtist(event.target.value)} required /></label>
+            <label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
+            <label>Mix version<input value={mixVersion} onChange={(event) => setMixVersion(event.target.value)} /></label>
+            <div><button type="submit" disabled={busy}>Save query</button><button type="button" onClick={() => setEditingQuery(false)}>Cancel</button></div>
+          </form>
+        ) : (
+          <>
+            {noResults && <p className="track-inspector-muted">The precise artist/title search returned no shared files. Loose search combines the artist and title into one broader query.</p>}
+            <div className="track-inspector-inline-actions">
+              <button type="button" onClick={() => onMatchingAction(track, { id: "search_again" })} disabled={busy}>{noResults ? "Search again" : "Search"}</button>
+              {noResults && <button type="button" onClick={() => onMatchingAction(track, { id: "loose_search" })} disabled={busy}>Loose search</button>}
+              <button type="button" onClick={() => setEditingQuery(true)} disabled={busy}>Edit query</button>
+              {noResults && track.state !== "not_found" && <button type="button" onClick={() => onMatchingAction(track, { id: "mark_unavailable" })} disabled={busy}>Mark unavailable</button>}
+            </div>
+          </>
+        )}
+      </section>
 
       {candidates.length > 0 && (
         <section>
@@ -389,7 +386,7 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
       </section>
 
       <footer className="track-inspector-actions">
-        <button type="button" onClick={() => onMenuAction(track, "edit")}>Edit details</button>
+        <button type="button" onClick={() => setEditingQuery(true)} disabled={busy}>Edit details</button>
         {(track.downloaded_path || track.archive_path || track.dj_path) && <button type="button" onClick={() => onMenuAction(track, "reveal")}>Reveal in Finder/Explorer</button>}
         <button type="button" onClick={() => onMenuAction(track, "move_stage")}>Move stage</button>
       </footer>

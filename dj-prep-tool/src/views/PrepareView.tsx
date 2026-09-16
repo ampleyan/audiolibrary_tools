@@ -121,11 +121,13 @@ interface PrepareViewProps {
   selectedTrackId: number | null;
   onStageChange: (stage: PrepareStage) => void;
   onSelectedTrackChange: (trackId: number | null) => void;
+  handoffTrackIds?: number[];
+  onHandoffConsumed?: () => void;
   pathMapFrom?: string;
   pathMapTo?: string;
 }
 
-export default function PrepareView({ stage, queueView, selectedTrackId, onStageChange, onSelectedTrackChange, pathMapFrom, pathMapTo }: PrepareViewProps) {
+export default function PrepareView({ stage, queueView, selectedTrackId, onStageChange, onSelectedTrackChange, handoffTrackIds = [], onHandoffConsumed, pathMapFrom, pathMapTo }: PrepareViewProps) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [filter, setFilter] = useState<PreparationFilter>(() => defaultFilter(queueView));
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
@@ -158,6 +160,12 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
     setSortKey("updated");
     setSortDirection("desc");
   }, [queueView]);
+  useEffect(() => {
+    if (handoffTrackIds.length === 0) return;
+    setSelectedIds(new Set(handoffTrackIds));
+    onSelectedTrackChange(handoffTrackIds[0]);
+    onHandoffConsumed?.();
+  }, [handoffTrackIds, onHandoffConsumed, onSelectedTrackChange]);
 
   const selectedTrack = tracks.find((track) => track.id === selectedTrackId) ?? null;
   const baseVisibleTracks = useMemo(() => filterPreparationTracks(tracks, filter, stageFilter), [filter, stageFilter, tracks]);

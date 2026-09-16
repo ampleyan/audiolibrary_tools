@@ -156,6 +156,20 @@ describe("TrackInspector", () => {
     expect(html).toContain("Choose another candidate");
     expect(html).toContain("Retry quality check");
   });
+
+  it("keeps precise search available for a selected track at every stage", () => {
+    const html = renderToStaticMarkup(
+      <TrackInspector
+        track={{ ...track, state: "dj_ready", candidate_json: null, error: null }}
+        onClose={() => {}}
+        onPrimaryAction={() => {}}
+        onMenuAction={() => {}}
+      />,
+    );
+
+    expect(html).toContain(">Search</button>");
+    expect(html).toContain("Edit query");
+  });
 });
 
 describe("Prepare queue derivation", () => {
