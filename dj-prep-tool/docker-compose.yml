@@ -27,11 +27,12 @@ services:
       YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
       YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-}
       DATABASE_MODE: remote
-      DATABASE_URL: postgresql://audiotool@host.docker.internal:5432/audiotool
+      DATABASE_URL: postgresql://audiotool@postgres:5432/audiotool
       DATABASE_SSLMODE: disable
       AUDIOTOOL_PASSWORD: ${AUDIOTOOL_PASSWORD}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - postgres_default
     volumes:
       - ./data:/data
       - ./music-library:/music/library
@@ -39,3 +40,7 @@ services:
       - ./music-archive:/music/archive
       - ./rekordbox:/rekordbox:ro
     restart: unless-stopped
+
+networks:
+  postgres_default:
+    external: true
