@@ -975,7 +975,13 @@ class Handler(BaseHTTPRequestHandler):
         if not file_path.is_file(): self.send_json(404, {"error": "frontend not built"}); return
         body = file_path.read_bytes()
         content_type = "text/html" if file_path.suffix == ".html" else "text/css" if file_path.suffix == ".css" else "application/javascript" if file_path.suffix == ".js" else "application/octet-stream"
-        self.send_response(200); self.send_header("Content-Type", content_type); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cross-Origin-Resource-Policy", "cross-origin")
+        self.end_headers()
+        self.wfile.write(body)
     def do_POST(self):
         if not self.path.startswith("/api/invoke/"): self.send_json(404, {"error": "not found"}); return
         length = int(self.headers.get("Content-Length", "0")); payload = json.loads(self.rfile.read(length) or b"{}")
