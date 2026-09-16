@@ -16,8 +16,8 @@ export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string)
   const [tracks, setTracks] = useState<Track[]>([]);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState<TrackState | "all">("all");
-  const [sortKey, setSortKey] = useState<SortKey>("priority");
-  const [descending, setDescending] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("updated");
+  const [descending, setDescending] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());

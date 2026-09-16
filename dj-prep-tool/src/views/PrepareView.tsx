@@ -131,8 +131,8 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
   const [trackQuery, setTrackQuery] = useState("");
   const [trackState, setTrackState] = useState<TrackState | "all">("all");
-  const [sortKey, setSortKey] = useState<TrackSortKey>(() => queueView === "needs_attention" ? "updated" : "priority");
-  const [sortDirection, setSortDirection] = useState<TrackSortDirection>(() => queueView === "needs_attention" ? "desc" : "asc");
+  const [sortKey, setSortKey] = useState<TrackSortKey>("updated");
+  const [sortDirection, setSortDirection] = useState<TrackSortDirection>("desc");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [moveTarget, setMoveTarget] = useState<TrackState>("requested");
   const [loading, setLoading] = useState(true);
@@ -155,8 +155,8 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
   useEffect(() => {
     setFilter(defaultFilter(queueView));
     setStageFilter("all");
-    setSortKey(queueView === "needs_attention" ? "updated" : "priority");
-    setSortDirection(queueView === "needs_attention" ? "desc" : "asc");
+    setSortKey("updated");
+    setSortDirection("desc");
   }, [queueView]);
 
   const selectedTrack = tracks.find((track) => track.id === selectedTrackId) ?? null;
