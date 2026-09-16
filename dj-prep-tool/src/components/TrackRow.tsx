@@ -49,7 +49,7 @@ export default function TrackRow({ track, metadata, selected, checked = false, b
   const name = trackName(track);
 
   return (
-    <div className={`workbench-track-row${selected ? " is-selected" : ""}${busy ? " is-busy" : ""}`} aria-selected={selected} data-track-id={track.id}>
+    <div className={`workbench-track-row${selected ? " is-selected" : ""}${busy ? " is-busy" : ""}${!track.artist ? " no-artist" : ""}`} aria-selected={selected} data-track-id={track.id}>
       {showSelection ? <label className="workbench-track-check"><span className="sr-only">Select {name}</span><input type="checkbox" checked={checked} onChange={(event) => onCheckedChange?.(event.target.checked)} disabled={busy || !onCheckedChange} /></label> : <span aria-hidden="true" />}
       <button className="workbench-track-identity" type="button" onClick={onOpen} disabled={busy}>
         <strong>{track.artist || "Unknown artist"}</strong>

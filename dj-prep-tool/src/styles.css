@@ -262,6 +262,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .workbench-track-row:hover { background: var(--color-surface-raised); }
 .workbench-track-row.is-selected { background: color-mix(in srgb, var(--color-primary-bg) 48%, var(--color-surface)); box-shadow: inset 3px 0 var(--color-primary); }
 .workbench-track-row.is-busy { opacity: .55; }
+.workbench-track-row.no-artist .workbench-track-identity strong,
+.workbench-track-row.no-artist .inbox-track-name strong { color: var(--color-warning, #f59e0b); font-style: italic; }
 .workbench-track-check { display: grid; place-items: center; }
 .workbench-track-check input { accent-color: var(--color-primary); }
 .workbench-track-identity { min-width: 0; border: 0; background: transparent; color: inherit; padding: 0; cursor: pointer; text-align: left; }
