@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import TrackRow from "../components/TrackRow";
 import TrackInspector, { type InspectorMatchingAction, type InspectorPipelineAction } from "../components/TrackInspector";
 import type { TrackMenuAction } from "../components/TrackRow";
-import { api } from "../lib/api";
+import { api, WORKBENCH_DATA_CHANGED_EVENT } from "../lib/api";
 import type { Playlist, TrackRow as Track, TrackState } from "../lib/types";
 import { getWorkflowMeta } from "../lib/workflow";
 
@@ -32,6 +32,11 @@ export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string)
   };
 
   useEffect(load, []);
+  useEffect(() => {
+    const handleDataChanged = () => { void load(); };
+    window.addEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+    return () => window.removeEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+  }, []);
   useEffect(() => { api.listPlaylists().then(setPlaylists).catch(() => {}); }, []);
 
   const addSelectedToPlaylist = async () => {

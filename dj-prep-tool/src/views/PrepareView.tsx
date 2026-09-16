@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import TrackInspector, { type InspectorMatchingAction, type InspectorPipelineAction } from "../components/TrackInspector";
 import TrackRow, { type TrackMenuAction } from "../components/TrackRow";
-import { api } from "../lib/api";
+import { api, WORKBENCH_DATA_CHANGED_EVENT } from "../lib/api";
 import type { TrackActionId, TrackRow as Track, TrackState } from "../lib/types";
 import { getWorkflowMeta, isActionable, isWorkflowBlocked } from "../lib/workflow";
 import DownloadView from "./DownloadView";
@@ -147,6 +147,11 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const handleDataChanged = () => { void load(); };
+    window.addEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+    return () => window.removeEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+  }, []);
   useEffect(() => { setFilter(defaultFilter(queueView)); setStageFilter("all"); }, [queueView]);
 
   const selectedTrack = tracks.find((track) => track.id === selectedTrackId) ?? null;

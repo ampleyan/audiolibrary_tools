@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import TrackStatusBadge from "../components/TrackStatusBadge";
-import { api } from "../lib/api";
+import { api, WORKBENCH_DATA_CHANGED_EVENT } from "../lib/api";
 import type { TrackRow, WorkflowBucket } from "../lib/types";
 import { getWorkflowMeta } from "../lib/workflow";
 
@@ -82,6 +82,11 @@ export default function PipelineView({ heading = "Overview", onNavigate }: { hea
   };
 
   useEffect(load, []);
+  useEffect(() => {
+    const handleDataChanged = () => { void load(); };
+    window.addEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+    return () => window.removeEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+  }, []);
 
   const byGroup = tracks.reduce((groups, track) => {
     groups[groupForTrack(track)].push(track);

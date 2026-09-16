@@ -3,7 +3,7 @@ import { Apple, Disc3, FileText, Link2, Music2, Send, Video } from "lucide-react
 import ImportPreview, { buildImportPreview } from "../components/ImportPreview";
 import TrackStatusBadge from "../components/TrackStatusBadge";
 import { BlockerIndicator } from "../components/TrackRow";
-import { api } from "../lib/api";
+import { api, WORKBENCH_DATA_CHANGED_EVENT } from "../lib/api";
 import type { ImportPreviewRow, RekordboxTrack, TrackRow, TrackState } from "../lib/types";
 import { getWorkflowMeta } from "../lib/workflow";
 
@@ -245,6 +245,12 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
 
   useEffect(() => {
     api.listTracks().then(setTracks).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleDataChanged = () => { void refresh(); };
+    window.addEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+    return () => window.removeEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
   }, []);
 
   useEffect(() => {

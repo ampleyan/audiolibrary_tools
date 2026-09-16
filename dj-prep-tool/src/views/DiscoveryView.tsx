@@ -1,5 +1,5 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { api } from "../lib/api";
+import { api, WORKBENCH_DATA_CHANGED_EVENT } from "../lib/api";
 import { SimilarPanel } from "./ReviewView";
 import type { RekordboxTrack, SimilarTrack, TrackRow } from "../lib/types";
 
@@ -57,6 +57,11 @@ export default function DiscoveryView({ onNavigate, onPlayTrack }: { onNavigate:
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const handleDataChanged = () => { void load(true); };
+    window.addEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+    return () => window.removeEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+  }, []);
 
   const inPipeline = (track: { artist: string; title: string }) => tracks.some((item) => nameOf(item) === nameOf(track) && item.inLibrary) || pipeline.some((item) => nameOf(item) === nameOf(track));
 

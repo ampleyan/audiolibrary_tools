@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../lib/api";
+import { api, WORKBENCH_DATA_CHANGED_EVENT } from "../lib/api";
 import type { QualityResult, TrackRow, TrackState } from "../lib/types";
 
 const DOWNLOAD_STATES: TrackState[] = [
@@ -492,6 +492,11 @@ export default function DownloadView({ states = DOWNLOAD_STATES, embedded = fals
   };
 
   useEffect(() => load(true), [states]);
+  useEffect(() => {
+    const handleDataChanged = () => { void load(false); };
+    window.addEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+    return () => window.removeEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+  }, [states]);
 
   const runBatch = async (op: BatchOp, subset: TrackRow[], action: (t: TrackRow) => Promise<unknown>) => {
     if (!subset.length) return;

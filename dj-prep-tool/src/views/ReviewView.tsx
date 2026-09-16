@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { api, WORKBENCH_DATA_CHANGED_EVENT } from "../lib/api";
 import type { RankedCandidate, SimilarTrack, TrackRow, TrackState } from "../lib/types";
 import { PipelineSeedListbox } from "../components/PipelineSeedListbox";
 
@@ -605,6 +605,11 @@ export default function ReviewView({ states = DEFAULT_REVIEW_STATES, onTrackChan
   };
 
   useEffect(() => { void load(); }, [states]);
+  useEffect(() => {
+    const handleDataChanged = () => { void load(false); };
+    window.addEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+    return () => window.removeEventListener(WORKBENCH_DATA_CHANGED_EVENT, handleDataChanged);
+  }, [states]);
 
   const removeTrack = (id: number) =>
     setTracks((prev) => prev.filter((t) => t.id !== id));

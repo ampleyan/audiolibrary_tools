@@ -39,10 +39,20 @@ export interface SaveSettingsPayload {
 }
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+export const WORKBENCH_DATA_CHANGED_EVENT = "dj-prep:data-changed";
+const MUTATING_COMMANDS = new Set([
+  "save_settings", "import_text", "import_csv", "import_youtube", "import_telegram", "import_telegram_link", "import_rekordbox_playlist",
+  "update_track", "update_track_state", "delete_track", "clear_tracks", "approve_candidate", "start_download", "cancel_download", "poll_download",
+  "run_quality_check", "convert_track", "tag_track", "finish_rekordbox", "create_playlist", "rename_playlist", "delete_playlist", "add_tracks_to_playlist", "remove_tracks_from_playlist",
+]);
 
 function call<T>(name: string, payload?: Record<string, unknown>) {
+  const notify = (value: T) => {
+    if (MUTATING_COMMANDS.has(name) && typeof window !== "undefined") window.dispatchEvent(new Event(WORKBENCH_DATA_CHANGED_EVENT));
+    return value;
+  };
   if (isTauri) {
-    return invoke<T>(name, payload).catch((error) => {
+    return invoke<T>(name, payload).then(notify).catch((error) => {
       throw new Error(`${name} failed: ${String(error)}`);
     });
   }
@@ -54,7 +64,7 @@ function call<T>(name: string, payload?: Record<string, unknown>) {
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${name} failed: ${body.error ?? `request returned ${response.status}`}`);
     return body.result as T;
-  });
+  }).then(notify);
 }
 
 export const api = {
