@@ -73,6 +73,16 @@ export interface TrackRow {
   updated_at: string;
 }
 
+export interface Playlist {
+  id: number;
+  name: string;
+  source: "manual" | "rekordbox" | string;
+  source_ref: string | null;
+  track_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PublicSettings {
   sockseekPath: string;
   sockseekDaemonUrl: string;

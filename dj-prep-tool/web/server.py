@@ -57,6 +57,17 @@ CREATE TABLE IF NOT EXISTS activities (
  id INTEGER PRIMARY KEY AUTOINCREMENT, track_id INTEGER NOT NULL, from_state TEXT,
  to_state TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS playlists (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, source TEXT NOT NULL DEFAULT 'manual', source_ref TEXT,
+ created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS playlist_tracks (
+ playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+ track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+ position INTEGER NOT NULL DEFAULT 0,
+ added_at TEXT NOT NULL DEFAULT (datetime('now')),
+ PRIMARY KEY (playlist_id, track_id)
+);
 CREATE TRIGGER IF NOT EXISTS tracks_updated_at AFTER UPDATE ON tracks FOR EACH ROW
 BEGIN UPDATE tracks SET updated_at = datetime('now') WHERE id = NEW.id; END;
 CREATE TRIGGER IF NOT EXISTS tracks_activity_insert AFTER INSERT ON tracks
@@ -341,6 +352,24 @@ def get_track(track_id):
         raise ValueError("track not found")
     return row_json(row)
 
+def list_playlists():
+    conn = db()
+    rows = conn.execute("SELECT p.*, COUNT(pt.track_id) AS track_count FROM playlists p LEFT JOIN playlist_tracks pt ON pt.playlist_id=p.id GROUP BY p.id ORDER BY lower(p.name)").fetchall()
+    conn.close()
+    return [row_json(row) for row in rows]
+
+def playlist_tracks(playlist_id):
+    conn = db()
+    rows = conn.execute("SELECT t.* FROM tracks t JOIN playlist_tracks pt ON pt.track_id=t.id WHERE pt.playlist_id=? ORDER BY pt.position, t.id", (playlist_id,)).fetchall()
+    conn.close()
+    return [row_json(row) for row in rows]
+
+def playlist_id(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError("invalid playlist id")
+
 def setting(key, default=""):
     conn = db()
     row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
@@ -445,9 +474,50 @@ def telegram_request(payload):
     return json.loads(lines[-1])
 
 def command(name, payload):
-    if name not in {"get_logs", "list_tracks", "list_activity", "get_settings", "check_daemon", "list_backups", "search_track", "search_track_loose", "approve_candidate", "start_download", "cancel_download", "check_download_progress", "poll_download", "run_quality_check", "convert_track", "clear_tracks", "import_rekordbox_xml", "import_rekordbox_playlist", "import_text", "import_csv", "import_youtube", "import_telegram", "update_track", "update_track_state", "delete_track", "finish_rekordbox", "tag_track", "get_similar_tracks", "get_similar_tracks_for_query"}:
+    if name not in {"get_logs", "list_tracks", "list_activity", "list_playlists", "get_playlist_tracks", "create_playlist", "rename_playlist", "delete_playlist", "add_tracks_to_playlist", "remove_tracks_from_playlist", "get_settings", "check_daemon", "list_backups", "search_track", "search_track_loose", "approve_candidate", "start_download", "cancel_download", "check_download_progress", "poll_download", "run_quality_check", "convert_track", "clear_tracks", "import_rekordbox_xml", "import_rekordbox_playlist", "import_text", "import_csv", "import_youtube", "import_telegram", "update_track", "update_track_state", "delete_track", "finish_rekordbox", "tag_track", "get_similar_tracks", "get_similar_tracks_for_query"}:
         append_log(f"[app] {name}")
     if name == "get_logs": return get_logs()
+    if name == "list_playlists": return list_playlists()
+    if name == "get_playlist_tracks": return playlist_tracks(playlist_id(payload.get("playlistId")))
+    if name == "create_playlist":
+        playlist_name = (payload.get("name") or "").strip()
+        if not playlist_name: raise ValueError("playlist name is required")
+        if len(playlist_name) > 120: raise ValueError("playlist name is too long")
+        conn = db()
+        try:
+            cur = conn.execute("INSERT INTO playlists(name,source) VALUES(?,?)", (playlist_name, payload.get("source") or "manual"))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.close()
+            raise ValueError("a playlist with that name already exists")
+        row = conn.execute("SELECT p.*, 0 AS track_count FROM playlists p WHERE p.id=?", (cur.lastrowid,)).fetchone()
+        conn.close()
+        return row_json(row)
+    if name == "rename_playlist":
+        playlist_name = (payload.get("name") or "").strip()
+        if not playlist_name: raise ValueError("playlist name is required")
+        conn = db()
+        try:
+            conn.execute("UPDATE playlists SET name=?,updated_at=datetime('now') WHERE id=?", (playlist_name, playlist_id(payload.get("playlistId"))))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.close()
+            raise ValueError("a playlist with that name already exists")
+        conn.close()
+        return None
+    if name == "delete_playlist":
+        conn = db(); conn.execute("DELETE FROM playlists WHERE id=?", (playlist_id(payload.get("playlistId")),)); conn.commit(); conn.close(); return None
+    if name == "add_tracks_to_playlist":
+        pid = playlist_id(payload.get("playlistId"))
+        ids = [int(value) for value in payload.get("trackIds", [])]
+        conn = db()
+        current = conn.execute("SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id=?", (pid,)).fetchone()[0] + 1
+        for offset, track_id in enumerate(dict.fromkeys(ids)):
+            conn.execute("INSERT OR IGNORE INTO playlist_tracks(playlist_id,track_id,position) VALUES(?,?,?)", (pid, track_id, current + offset))
+        conn.execute("UPDATE playlists SET updated_at=datetime('now') WHERE id=?", (pid,)); conn.commit(); conn.close(); return None
+    if name == "remove_tracks_from_playlist":
+        pid = playlist_id(payload.get("playlistId")); ids = [int(value) for value in payload.get("trackIds", [])]
+        conn = db(); conn.executemany("DELETE FROM playlist_tracks WHERE playlist_id=? AND track_id=?", [(pid, track_id) for track_id in ids]); conn.execute("UPDATE playlists SET updated_at=datetime('now') WHERE id=?", (pid,)); conn.commit(); conn.close(); return None
     if name == "get_settings":
         conn = db()
         values = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM settings")}
@@ -490,13 +560,19 @@ def command(name, payload):
             if track_exists(artist, title):
                 continue
             conn = db()
-            cur = conn.execute(
-                "INSERT INTO tracks (artist,title,mix_version,source_url,import_tag,state,dj_path) VALUES (?,?,?,'rekordbox://library','Rekordbox','dj_ready',?)",
-                (artist, title, mix_version, location),
-            )
-            row = conn.execute("SELECT * FROM tracks WHERE id=?", (cur.lastrowid,)).fetchone()
-            conn.commit()
-            conn.close()
+            existing = conn.execute("SELECT * FROM tracks WHERE lower(trim(artist))=lower(trim(?)) AND lower(trim(title))=lower(trim(?)) LIMIT 1", (artist, title)).fetchone()
+            if existing:
+                row = existing
+            else:
+                cur = conn.execute("INSERT INTO tracks (artist,title,mix_version,source_url,import_tag,state,dj_path) VALUES (?,?,?,'rekordbox://library','Rekordbox','dj_ready',?)", (artist, title, mix_version, location))
+                row = conn.execute("SELECT * FROM tracks WHERE id=?", (cur.lastrowid,)).fetchone()
+            playlist_names = [str(value).strip() for value in t.get("playlists", []) if str(value).strip()]
+            for playlist_name in playlist_names:
+                conn.execute("INSERT OR IGNORE INTO playlists(name,source,source_ref) VALUES(?, 'rekordbox', ?)", (playlist_name, playlist_name))
+                pid = conn.execute("SELECT id FROM playlists WHERE name=?", (playlist_name,)).fetchone()[0]
+                position = conn.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id=?", (pid,)).fetchone()[0]
+                conn.execute("INSERT OR IGNORE INTO playlist_tracks(playlist_id,track_id,position) VALUES(?,?,?)", (pid, row["id"], position))
+            conn.commit(); conn.close()
             inserted.append(row_json(row))
         append_log(f"[import] Rekordbox playlist: {len(inserted)} track(s) added as dj_ready")
         return inserted

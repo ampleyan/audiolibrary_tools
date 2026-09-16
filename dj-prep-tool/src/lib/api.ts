@@ -9,6 +9,7 @@ import type {
   ImportPreviewRow,
   TrackRow,
   LogEntry,
+  Playlist,
 } from "./types";
 
 export interface SaveSettingsPayload {
@@ -106,6 +107,20 @@ export const api = {
 
   listTracks: (state?: string) =>
     call<TrackRow[]>("list_tracks", { state: state ?? null }),
+
+  listPlaylists: () => call<Playlist[]>("list_playlists"),
+
+  getPlaylistTracks: (playlistId: number) => call<TrackRow[]>("get_playlist_tracks", { playlistId }),
+
+  createPlaylist: (name: string, source = "manual") => call<Playlist>("create_playlist", { name, source }),
+
+  renamePlaylist: (playlistId: number, name: string) => call<void>("rename_playlist", { playlistId, name }),
+
+  deletePlaylist: (playlistId: number) => call<void>("delete_playlist", { playlistId }),
+
+  addTracksToPlaylist: (playlistId: number, trackIds: number[]) => call<void>("add_tracks_to_playlist", { playlistId, trackIds }),
+
+  removeTracksFromPlaylist: (playlistId: number, trackIds: number[]) => call<void>("remove_tracks_from_playlist", { playlistId, trackIds }),
 
   listActivity: (limit = 30) =>
     call<Array<{ id: number; trackId: number; artist: string; title: string; fromState: string | null; toState: string; createdAt: string }>>("list_activity", { limit }),

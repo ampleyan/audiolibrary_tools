@@ -8,6 +8,7 @@ import { getWorkflowMeta } from "./lib/workflow";
 import DiscoveryView from "./views/DiscoveryView";
 import ImportView from "./views/ImportView";
 import LibraryView from "./views/LibraryView";
+import PlaylistsView from "./views/PlaylistsView";
 
 import PrepareView, { type PrepareStage } from "./views/PrepareView";
 import SetupView from "./views/SetupView";
@@ -50,6 +51,7 @@ export default function App() {
     const legacyViews: Record<string, WorkbenchView> = {
       import: "inbox",
       library: "library",
+      playlists: "playlists",
       prepare: "needs_attention",
       discover: "discover",
       setup: "settings",
@@ -149,6 +151,7 @@ export default function App() {
         <main>
           {view === "inbox" && <ImportView onNavigate={navigate} />}
           {view === "library" && <LibraryView onNavigate={navigate} />}
+          {view === "playlists" && <PlaylistsView onNavigate={navigate} />}
           {(view === "needs_attention" || view === "running" || view === "ready_to_dj") && <PrepareView stage={prepareStage} queueView={view} selectedTrackId={selectedTrackId} onStageChange={setPrepareStage} onSelectedTrackChange={setSelectedTrackId} pathMapFrom={settings.pathMapFrom} pathMapTo={settings.pathMapTo} />}
           {view === "discover" && <DiscoveryView onNavigate={navigate} onPlayTrack={(tracks, index) => { setPlayer({ tracks, index }); setPlayerMessage(null); }} />}
           {view === "settings" && (

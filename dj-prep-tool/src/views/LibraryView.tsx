@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import TrackRow from "../components/TrackRow";
 import { api } from "../lib/api";
-import type { TrackRow as Track, TrackState } from "../lib/types";
+import type { Playlist, TrackRow as Track, TrackState } from "../lib/types";
 import { getWorkflowMeta } from "../lib/workflow";
 
 type SortKey = "priority" | "artist" | "title" | "status" | "updated" | "created";
@@ -18,6 +18,9 @@ export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string)
   const [descending, setDescending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [playlistId, setPlaylistId] = useState("");
 
   const load = () => {
     setLoading(true);
@@ -26,6 +29,18 @@ export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string)
   };
 
   useEffect(load, []);
+  useEffect(() => { api.listPlaylists().then(setPlaylists).catch(() => {}); }, []);
+
+  const addSelectedToPlaylist = async () => {
+    if (!playlistId || !selectedIds.size) return;
+    try { await api.addTracksToPlaylist(Number(playlistId), [...selectedIds]); setSelectedIds(new Set()); setPlaylists(await api.listPlaylists()); } catch (reason) { setError(String(reason)); }
+  };
+
+  const createPlaylist = async () => {
+    const nextName = window.prompt("New playlist name")?.trim();
+    if (!nextName) return;
+    try { const playlist = await api.createPlaylist(nextName); setPlaylists((current) => [...current, playlist].sort((a, b) => a.name.localeCompare(b.name))); setPlaylistId(String(playlist.id)); } catch (reason) { setError(String(reason)); }
+  };
 
   const filteredTracks = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -79,6 +94,7 @@ export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string)
       {(query || stateFilter !== "all") && <button className="workbench-clear-filters" type="button" onClick={() => { setQuery(""); setStateFilter("all"); }}>Clear</button>}
       <span className="workbench-table-result-count">{filteredTracks.length} of {tracks.length} shown</span>
     </div>
-    <div className="work-queue-layout library-workbench-layout"><section className="work-queue-list" aria-label="Library track table"><div className="work-queue-columns" aria-hidden="true"><span /><span>Track</span><span>Mix</span><span>Status</span><span>Blocker</span><span>Updated</span><span>Next action</span><span /></div>{loading ? <p className="work-queue-empty">Loading library…</p> : filteredTracks.length ? filteredTracks.map((track) => <TrackRow key={track.id} track={track} metadata={getWorkflowMeta(track)} selected={false} showSelection={false} showMenu={false} onOpen={() => openTrack(track)} onPrimaryAction={() => openTrack(track)} onMenuAction={() => {}} />) : <p className="work-queue-empty">{tracks.length ? "No tracks match this filter." : "No tracks in your library yet. Add tracks to get started."}</p>}</section></div>
+    {selectedIds.size > 0 && <div className="library-selection-bar"><strong>{selectedIds.size} selected</strong><select value={playlistId} onChange={(event) => setPlaylistId(event.target.value)} aria-label="Choose playlist"><option value="">Choose playlist…</option>{playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}</select><button className="button primary" type="button" disabled={!playlistId} onClick={addSelectedToPlaylist}>Add to playlist</button><button className="button secondary" type="button" onClick={createPlaylist}>New playlist</button><button className="button secondary" type="button" onClick={() => setSelectedIds(new Set())}>Clear</button></div>}
+    <div className="work-queue-layout library-workbench-layout"><section className="work-queue-list" aria-label="Library track table"><div className="work-queue-columns" aria-hidden="true"><span /><span>Track</span><span>Mix</span><span>Status</span><span>Blocker</span><span>Updated</span><span>Next action</span><span /></div>{loading ? <p className="work-queue-empty">Loading library…</p> : filteredTracks.length ? filteredTracks.map((track) => <TrackRow key={track.id} track={track} metadata={getWorkflowMeta(track)} selected={false} checked={selectedIds.has(track.id)} showSelection showMenu={false} onCheckedChange={(checked) => setSelectedIds((current) => { const next = new Set(current); checked ? next.add(track.id) : next.delete(track.id); return next; })} onOpen={() => openTrack(track)} onPrimaryAction={() => openTrack(track)} onMenuAction={() => {}} />) : <p className="work-queue-empty">{tracks.length ? "No tracks match this filter." : "No tracks in your library yet. Add tracks to get started."}</p>}</section></div>
   </div>;
 }

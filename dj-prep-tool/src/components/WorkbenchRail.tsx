@@ -5,12 +5,13 @@ import {
   Disc3,
   Inbox,
   Library,
+  ListMusic,
   Settings,
   Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type WorkbenchView = "inbox" | "needs_attention" | "running" | "ready_to_dj" | "library" | "discover" | "settings";
+export type WorkbenchView = "inbox" | "needs_attention" | "running" | "ready_to_dj" | "library" | "playlists" | "discover" | "settings";
 
 export interface WorkbenchCounts {
   inbox: number;
@@ -42,6 +43,7 @@ const NAVIGATION_ITEMS: NavigationItem[] = [
   { id: "running", label: "Running", icon: Activity, countKey: "running" },
   { id: "ready_to_dj", label: "Ready to DJ", icon: CheckCircle2, countKey: "readyToDj" },
   { id: "library", label: "Library", icon: Library, countKey: "library", shortcut: 2 },
+  { id: "playlists", label: "Playlists", icon: ListMusic },
   { id: "discover", label: "Discover", icon: Sparkles, shortcut: 4 },
   { id: "settings", label: "Settings", icon: Settings, shortcut: 5 },
 ];

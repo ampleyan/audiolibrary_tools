@@ -227,6 +227,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .library-heading-actions { display: flex; gap: 8px; }
 .library-workbench-layout { display: block; }
 .library-view .work-queue-list { width: 100%; }
+.library-selection-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -2px 0 12px; padding: 8px 10px; border: 1px solid var(--color-primary); border-radius: 8px; background: var(--color-primary-bg); color: var(--color-foreground); font-size: 12px; }
+.library-selection-bar select { min-height: 30px; border: 1px solid var(--color-border-muted); border-radius: 5px; background: var(--color-surface); color: var(--color-foreground); padding: 5px 8px; }
 .inbox-track-table { overflow-x: auto; }
 .inbox-track-columns, .inbox-track-row { grid-template-columns: 34px minmax(190px, 1.5fr) minmax(90px, .8fr) 42px minmax(110px, .8fr) minmax(130px, .9fr) 34px minmax(92px, auto); min-width: 772px; }
 .inbox-track-id { color: var(--color-muted-foreground); font-size: 11px; font-variant-numeric: tabular-nums; }
