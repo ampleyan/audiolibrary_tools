@@ -1,0 +1,12 @@
+services:
+  beets:
+    build:
+      context: ./beets-config
+    ports:
+      - "${BEETS_BIND_IP:-0.0.0.0}:8337:8337"
+    volumes:
+      - ./beets-config:/config:ro
+      - ./data:/data
+      - /mnt/media/MUSIC/FROMTOOL:/music/inbox
+      - /mnt/media/MUSIC/RECENT:/music/archive
+    restart: unless-stopped
