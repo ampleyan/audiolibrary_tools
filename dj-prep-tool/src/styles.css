@@ -228,7 +228,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .library-workbench-layout { display: block; }
 .library-view .work-queue-list { width: 100%; }
 .inbox-track-table { overflow-x: auto; }
-.inbox-track-columns, .inbox-track-row { grid-template-columns: 34px minmax(190px, 1.5fr) minmax(90px, .8fr) minmax(90px, .7fr) minmax(110px, .8fr) minmax(130px, .9fr) 34px minmax(92px, auto); min-width: 820px; }
+.inbox-track-columns, .inbox-track-row { grid-template-columns: 34px minmax(190px, 1.5fr) minmax(90px, .8fr) 42px minmax(110px, .8fr) minmax(130px, .9fr) 34px minmax(92px, auto); min-width: 772px; }
 .inbox-track-id { color: var(--color-muted-foreground); font-size: 11px; font-variant-numeric: tabular-nums; }
 .inbox-track-name { min-width: 0; }
 .inbox-track-name strong, .inbox-track-name span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -236,6 +236,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .inbox-track-name span { margin-top: 2px; color: var(--color-muted); font-size: 11px; }
 .inbox-source-link { display: inline !important; margin-left: 6px; color: var(--color-primary) !important; }
 .inbox-track-source, .inbox-track-tag { overflow: hidden; color: var(--color-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-track-source { display: grid; place-items: center; }
 .inbox-track-source a { color: var(--color-primary); }
 .inbox-source-icon { display: inline-grid; width: 26px; height: 26px; place-items: center; border: 1px solid var(--color-border-subtle); border-radius: 6px; color: var(--color-muted); background: var(--color-surface-raised); }
 .source-youtube { color: #ff6b8a; }
