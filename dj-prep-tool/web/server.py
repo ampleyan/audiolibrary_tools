@@ -42,6 +42,16 @@ DATABASE_SSLMODE = os.environ.get("DATABASE_SSLMODE", "verify-full")
 DATABASE_SSLROOTCERT = os.environ.get("DATABASE_SSLROOTCERT", "")
 AUDIOTOOL_PASSWORD = os.environ.get("AUDIOTOOL_PASSWORD", "")
 SOCKSEEK_LOG_FILE = os.environ.get("SOCKSEEK_LOG_FILE", "")
+SOCKSEEK_USERNAME = os.environ.get("SOCKSEEK_USERNAME", "")
+SOCKSEEK_PASSWORD = os.environ.get("SOCKSEEK_PASSWORD", "")
+SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+COSINE_API_KEY = os.environ.get("COSINE_API_KEY", "")
+TELEGRAM_API_ID = os.environ.get("TELEGRAM_API_ID", "")
+TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
+PATH_MAP_FROM = os.environ.get("PATH_MAP_FROM", "")
+PATH_MAP_TO = os.environ.get("PATH_MAP_TO", "")
+YT_COOKIES_FILE = os.environ.get("YT_COOKIES_FILE", "")
 PYTHON = os.environ.get("PYTHON", "python3")
 YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET", "")
@@ -585,7 +595,9 @@ def command(name, payload):
         cur.execute("SELECT key,value FROM settings")
         values = {row["key"]: row["value"] for row in cur.fetchall()}
         conn.close()
-        return {"sockseekPath": "", "sockseekDaemonUrl": values.get("sockseek_daemon_url", SOCKSEEK_URL), "prepInboxDir": str(INBOX_DIR), "musicLibraryDir": str(LIBRARY_DIR), "picardPath": "", "ffmpegPath": "", "rekordboxImportDir": str(ARCHIVE_DIR), "rekordboxXmlPath": values.get("rekordbox_xml_path", REKORDBOX_XML_PATH), "pythonPath": PYTHON, "ytCookiesFile": values.get("yt_cookies_file", ""), "setupComplete": values.get("setup_complete") == "true", "hasSockseekCredentials": bool(values.get("sockseek_username") and values.get("sockseek_password")), "hasSpotifyCredentials": bool(values.get("spotify_client_id") and values.get("spotify_client_secret")), "hasCosineCredentials": bool(values.get("cosine_api_key")), "hasTelegramCredentials": bool(values.get("telegram_api_id") and values.get("telegram_api_hash")), "hasTelegramSession": Path(values.get("telegram_session_path", str(DATA_DIR / "telegram.session"))).exists(), "pathMapFrom": values.get("path_map_from", ""), "pathMapTo": values.get("path_map_to", ""), "beetsUrl": values.get("beets_url", "")}
+        sockseek_username = values.get("sockseek_username") or SOCKSEEK_USERNAME
+        sockseek_password = values.get("sockseek_password") or SOCKSEEK_PASSWORD
+        return {"sockseekPath": "", "sockseekDaemonUrl": values.get("sockseek_daemon_url") or SOCKSEEK_URL, "prepInboxDir": str(INBOX_DIR), "musicLibraryDir": str(LIBRARY_DIR), "picardPath": "", "ffmpegPath": "", "rekordboxImportDir": str(ARCHIVE_DIR), "rekordboxXmlPath": values.get("rekordbox_xml_path") or REKORDBOX_XML_PATH, "pythonPath": PYTHON, "ytCookiesFile": values.get("yt_cookies_file") or YT_COOKIES_FILE, "setupComplete": values.get("setup_complete") == "true", "hasSockseekCredentials": bool(sockseek_username and sockseek_password), "hasSpotifyCredentials": bool((values.get("spotify_client_id") or SPOTIFY_CLIENT_ID) and (values.get("spotify_client_secret") or SPOTIFY_CLIENT_SECRET)), "hasCosineCredentials": bool(values.get("cosine_api_key") or COSINE_API_KEY), "hasTelegramCredentials": bool((values.get("telegram_api_id") or TELEGRAM_API_ID) and (values.get("telegram_api_hash") or TELEGRAM_API_HASH)), "hasTelegramSession": Path(values.get("telegram_session_path", str(DATA_DIR / "telegram.session"))).exists(), "pathMapFrom": values.get("path_map_from") or PATH_MAP_FROM, "pathMapTo": values.get("path_map_to") or PATH_MAP_TO, "beetsUrl": values.get("beets_url") or BEETS_URL}
     if name == "save_settings":
         payload = payload.get("payload", payload)
         conn = db()
