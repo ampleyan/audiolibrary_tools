@@ -62,6 +62,7 @@ def db():
             host="/var/run/postgresql",
             dbname="audiotool",
             user="audiotool",
+            password=AUDIOTOOL_PASSWORD or None,
             cursor_factory=psycopg2.extras.DictCursor,
         )
     else:
