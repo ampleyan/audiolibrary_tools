@@ -5,7 +5,7 @@ import { getWorkflowMeta } from "../lib/workflow";
 import TrackInspector from "./TrackInspector";
 import TrackRow from "./TrackRow";
 import TrackStatusBadge from "./TrackStatusBadge";
-import { filterPreparationTracks, prioritizeActionableTracks } from "../views/PrepareView";
+import { filterAndSortTracks, filterPreparationTracks, prioritizeActionableTracks } from "../views/PrepareView";
 
 const track: Track = {
   id: 17,
@@ -185,5 +185,16 @@ describe("Prepare queue derivation", () => {
     ];
 
     expect(prioritizeActionableTracks(tracks).map((item) => item.id)).toEqual([3, 4, 5]);
+  });
+
+  it("filters by track details and sorts the result by the requested column", () => {
+    const tracks = [
+      withState(1, "requested", { artist: "Zulu", title: "Alpha" }),
+      withState(2, "matched", { artist: "Alpha", title: "Zulu" }),
+      withState(3, "dj_ready", { artist: "Alpha", title: "Beta" }),
+    ];
+
+    expect(filterAndSortTracks(tracks, "alpha", "all", "title", "asc").map((item) => item.id)).toEqual([1, 3, 2]);
+    expect(filterAndSortTracks(tracks, "", "requested", "artist", "desc").map((item) => item.id)).toEqual([1]);
   });
 });

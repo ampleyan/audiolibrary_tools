@@ -215,6 +215,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .prepare-stage-tabs button[aria-current="step"] { color: #f8f4f7 !important; border-bottom-color: #ff4fa3 !important; }
 .prepare-stage-tabs button span { color: #5a4552; font-size: 11px; margin-left: 4px; }
 .prepare-stage-tabs button[aria-current="step"] span { color: #ff6fb5; }
+.workbench-table-toolbar { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; padding: 10px 12px; border: 1px solid #352330; border-radius: 8px; background: #120d14; }
+.workbench-table-toolbar label { display: grid; gap: 4px; color: #a48e9b; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.workbench-table-search { flex: 1 1 240px; }
+.workbench-table-toolbar input, .workbench-table-toolbar select { min-height: 30px; border: 1px solid #513343; border-radius: 5px; background: #0d0a0f; color: #f1dce6; padding: 5px 8px; font: inherit; font-size: 12px; text-transform: none; }
+.workbench-table-toolbar input:focus, .workbench-table-toolbar select:focus { outline: 2px solid #ff6fb5; outline-offset: -1px; border-color: #ff4fa3; }
+.workbench-table-select { flex: 0 1 150px; }
+.workbench-sort-direction, .workbench-clear-filters { min-height: 30px; border: 1px solid #513343; border-radius: 5px; background: #1b121a; color: #d0b7c4; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 11px; }
+.workbench-sort-direction:hover, .workbench-clear-filters:hover { border-color: #ff4fa3; color: #ff6fb5; }
+.workbench-table-result-count { margin-left: auto; padding-bottom: 7px; color: #7a6570; font-size: 11px; white-space: nowrap; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 .track-status-badge { display: inline-flex; width: fit-content; max-width: 100%; align-items: center; gap: 5px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface-raised); color: var(--color-status-neutral); padding: 3px 7px; font-size: 10px; line-height: 1.2; white-space: nowrap; }
 .track-status-badge svg { flex: 0 0 auto; }

@@ -11,6 +11,8 @@ export type PrepareStage = "find" | "match" | "download" | "convert" | "quality"
 export type WorkQueueView = "needs_attention" | "running" | "ready_to_dj";
 export type PreparationFilter = "needs_attention" | "needs_action" | "running" | "blocked" | "done" | "all";
 type StageFilter = PrepareStage | "all";
+export type TrackSortKey = "priority" | "artist" | "title" | "status" | "updated" | "created";
+export type TrackSortDirection = "asc" | "desc";
 
 const FIND_STATES: TrackState[] = ["requested", "needs_review", "not_found"];
 const MATCH_STATES: TrackState[] = ["matched"];
@@ -60,6 +62,40 @@ export function prioritizeActionableTracks(tracks: Track[]) {
   });
 }
 
+export function filterAndSortTracks(
+  tracks: Track[],
+  query: string,
+  state: TrackState | "all",
+  sortKey: TrackSortKey,
+  direction: TrackSortDirection,
+) {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filtered = tracks.filter((track) => {
+    if (state !== "all" && track.state !== state) return false;
+    if (!normalizedQuery) return true;
+    return [track.artist, track.title, track.mix_version ?? "", track.error ?? "", track.state]
+      .some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
+  });
+  const priority = new Map(prioritizeActionableTracks(filtered).map((track, index) => [track.id, index]));
+  const compare = (left: Track, right: Track) => {
+    if (sortKey === "priority") {
+      return (priority.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (priority.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+        || right.updated_at.localeCompare(left.updated_at);
+    }
+    if (sortKey === "status") return getWorkflowMeta(left).statusLabel.localeCompare(getWorkflowMeta(right).statusLabel);
+    if (sortKey === "updated" || sortKey === "created") {
+      const leftDate = sortKey === "updated" ? left.updated_at : left.created_at;
+      const rightDate = sortKey === "updated" ? right.updated_at : right.created_at;
+      return (Date.parse(leftDate) || 0) - (Date.parse(rightDate) || 0);
+    }
+    return left[sortKey].localeCompare(right[sortKey]);
+  };
+  return filtered.sort((left, right) => {
+    const result = compare(left, right);
+    return (direction === "desc" ? -result : result) || left.id - right.id;
+  });
+}
+
 function defaultFilter(view: WorkQueueView): PreparationFilter {
   if (view === "running") return "running";
   if (view === "ready_to_dj") return "done";
@@ -93,6 +129,10 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
   const [tracks, setTracks] = useState<Track[]>([]);
   const [filter, setFilter] = useState<PreparationFilter>(() => defaultFilter(queueView));
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
+  const [trackQuery, setTrackQuery] = useState("");
+  const [trackState, setTrackState] = useState<TrackState | "all">("all");
+  const [sortKey, setSortKey] = useState<TrackSortKey>("priority");
+  const [sortDirection, setSortDirection] = useState<TrackSortDirection>("asc");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [moveTarget, setMoveTarget] = useState<TrackState>("requested");
   const [loading, setLoading] = useState(true);
@@ -110,12 +150,10 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
   useEffect(() => { setFilter(defaultFilter(queueView)); setStageFilter("all"); }, [queueView]);
 
   const selectedTrack = tracks.find((track) => track.id === selectedTrackId) ?? null;
-  const visibleTracks = useMemo(() => filterPreparationTracks(tracks, filter, stageFilter), [filter, stageFilter, tracks]);
+  const baseVisibleTracks = useMemo(() => filterPreparationTracks(tracks, filter, stageFilter), [filter, stageFilter, tracks]);
+  const visibleTracks = useMemo(() => filterAndSortTracks(baseVisibleTracks, trackQuery, trackState, sortKey, sortDirection), [baseVisibleTracks, sortDirection, sortKey, trackQuery, trackState]);
   const actionableTracks = useMemo(() => prioritizeActionableTracks(visibleTracks), [visibleTracks]);
-  const orderedTracks = useMemo(() => {
-    const priority = new Map(prioritizeActionableTracks(visibleTracks).map((track, index) => [track.id, index]));
-    return [...visibleTracks].sort((a, b) => (priority.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (priority.get(b.id) ?? Number.MAX_SAFE_INTEGER) || b.updated_at.localeCompare(a.updated_at));
-  }, [visibleTracks]);
+  const orderedTracks = visibleTracks;
   const selectedTracks = tracks.filter((track) => selectedIds.has(track.id));
   const activeStage = STAGES.find((item) => item.id === stage) ?? STAGES[0];
   const counts = new Map(FILTERS.map((item) => [item.id, tracks.filter((track) => preparationBucket(track) === item.id).length]));
@@ -273,6 +311,15 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
         {STAGES.map((item) => <button key={item.id} type="button" aria-current={stageFilter === item.id ? "step" : undefined} title={item.description} onClick={() => { setStageFilter(item.id); onStageChange(item.id); }}>{item.label}<span>{tracks.filter((track) => getWorkflowMeta(track).stage === item.id).length}</span></button>)}
       </nav>
       <p className="work-queue-stage-description">{stageFilter === "all" ? "All preparation stages, ordered by urgency and next action." : STAGES.find((item) => item.id === stageFilter)?.description}</p>
+
+      <div className="workbench-table-toolbar" aria-label="Filter and sort tracks">
+        <label className="workbench-table-search"> <span>Filter tracks</span><input value={trackQuery} onChange={(event) => setTrackQuery(event.target.value)} placeholder="Artist, title, mix, status…" /></label>
+        <label className="workbench-table-select"><span>Status</span><select value={trackState} onChange={(event) => setTrackState(event.target.value as TrackState | "all")}><option value="all">All statuses</option>{Array.from(new Set(tracks.map((track) => track.state))).sort().map((state) => <option key={state} value={state}>{getWorkflowMeta({ state } as Track).statusLabel}</option>)}</select></label>
+        <label className="workbench-table-select"><span>Sort by</span><select value={sortKey} onChange={(event) => setSortKey(event.target.value as TrackSortKey)}><option value="priority">Priority</option><option value="artist">Artist</option><option value="title">Title</option><option value="status">Status</option><option value="updated">Last updated</option><option value="created">Date added</option></select></label>
+        <button className="workbench-sort-direction" type="button" onClick={() => setSortDirection((current) => current === "asc" ? "desc" : "asc")} aria-label={`Sort ${sortDirection === "asc" ? "descending" : "ascending"}`}>{sortDirection === "asc" ? "↑ Ascending" : "↓ Descending"}</button>
+        {(trackQuery || trackState !== "all") && <button className="workbench-clear-filters" type="button" onClick={() => { setTrackQuery(""); setTrackState("all"); }}>Clear</button>}
+        <span className="workbench-table-result-count">{orderedTracks.length} of {baseVisibleTracks.length} shown</span>
+      </div>
 
       {selectedIds.size > 0 && <div className="work-queue-batch" aria-label="Batch actions">
         <strong>{selectedIds.size} selected</strong><button type="button" onClick={() => runBatch("search")}>Search</button><button type="button" onClick={() => runBatch("loose")}>Loose search</button><button type="button" onClick={() => runBatch("download")}>Start downloads</button><button type="button" onClick={() => runBatch("quality")}>Run quality checks</button>
