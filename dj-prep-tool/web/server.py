@@ -844,13 +844,18 @@ def command(name, payload):
             except Exception: pass
         LOSSLESS_EXTS = {"flac", "wav", "aif", "aiff", "ape", "wv", "alac"}
         def quality_ok(c):
-            ext = c.get("extension", "").lower().lstrip(".")
+            raw_ext = c.get("extension", "")
+            filename = c.get("filename", "")
+            ext = (raw_ext or filename.rsplit(".", 1)[-1] if "." in filename else "").lower().lstrip(".")
             if ext in LOSSLESS_EXTS:
                 return True
             if ext == "mp3":
                 return (c.get("bitRate") or 0) >= 300
             return False
+        raw_count = len(results)
         results = [c for c in results if quality_ok(c)]
+        if raw_count and not results:
+            append_log(f"[search] quality filter: {label}: {raw_count} raw results, all filtered (no MP3 320+ or lossless)")
         wanted = f'{track["artist"]} {track["title"]}'.lower()
         ranked = []
         for candidate in results:
@@ -860,10 +865,10 @@ def command(name, payload):
         ranked.sort(key=lambda item: item["score"], reverse=True)
         if ranked:
             update(track["id"], "UPDATE tracks SET candidate_json=%s WHERE id=%s", (json.dumps(ranked),))
-            append_log(f"[search] completed: {label}: {len(ranked)} candidates")
+            append_log(f"[search] completed: {label}: {len(ranked)} candidates (from {raw_count} raw)")
         else:
-            update(track["id"], "UPDATE tracks SET state='requested',error=%s WHERE id=%s", ("No results found — try editing the artist/title or search again later",))
-            append_log(f"[search] completed: {label}: no results")
+            update(track["id"], "UPDATE tracks SET state='requested',error=%s WHERE id=%s", ("No results found — try loose search or edit artist/title",))
+            append_log(f"[search] completed: {label}: no results (raw: {raw_count})")
         return ranked
     if name == "approve_candidate":
         track = get_track(int(payload["trackId"]))
