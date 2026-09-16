@@ -1,4 +1,14 @@
 services:
+  beets:
+    build:
+      context: ./beets-config
+    volumes:
+      - ./beets-config:/config:ro
+      - ./data:/data
+      - /mnt/media/MUSIC/FROMTOOL:/music/inbox
+      - /mnt/media/MUSIC/RECENT:/music/archive
+    restart: unless-stopped
+
   dj-prep:
     build:
       context: ..
@@ -18,6 +28,7 @@ services:
       DJ_PREP_LIBRARY_DIR: /music/library
       DJ_PREP_REKORDBOX_XML: ${DJ_PREP_REKORDBOX_XML:-}
       SOCKSEEK_URL: ${SOCKSEEK_URL:-http://host.docker.internal:5030}
+      BEETS_URL: http://beets:8337
       YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
       YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
       YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-}
@@ -29,4 +40,6 @@ services:
       - ./music-inbox:/music/inbox
       - ./music-archive:/music/archive
       - ./rekordbox:/rekordbox:ro
+    depends_on:
+      - beets
     restart: unless-stopped
