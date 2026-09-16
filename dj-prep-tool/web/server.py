@@ -168,12 +168,14 @@ def insert(draft):
     artist, title, mix_version, source_url, state, error = draft
     cur = conn.cursor()
     cur.execute(
-        "SELECT EXISTS(SELECT 1 FROM tracks WHERE lower(trim(artist))=lower(trim(%s)) AND lower(trim(title))=lower(trim(%s)))",
+        "SELECT id, artist, title FROM tracks WHERE lower(trim(artist))=lower(trim(%s)) AND lower(trim(title))=lower(trim(%s)) LIMIT 1",
         (artist, title),
     )
-    exists = cur.fetchone()[0]
-    if exists:
-        error = f"{error}; duplicate of existing track" if error else "duplicate of existing track"
+    existing = cur.fetchone()
+    if existing:
+        orig = f"{existing['artist']} – {existing['title']}".strip(" –")
+        dup_note = f"duplicate of #{existing['id']}: {orig}"
+        error = f"{error}; {dup_note}" if error else dup_note
     dj_path = None
     if state != "dj_ready":
         xml_path = rekordbox_xml_path()

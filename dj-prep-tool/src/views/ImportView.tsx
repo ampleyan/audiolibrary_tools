@@ -55,7 +55,14 @@ export function TrackList({
   };
 
   const needsReviewCount = tracks.filter((t) => t.state === "needs_review").length;
-  const duplicateCount = tracks.filter((t) => t.error?.toLowerCase().includes("duplicate")).length;
+  const duplicateTracks = tracks.filter((t) => t.error?.toLowerCase().includes("duplicate of"));
+  const duplicateCount = duplicateTracks.length;
+
+  const handleRemoveAllDuplicates = async () => {
+    for (const t of duplicateTracks) {
+      await handleDelete(t.id);
+    }
+  };
   const visibleTracks = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     const result = tracks.filter((track) => {
@@ -112,9 +119,24 @@ export function TrackList({
         </div>
       )}
       {duplicateCount > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#fbbf2418", border: "1px solid #fbbf2444", borderRadius: 6, marginBottom: 12, fontSize: 12, color: "#fbbf24" }}>
-          <span>{duplicateCount} duplicate{duplicateCount > 1 ? "s" : ""} detected</span>
-          <span style={{ color: "#9ca3af" }}>Remove the imported copy if you do not want to keep both.</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 12px", background: "#fbbf2418", border: "1px solid #fbbf2444", borderRadius: 6, marginBottom: 12, fontSize: 12, color: "#fbbf24" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span>{duplicateCount} duplicate{duplicateCount > 1 ? "s" : ""} already in your library</span>
+            <button onClick={handleRemoveAllDuplicates} style={{ background: "transparent", border: "1px solid #fbbf2466", borderRadius: 4, color: "#fbbf24", padding: "2px 10px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+              Remove all duplicates
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {duplicateTracks.map((t) => {
+              const of = t.error?.match(/duplicate of (#\d+: .+)/i)?.[1];
+              return (
+                <span key={t.id} style={{ color: "#9ca3af" }}>
+                  <span style={{ color: "#fbbf24" }}>{t.artist ? `${t.artist} – ` : ""}{t.title}</span>
+                  {of && <> → already exists as {of}</>}
+                </span>
+              );
+            })}
+          </div>
         </div>
       )}
       <div className="work-queue-batch" aria-label="Inbox selection actions">
