@@ -89,7 +89,7 @@ export default function App() {
         const bucket = getWorkflowMeta(track).bucket;
         result.library += 1;
         if (bucket === "inbox") result.inbox += 1;
-        if (bucket === "needs_attention") result.needsAttention += 1;
+        if (bucket === "needs_attention" || bucket === "inbox") result.needsAttention += 1;
         if (bucket === "running") result.running += 1;
         if (bucket === "ready_to_dj") result.readyToDj += 1;
         return result;

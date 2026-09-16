@@ -47,7 +47,7 @@ export function filterPreparationTracks(tracks: Track[], filter: PreparationFilt
   return tracks.filter((track) => {
     const metadata = getWorkflowMeta(track);
     const matchesQueue = filter === "all"
-      || (filter === "needs_attention" ? metadata.bucket === "needs_attention" : preparationBucket(track) === filter);
+      || (filter === "needs_attention" ? metadata.bucket === "needs_attention" || metadata.bucket === "inbox" : preparationBucket(track) === filter);
     return matchesQueue && (stage === "all" || metadata.stage === stage);
   });
 }

@@ -177,7 +177,7 @@ describe("Prepare queue derivation", () => {
       withState(4, "dj_ready"),
     ];
 
-    expect(filterPreparationTracks(tracks, "needs_attention", "all").map((item) => item.id)).toEqual([2]);
+    expect(filterPreparationTracks(tracks, "needs_attention", "all").map((item) => item.id)).toEqual([1, 2]);
     expect(filterPreparationTracks(tracks, "done", "all").map((item) => item.id)).toEqual([4]);
     expect(filterPreparationTracks(tracks, "all", "all").map((item) => item.id)).toEqual([1, 2, 3, 4]);
   });
