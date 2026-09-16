@@ -114,16 +114,29 @@ A web-based pipeline for preparing DJ tracks: import → search Soulseek → rev
 
 ### Running with Docker
 
+First time on any machine: copy `.env.example` to `.env` and fill in `AUDIOTOOL_PASSWORD`.
+
+**Mac / Windows:**
 ```bash
 cd dj-prep-tool
-DOCKER_BUILDKIT=0 docker compose up -d --build
+docker compose up -d --build
 ```
+
+**Raspberry Pi (kodisrv):**
+```bash
+cd dj-prep-tool
+docker compose -f docker-compose.yml -f docker-compose.rpi5.yml up -d --build
+```
+
+The rpi5 override uses `DATABASE_MODE=local` (Unix socket to the rpi-postgresql container) instead of TCP. The base compose uses `DATABASE_MODE=remote` (TCP to `host.docker.internal:5432`).
 
 App runs at **http://localhost:8080**. Uses two containers:
 - `dj-prep` — Python server + React frontend
 - `sockseek` — Soulseek daemon (heiso/sockseek image, runs as linux/amd64 via Rosetta on Apple Silicon)
 
-If Docker Hub is unreachable: `DOCKER_BUILDKIT=0 docker compose up -d --build dj-prep`
+### PostgreSQL
+
+The `audiotool` database must exist before starting. Password for the `audiotool` role goes in `.env` as `AUDIOTOOL_PASSWORD` — required on all platforms, both local-socket and remote-TCP modes check it.
 
 ### Sockseek
 
