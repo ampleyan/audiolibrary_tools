@@ -18,10 +18,16 @@ function getVideoId(url: string) {
 }
 
 const EMPTY_COUNTS: WorkbenchCounts = { inbox: 0, needsAttention: 0, running: 0, readyToDj: 0, library: 0 };
+const VIEW_PATHS: Record<WorkbenchView, string> = { inbox: "/inbox", library: "/library", playlists: "/playlists", needs_attention: "/attention", running: "/running", ready_to_dj: "/ready-to-dj", discover: "/discover", settings: "/settings" };
+
+function viewFromPath(pathname: string): WorkbenchView {
+  const entry = Object.entries(VIEW_PATHS).find(([, path]) => path === pathname);
+  return (entry?.[0] as WorkbenchView | undefined) ?? "needs_attention";
+}
 
 export default function App() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
-  const [view, setView] = useState<WorkbenchView>("needs_attention");
+  const [view, setView] = useState<WorkbenchView>(() => viewFromPath(window.location.pathname));
   const [prepareStage, setPrepareStage] = useState<PrepareStage>("find");
   const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -31,13 +37,28 @@ export default function App() {
   const [player, setPlayer] = useState<{ tracks: SimilarTrack[]; index: number } | null>(null);
   const [playerMessage, setPlayerMessage] = useState<string | null>(null);
 
-  const selectView = (nextView: WorkbenchView) => {
+  const selectView = (nextView: WorkbenchView, updateUrl = true) => {
     if (nextView === "needs_attention") setPrepareStage("find");
     if (nextView === "running") setPrepareStage("download");
     if (nextView === "ready_to_dj") setPrepareStage("rekordbox");
     if (!(["needs_attention", "running", "ready_to_dj"] as WorkbenchView[]).includes(nextView)) setSelectedTrackId(null);
     setView(nextView);
+    if (updateUrl && window.location.pathname !== VIEW_PATHS[nextView]) window.history.pushState({ view: nextView }, "", VIEW_PATHS[nextView]);
   };
+
+  useEffect(() => {
+    const handlePopState = () => selectView(viewFromPath(window.location.pathname), false);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (!settings?.setupComplete) return;
+    const canonicalPath = VIEW_PATHS[view];
+    if (window.location.pathname !== canonicalPath) {
+      window.history.replaceState({ view }, "", canonicalPath);
+    }
+  }, [settings?.setupComplete, view]);
 
   const navigate = (nextTab: string) => {
     if (nextTab === "review") {
