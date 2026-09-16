@@ -23,6 +23,7 @@ services:
       YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
       YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-}
       DATABASE_MODE: local
+      AUDIOTOOL_PASSWORD: ${AUDIOTOOL_PASSWORD:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
