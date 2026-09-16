@@ -37,8 +37,8 @@ services:
     volumes:
       - ./data:/data
       - ./music-library:/music/library
-      - ./music-inbox:/music/inbox
-      - ./music-archive:/music/archive
+      - /mnt/media/MUSIC/FROMTOOL:/music/inbox
+      - /mnt/media/MUSIC/RECENT:/music/archive
       - ./rekordbox:/rekordbox:ro
     depends_on:
       - beets
