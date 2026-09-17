@@ -30,11 +30,19 @@
       "Bash(cd:*)",
       "Bash(python -m pytest tests/test_yt_slsk.py -v)",
       "Bash(python -c \":*)",
-      "Bash(python -c \"import config; from lib.musiclib import build_folder_name; print\\(''all imports OK''\\)\")"
+      "Bash(python -c \"import config; from lib.musiclib import build_folder_name; print\\(''all imports OK''\\)\")",
+      "Bash(ssh ampleyan@kodisrv *)",
+      "PowerShell(python -m pip install psycopg2-binary 2>&1 | Select-Object -Last 5)",
+      "PowerShell(Start-Sleep 2; \\(Invoke-WebRequest -Uri \"http://localhost:8080/api/health\" -TimeoutSec 5\\).Content)",
+      "PowerShell(Test-NetConnection *)",
+      "mcp__chrome-devtools-mcp__navigate_page",
+      "mcp__chrome-devtools-mcp__take_screenshot",
+      "mcp__chrome-devtools-mcp__take_snapshot",
+      "mcp__chrome-devtools-mcp__click"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "fetch"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }

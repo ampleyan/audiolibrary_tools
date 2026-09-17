@@ -1,0 +1,61 @@
+services:
+  sockseek:
+    image: heiso/sockseek:latest
+    command: ["daemon", "--server-ip", "0.0.0.0", "--server-port", "5030", "--config", "/config/sockseek.conf"]
+    ports:
+      - "5030:5030"
+    volumes:
+      - ./sockseek-daemon.conf:/config/sockseek.conf:ro
+      - ${MUSIC_INBOX_DIR:-./music-inbox}:/data
+    restart: unless-stopped
+
+  beets:
+    build:
+      context: ./beets-config
+    volumes:
+      - ./beets-config:/config:ro
+      - ./data:/data
+      - ${MUSIC_INBOX_DIR:-./music-inbox}:/music/inbox
+      - ${MUSIC_ARCHIVE_DIR:-./music-archive}:/music/archive
+    restart: unless-stopped
+
+  dj-prep:
+    build:
+      context: ..
+      dockerfile: dj-prep-tool/web/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DJ_PREP_DATA_DIR: /data
+      DJ_PREP_INBOX_DIR: /music/inbox
+      DJ_PREP_ARCHIVE_DIR: /music/archive
+      DJ_PREP_LIBRARY_DIR: /music/library
+      DJ_PREP_REKORDBOX_XML: ${DJ_PREP_REKORDBOX_XML:-}
+      SOCKSEEK_URL: ${SOCKSEEK_URL:-http://sockseek:5030}
+      BEETS_URL: http://beets:8337
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
+      YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-}
+      DATABASE_MODE: ${DATABASE_MODE:-remote}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://audiotool@host.docker.internal:5432/audiotool}
+      DATABASE_SSLMODE: ${DATABASE_SSLMODE:-disable}
+      AUDIOTOOL_PASSWORD: ${AUDIOTOOL_PASSWORD:-}
+      YT_COOKIES_FILE: ${YT_COOKIES_FILE:-}
+      SOCKSEEK_USERNAME: ${SOCKSEEK_USERNAME:-}
+      SOCKSEEK_PASSWORD: ${SOCKSEEK_PASSWORD:-}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      COSINE_API_KEY: ${COSINE_API_KEY:-}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
+      PATH_MAP_FROM: ${PATH_MAP_FROM:-}
+      PATH_MAP_TO: ${PATH_MAP_TO:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/data
+      - ./music-library:/music/library
+      - ${MUSIC_INBOX_DIR:-./music-inbox}:/music/inbox
+      - ${MUSIC_ARCHIVE_DIR:-./music-archive}:/music/archive
+      - ./rekordbox:/rekordbox:ro
+    restart: unless-stopped

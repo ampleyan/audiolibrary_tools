@@ -1,0 +1,15 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, rpi-server]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy sockseek
+        working-directory: sockseek
+        run: docker compose up -d --build
