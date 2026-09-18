@@ -115,6 +115,40 @@ export interface SimilarTrack {
   score: number;
 }
 
+export interface CosineFilters {
+  page?: number;
+  limit?: number;
+  yearStart?: number;
+  yearEnd?: number;
+  minHave?: number;
+  maxHave?: number;
+  minWant?: number;
+  maxWant?: number;
+  minPrice?: number;
+  maxPrice?: number;
+}
+
+export interface DownloadItemStatus {
+  id: number | null;
+  batchId: number | null;
+  trackId: number;
+  username: string | null;
+  filename: string | null;
+  downloadJobId: string;
+  state: string;
+  downloadedPath: string | null;
+  bytesOnDisk: number | null;
+  bytesTotal: number | null;
+  error: string | null;
+  remoteState: string | null;
+}
+
+export interface DownloadStatus {
+  trackId: number;
+  state: string;
+  items: DownloadItemStatus[];
+}
+
 export interface RekordboxTrack {
   artist: string;
   title: string;

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import TrackInspector, { type InspectorMatchingAction, type InspectorPipelineAction } from "../components/TrackInspector";
-import TrackRow, { type TrackMenuAction } from "../components/TrackRow";
+import TrackRow, { type TrackDownloadProgress, type TrackMenuAction } from "../components/TrackRow";
 import { api, WORKBENCH_DATA_CHANGED_EVENT } from "../lib/api";
 import type { TrackActionId, TrackRow as Track, TrackState } from "../lib/types";
 import { getWorkflowMeta, isActionable, isWorkflowBlocked } from "../lib/workflow";
@@ -144,6 +144,8 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [fallbackOpen, setFallbackOpen] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<Record<number, TrackDownloadProgress>>({});
+  const progressSamples = useRef<Record<number, { bytes: number; at: number }>>({});
 
   const load = () => {
     setLoading(true);
@@ -170,12 +172,68 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
     onHandoffConsumed?.();
   }, [handoffTrackIds, onHandoffConsumed, onSelectedTrackChange]);
 
+  useEffect(() => {
+    if (queueView !== "running") {
+      setDownloadProgress({});
+      progressSamples.current = {};
+      return;
+    }
+    const activeTracks = tracks.filter((track) => track.state === "downloading");
+    if (!activeTracks.length) {
+      setDownloadProgress({});
+      progressSamples.current = {};
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      const statuses = await Promise.all(activeTracks.map(async (track) => {
+        try {
+          return { track, status: await api.getDownloadStatus(track.id) };
+        } catch {
+          return null;
+        }
+      }));
+      if (cancelled) return;
+      const now = Date.now();
+      const next: Record<number, TrackDownloadProgress> = {};
+      let terminal = false;
+      statuses.forEach((result) => {
+        if (!result) return;
+        const item = result.status.items[0];
+        const bytesOnDisk = item?.bytesOnDisk ?? null;
+        const bytesTotal = item?.bytesTotal ?? null;
+        const previous = progressSamples.current[result.track.id];
+        const speed = previous && bytesOnDisk != null && bytesOnDisk >= previous.bytes
+          ? (bytesOnDisk - previous.bytes) / Math.max(1, (now - previous.at) / 1000)
+          : null;
+        if (bytesOnDisk != null) progressSamples.current[result.track.id] = { bytes: bytesOnDisk, at: now };
+        next[result.track.id] = { bytesOnDisk, bytesTotal, speed };
+        terminal ||= result.status.state !== "downloading";
+      });
+      setDownloadProgress(next);
+      if (terminal) void load();
+    };
+    void poll();
+    const timer = window.setInterval(() => { void poll(); }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [queueView, tracks]);
+
   const selectedTrack = tracks.find((track) => track.id === selectedTrackId) ?? null;
   const baseVisibleTracks = useMemo(() => filterPreparationTracks(tracks, filter, stageFilter), [filter, stageFilter, tracks]);
   const visibleTracks = useMemo(() => filterAndSortTracks(baseVisibleTracks, trackQuery, trackState, sortKey, sortDirection, unknownArtistOnly), [baseVisibleTracks, sortDirection, sortKey, trackQuery, trackState, unknownArtistOnly]);
   const actionableTracks = useMemo(() => prioritizeActionableTracks(visibleTracks), [visibleTracks]);
   const orderedTracks = visibleTracks;
   const selectedTracks = tracks.filter((track) => selectedIds.has(track.id));
+  const allVisibleSelected = orderedTracks.length > 0 && orderedTracks.every((track) => selectedIds.has(track.id));
+  const toggleVisibleSelection = () => setSelectedIds((current) => {
+    const next = new Set(current);
+    if (allVisibleSelected) orderedTracks.forEach((track) => next.delete(track.id));
+    else orderedTracks.forEach((track) => next.add(track.id));
+    return next;
+  });
   const activeStage = STAGES.find((item) => item.id === stage) ?? STAGES[0];
   const counts = new Map(FILTERS.map((item) => [item.id, tracks.filter((track) => preparationBucket(track) === item.id).length]));
 
@@ -214,7 +272,7 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
       search: (item) => api.searchTrack(item.id),
       loose_search: (item) => api.searchTrackLoose(item.id),
       download: (item) => api.startDownload(item.id),
-      monitor_download: (item) => api.pollDownload(item.id),
+      monitor_download: (item) => api.getDownloadStatus(item.id),
       convert: (item) => api.convertTrack(item.id),
       quality_check: (item) => api.runQualityCheck(item.id),
       retry_quality: (item) => api.runQualityCheck(item.id),
@@ -340,7 +398,7 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
         <button className="workbench-sort-direction" type="button" onClick={() => setSortDirection((current) => current === "asc" ? "desc" : "asc")} aria-label={`Sort ${sortDirection === "asc" ? "descending" : "ascending"}`}>{sortDirection === "asc" ? "↑ Ascending" : "↓ Descending"}</button>
         <button className={`workbench-filter-toggle${unknownArtistOnly ? " is-active" : ""}`} type="button" aria-pressed={unknownArtistOnly} onClick={() => setUnknownArtistOnly((v) => !v)}>No artist</button>
         {(trackQuery || trackState !== "all" || unknownArtistOnly) && <button className="workbench-clear-filters" type="button" onClick={() => { setTrackQuery(""); setTrackState("all"); setUnknownArtistOnly(false); }}>Clear</button>}
-        <span className="workbench-table-result-count">{orderedTracks.length} of {baseVisibleTracks.length} shown</span>
+        <button type="button" onClick={toggleVisibleSelection} disabled={!orderedTracks.length}>{allVisibleSelected ? "Deselect all shown" : "Select all shown"}</button><span className="workbench-table-result-count">{orderedTracks.length} of {baseVisibleTracks.length} shown</span>
       </div>
 
       {selectedIds.size > 0 && <div className="work-queue-batch" aria-label="Batch actions">
@@ -351,7 +409,7 @@ export default function PrepareView({ stage, queueView, selectedTrackId, onStage
       <div className="work-queue-layout">
         <section className="work-queue-list" aria-label="Prioritized track queue">
           <div className="work-queue-columns" aria-hidden="true"><span /><span>Track</span><span>Mix</span><span>Status</span><span>Blocker</span><span>Updated</span><span>Next action</span><span /></div>
-          {loading ? <p className="work-queue-empty">Loading prioritized queue…</p> : orderedTracks.length ? orderedTracks.map((track) => <TrackRow key={track.id} track={track} metadata={getWorkflowMeta(track)} selected={selectedTrackId === track.id} checked={selectedIds.has(track.id)} busy={busyIds.has(track.id)} onCheckedChange={(checked) => setSelectedIds((current) => { const next = new Set(current); checked ? next.add(track.id) : next.delete(track.id); return next; })} onOpen={() => onSelectedTrackChange(track.id)} onPrimaryAction={() => runPrimaryAction(track)} onMenuAction={(action) => handleMenuAction(track, action)} />) : <p className="work-queue-empty">No tracks match this queue and stage filter.</p>}
+          {loading ? <p className="work-queue-empty">Loading prioritized queue…</p> : orderedTracks.length ? orderedTracks.map((track) => <TrackRow key={track.id} track={track} metadata={getWorkflowMeta(track)} selected={selectedTrackId === track.id} checked={selectedIds.has(track.id)} busy={busyIds.has(track.id)} downloadProgress={downloadProgress[track.id]} onCheckedChange={(checked) => setSelectedIds((current) => { const next = new Set(current); checked ? next.add(track.id) : next.delete(track.id); return next; })} onOpen={() => onSelectedTrackChange(track.id)} onPrimaryAction={() => runPrimaryAction(track)} onMenuAction={(action) => handleMenuAction(track, action)} />) : <p className="work-queue-empty">No tracks match this queue and stage filter.</p>}
           {orderedTracks.some((track) => track.state === "not_found" || (track.state === "requested" && track.search_job_id)) && <details className="work-queue-help"><summary>No search results?</summary><p>Use Loose search to broaden the query. Edit the artist, title, or mix in the full Find files workspace if the result is still empty.</p></details>}
         </section>
         <TrackInspector track={selectedTrack} pathMapFrom={pathMapFrom} pathMapTo={pathMapTo} busy={selectedTrack ? busyIds.has(selectedTrack.id) : false} error={error} onClose={closeInspector} onPrimaryAction={runPrimaryAction} onMenuAction={handleMenuAction} onMatchingAction={handleMatchingAction} onPipelineAction={handlePipelineAction} />

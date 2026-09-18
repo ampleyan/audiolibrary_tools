@@ -5,6 +5,8 @@ import type {
   RankedCandidate,
   RekordboxPreview,
   SimilarTrack,
+  CosineFilters,
+  DownloadStatus,
   SetupCheck,
   ImportPreviewRow,
   TrackRow,
@@ -42,7 +44,7 @@ const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 export const WORKBENCH_DATA_CHANGED_EVENT = "dj-prep:data-changed";
 const MUTATING_COMMANDS = new Set([
   "save_settings", "import_text", "import_csv", "import_youtube", "import_telegram", "import_telegram_link", "import_rekordbox_playlist",
-  "update_track", "update_track_state", "delete_track", "clear_tracks", "approve_candidate", "start_download", "cancel_download", "poll_download",
+  "update_track", "update_track_state", "delete_track", "clear_tracks", "approve_candidate", "start_download", "start_download_files", "cancel_download", "poll_download",
   "run_quality_check", "convert_track", "tag_track", "finish_rekordbox", "create_playlist", "rename_playlist", "delete_playlist", "add_tracks_to_playlist", "remove_tracks_from_playlist",
 ]);
 
@@ -157,11 +159,17 @@ export const api = {
   startDownload: (trackId: number) =>
     call<void>("start_download", { trackId }),
 
+  startDownloadFiles: (trackId: number, files: Array<{ username: string; filename: string }>) =>
+    call<TrackRow>("start_download_files", { trackId, files }),
+
   pollDownload: (trackId: number) =>
     call<TrackRow>("poll_download", { trackId }),
 
   checkDownloadProgress: (trackId: number) =>
     call<{ bytesOnDisk: number | null; bytesTotal: number | null }>("check_download_progress", { trackId }),
+
+  getDownloadStatus: (trackId: number) =>
+    call<DownloadStatus>("get_download_status", { trackId }),
 
   cancelDownload: (trackId: number) =>
     call<void>("cancel_download", { trackId }),
@@ -181,11 +189,11 @@ export const api = {
   runQualityCheck: (trackId: number) =>
     call<QualityResult>("run_quality_check", { trackId }),
 
-  getSimilarTracks: (trackId: number) =>
-    call<SimilarTrack[]>("get_similar_tracks", { trackId }),
+  getSimilarTracks: (trackId: number, filters?: CosineFilters) =>
+    call<SimilarTrack[]>("get_similar_tracks", { trackId, filters: filters ?? null }),
 
-  getSimilarTracksForQuery: (artist: string, title: string) =>
-    call<SimilarTrack[]>("get_similar_tracks_for_query", { artist, title }),
+  getSimilarTracksForQuery: (artist: string, title: string, filters?: CosineFilters) =>
+    call<SimilarTrack[]>("get_similar_tracks_for_query", { artist, title, filters: filters ?? null }),
 
   getYoutubeAuthUrl: () =>
     call<{ authorized: boolean; url: string | null }>("get_youtube_auth_url"),

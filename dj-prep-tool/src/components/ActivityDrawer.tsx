@@ -50,8 +50,8 @@ export default function ActivityDrawer({ entries, open, onClose }: ActivityDrawe
   };
 
   return (
-    <div className="activity-drawer-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section id="activity-drawer" ref={panelRef} className="activity-drawer" role="dialog" aria-modal="true" aria-labelledby="activity-drawer-title">
+    <div className="activity-drawer-layer" role="presentation">
+      <section id="activity-drawer" ref={panelRef} className="activity-drawer" role="dialog" aria-labelledby="activity-drawer-title">
         <header className="activity-drawer-header" onMouseDown={onDragStart}>
           <GripHorizontal aria-hidden="true" size={18} />
           <strong id="activity-drawer-title">Activity log</strong>

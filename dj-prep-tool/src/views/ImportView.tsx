@@ -75,6 +75,13 @@ export function TrackList({
       return (descending ? -1 : 1) * result || left.id - right.id;
     });
   }, [descending, query, sortKey, stateFilter, tracks]);
+  const allVisibleSelected = visibleTracks.length > 0 && visibleTracks.every((track) => selectedIds.has(track.id));
+  const toggleVisibleSelection = () => setSelectedIds((current) => {
+    const next = new Set(current);
+    if (allVisibleSelected) visibleTracks.forEach((track) => next.delete(track.id));
+    else visibleTracks.forEach((track) => next.add(track.id));
+    return next;
+  });
 
   if (tracks.length === 0)
     return (
@@ -144,7 +151,7 @@ export function TrackList({
         <button type="button" onClick={() => onPrepareSelected([...selectedIds])} disabled={selectedIds.size === 0}>Prepare selected tracks</button>
         <button type="button" onClick={() => setSelectedIds(new Set())} disabled={selectedIds.size === 0}>Clear selection</button>
       </div>
-      <div className="workbench-table-toolbar" aria-label="Filter and sort inbox tracks"><label className="workbench-table-search"><span>Filter tracks</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Artist, title, source, tag…" /></label><label className="workbench-table-select"><span>Status</span><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TrackState | "all")}><option value="all">All statuses</option>{Array.from(new Set(tracks.map((track) => track.state))).sort().map((state) => <option key={state} value={state}>{getWorkflowMeta({ state } as TrackRow).statusLabel}</option>)}</select></label><label className="workbench-table-select"><span>Sort by</span><select value={sortKey} onChange={(event) => setSortKey(event.target.value as typeof sortKey)}><option value="updated">Last updated</option><option value="id">Date imported</option><option value="artist">Artist</option><option value="title">Title</option><option value="source">Source</option><option value="tag">Tag</option><option value="status">Status</option></select></label><button className="workbench-sort-direction" type="button" onClick={() => setDescending((value) => !value)}>{descending ? "↓ Descending" : "↑ Ascending"}</button><span className="workbench-table-result-count">{visibleTracks.length} of {tracks.length} shown</span></div>
+      <div className="workbench-table-toolbar" aria-label="Filter and sort inbox tracks"><label className="workbench-table-search"><span>Filter tracks</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Artist, title, source, tag…" /></label><label className="workbench-table-select"><span>Status</span><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TrackState | "all")}><option value="all">All statuses</option>{Array.from(new Set(tracks.map((track) => track.state))).sort().map((state) => <option key={state} value={state}>{getWorkflowMeta({ state } as TrackRow).statusLabel}</option>)}</select></label><label className="workbench-table-select"><span>Sort by</span><select value={sortKey} onChange={(event) => setSortKey(event.target.value as typeof sortKey)}><option value="updated">Last updated</option><option value="id">Date imported</option><option value="artist">Artist</option><option value="title">Title</option><option value="source">Source</option><option value="tag">Tag</option><option value="status">Status</option></select></label><button className="workbench-sort-direction" type="button" onClick={() => setDescending((value) => !value)}>{descending ? "↓ Descending" : "↑ Ascending"}</button><button type="button" onClick={toggleVisibleSelection} disabled={!visibleTracks.length}>{allVisibleSelected ? "Deselect all shown" : "Select all shown"}</button><span className="workbench-table-result-count">{visibleTracks.length} of {tracks.length} shown</span></div>
       <div className="work-queue-list inbox-track-table"><div className="work-queue-columns inbox-track-columns" aria-hidden="true"><span /><span>#</span><span>Track</span><span>Mix</span><span>Source</span><span>Tag</span><span>Status</span><span>Blocker</span><span /></div>{visibleTracks.map((t) => <div key={t.id} className={`workbench-track-row inbox-track-row${selectedIds.has(t.id) ? " is-selected" : ""}${!t.artist ? " no-artist" : ""}`}><label className="workbench-track-check"><span className="sr-only">Select {t.artist ? `${t.artist} – ${t.title}` : t.title}</span><input type="checkbox" checked={selectedIds.has(t.id)} onChange={(event) => setSelectedIds((current) => { const next = new Set(current); event.target.checked ? next.add(t.id) : next.delete(t.id); return next; })} aria-label={`Select ${t.artist ? `${t.artist} – ${t.title}` : t.title}`} /></label><span className="inbox-track-id">{t.id}</span><span className="inbox-track-name" title={t.title}><strong>{t.artist || "Unknown artist"}</strong><span>{t.title}{t.source_url && !t.source_url.startsWith("rekordbox:") && <a href={t.source_url} target="_blank" rel="noreferrer" title={t.source_url} className="inbox-source-link">↗</a>}</span></span><span className="workbench-track-mix">{t.mix_version || "—"}</span><span className="inbox-track-source"><SourceIcon sourceUrl={t.source_url} /></span><span className="inbox-track-tag">{t.import_tag || "—"}</span><TrackStatusBadge metadata={getWorkflowMeta(t)} /><BlockerIndicator track={t} /><span className="inbox-track-actions">{t.error?.toLowerCase().includes("duplicate") && <button type="button" onClick={() => handleDelete(t.id)} disabled={deletingId === t.id} title="Remove imported duplicate">Remove</button>}<button type="button" onClick={() => handleDelete(t.id)} disabled={deletingId === t.id} title="Delete track">✕</button></span></div>)}</div>
     </>
   );
@@ -222,6 +229,15 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
     const sorted = [...playlistCounts.keys()].sort();
     return needle ? sorted.filter((p) => p.toLowerCase().includes(needle)) : sorted;
   }, [playlistCounts, playlistSearch]);
+
+  const allVisiblePlaylistsSelected = allPlaylists.length > 0 && allPlaylists.every((playlist) => selectedPlaylists.has(playlist));
+
+  const toggleVisiblePlaylists = () => setSelectedPlaylists((current) => {
+    const next = new Set(current);
+    if (allVisiblePlaylistsSelected) allPlaylists.forEach((playlist) => next.delete(playlist));
+    else allPlaylists.forEach((playlist) => next.add(playlist));
+    return next;
+  });
 
   const rekordboxSelectedTracks = useMemo(() => {
     if (!xmlTracks || selectedPlaylists.size === 0) return [];
@@ -588,8 +604,8 @@ export default function ImportView({ onNavigate }: { onNavigate?: (tab: string) 
                     {allPlaylists.length === 0 && <p style={{ padding: "16px 12px", color: "#6b7280", fontSize: 12, margin: 0 }}>No playlists found.</p>}
                   </div>
                   <div style={{ padding: 8, borderTop: "1px solid #1f2937", display: "flex", gap: 6 }}>
-                    <button style={{ ...btn(false), fontSize: 11, padding: "4px 10px" }} onClick={() => setSelectedPlaylists(new Set(allPlaylists))}>All</button>
-                    <button style={{ ...btn(false), fontSize: 11, padding: "4px 10px" }} disabled={!selectedPlaylists.size} onClick={() => setSelectedPlaylists(new Set())}>Clear</button>
+                    <button style={{ ...btn(false), fontSize: 11, padding: "4px 10px" }} disabled={!allPlaylists.length} onClick={toggleVisiblePlaylists}>{allVisiblePlaylistsSelected ? "Deselect all shown" : "Select all shown"}</button>
+                    <button style={{ ...btn(false), fontSize: 11, padding: "4px 10px" }} disabled={!selectedPlaylists.size} onClick={() => setSelectedPlaylists(new Set())}>Clear selection</button>
                   </div>
                 </div>
                 <div style={{ flex: 1 }}>

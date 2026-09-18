@@ -34,7 +34,7 @@ const stateMappings: Array<[TrackState, WorkflowMetadata]> = [
   ["not_found", { bucket: "needs_attention", stage: "find", statusLabel: "No file found", nextAction: { id: "loose_search", label: "Loose search" }, actionable: true }],
   ["matched", { bucket: "needs_attention", stage: "match", statusLabel: "Candidates found", nextAction: { id: "approve", label: "Approve a candidate" }, actionable: true }],
   ["approved", { bucket: "needs_attention", stage: "download", statusLabel: "Approved", nextAction: { id: "download", label: "Start download" }, actionable: true }],
-  ["downloading", { bucket: "running", stage: "download", statusLabel: "Downloading", nextAction: { id: "monitor_download", label: "Monitor download" }, actionable: false }],
+  ["downloading", { bucket: "running", stage: "download", statusLabel: "Downloading", nextAction: { id: "monitor_download", label: "Monitor download" }, actionable: true }],
   ["downloaded", { bucket: "needs_attention", stage: "quality", statusLabel: "Downloaded", nextAction: { id: "quality_check", label: "Run quality check" }, actionable: true }],
   ["conversion_pending", { bucket: "needs_attention", stage: "convert", statusLabel: "Conversion needed", nextAction: { id: "convert", label: "Convert to MP3" }, actionable: true }],
   ["converted", { bucket: "needs_attention", stage: "quality", statusLabel: "Converted", nextAction: { id: "quality_check", label: "Run quality check" }, actionable: true }],

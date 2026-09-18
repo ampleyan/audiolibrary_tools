@@ -17,10 +17,24 @@ pub struct SimilarTrack {
     pub score: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CosineFilters {
+    pub year_start: Option<i32>,
+    pub year_end: Option<i32>,
+    pub min_have: Option<i32>,
+    pub max_have: Option<i32>,
+    pub min_want: Option<i32>,
+    pub max_want: Option<i32>,
+    pub min_price: Option<f64>,
+    pub max_price: Option<f64>,
+}
+
 #[tauri::command]
 pub async fn get_similar_tracks(
     app: AppHandle,
     track_id: i64,
+    filters: Option<CosineFilters>,
 ) -> Result<Vec<SimilarTrack>, String> {
     let (artist, title) = {
         let conn = db::open(&app).map_err(|e| e.to_string())?;
@@ -31,7 +45,7 @@ pub async fn get_similar_tracks(
         )
         .map_err(|e| format!("Track {track_id} not found: {e}"))?
     };
-    get_similar_tracks_for_query(app, artist, title).await
+    get_similar_tracks_for_query(app, artist, title, filters).await
 }
 
 #[tauri::command]
@@ -39,6 +53,7 @@ pub async fn get_similar_tracks_for_query(
     app: AppHandle,
     artist: String,
     title: String,
+    filters: Option<CosineFilters>,
 ) -> Result<Vec<SimilarTrack>, String> {
     let api_key = config_store::get(&app, "cosine_api_key")
         .filter(|k| !k.is_empty())
@@ -47,11 +62,18 @@ pub async fn get_similar_tracks_for_query(
     let python = resolve_python(&app);
     let script = resolve_cosine_fetch(&app);
 
-    let output = tokio::process::Command::new(&python)
+    let mut command = tokio::process::Command::new(&python);
+    command
         .arg(&script)
         .arg(artist)
         .arg(title)
-        .env("COSINE_API_KEY", &api_key)
+        .env("COSINE_API_KEY", &api_key);
+    if let Some(filters) = filters {
+        let filters_json = serde_json::to_string(&filters)
+            .map_err(|e| format!("Failed to encode cosine filters: {e}"))?;
+        command.arg(filters_json);
+    }
+    let output = command
         .output()
         .await
         .map_err(|e| format!("Failed to launch Python ({python:?}): {e}"))?;

@@ -54,6 +54,7 @@ export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string)
   const refresh = async () => setTracks(await api.listTracks());
   const handleMatchingAction = async (track: Track, action: InspectorMatchingAction) => {
     if (action.id === "approve") await api.approveCandidate(track.id, action.candidate.candidate.username, action.candidate.candidate.filename);
+    if (action.id === "download_candidates") await api.startDownloadFiles(track.id, action.candidates.map(({ candidate }) => ({ username: candidate.username, filename: candidate.filename })));
     if (action.id === "loose_search") await api.searchTrackLoose(track.id);
     if (action.id === "search_again") await api.searchTrack(track.id);
     if (action.id === "mark_unavailable") await api.updateTrackState(track.id, "not_found");
@@ -108,6 +109,13 @@ export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string)
     };
     return result.sort((left, right) => (descending ? -1 : 1) * compare(left, right) || left.id - right.id);
   }, [descending, query, sortKey, stateFilter, tracks]);
+  const allVisibleSelected = filteredTracks.length > 0 && filteredTracks.every((track) => selectedIds.has(track.id));
+  const toggleVisibleSelection = () => setSelectedIds((current) => {
+    const next = new Set(current);
+    if (allVisibleSelected) filteredTracks.forEach((track) => next.delete(track.id));
+    else filteredTracks.forEach((track) => next.add(track.id));
+    return next;
+  });
 
   const openTrack = async (track: Track) => {
     setError(null);
@@ -137,6 +145,7 @@ export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string)
       <label className="workbench-table-select"><span>Status</span><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TrackState | "all")}><option value="all">All statuses</option>{Array.from(new Set(tracks.map((track) => track.state))).sort().map((state) => <option key={state} value={state}>{getWorkflowMeta({ state } as Track).statusLabel}</option>)}</select></label>
       <label className="workbench-table-select"><span>Sort by</span><select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)}><option value="priority">Priority</option><option value="artist">Artist</option><option value="title">Title</option><option value="status">Status</option><option value="updated">Last updated</option><option value="created">Date added</option></select></label>
       <button className="workbench-sort-direction" type="button" onClick={() => setDescending((value) => !value)} aria-label={`Sort ${descending ? "ascending" : "descending"}`}>{descending ? "↓ Descending" : "↑ Ascending"}</button>
+      <button type="button" onClick={toggleVisibleSelection} disabled={!filteredTracks.length}>{allVisibleSelected ? "Deselect all shown" : "Select all shown"}</button>
       {(query || stateFilter !== "all") && <button className="workbench-clear-filters" type="button" onClick={() => { setQuery(""); setStateFilter("all"); }}>Clear</button>}
       <span className="workbench-table-result-count">{filteredTracks.length} of {tracks.length} shown</span>
     </div>

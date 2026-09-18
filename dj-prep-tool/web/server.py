@@ -66,6 +66,12 @@ MIX = re.compile(r"(?i)\s*[\(\[]([\w\s\-'&]* (?:original|extended|radio|club|dub
 EXT = re.compile(r"(?i)\.(mp3|flac|aac|ogg|wav|m4a|aif{1,2}|wma|opus)\s*$")
 PREFIX = re.compile(r"^(?:(?:[-*•]\s+)|(?:\d{1,3}(?:[.\):]\s*|\s+-\s+)))+")
 
+def cosine_fetch_command(artist, title, filters=None):
+    command = [PYTHON, str(ROOT / "py" / "cosine_fetch.py"), artist, title]
+    if filters:
+        command.append(json.dumps(filters, separators=(",", ":")))
+    return command
+
 def db():
     if DATABASE_MODE == "local":
         conn = psycopg2.connect(
@@ -427,6 +433,191 @@ def safe_audio_stem(artist, title):
     value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", value)
     return re.sub(r"\s+", " ", value).strip().rstrip(".") or "untitled"
 
+def find_download_file(directory, filename, include_partial=False):
+    if not directory.is_dir():
+        return None
+    names = {filename.casefold()}
+    if include_partial:
+        names.update(f"{filename}{suffix}".casefold() for suffix in (".part", ".incomplete", ".tmp"))
+    return next((path for path in directory.rglob("*") if path.is_file() and path.name.casefold() in names), None)
+
+def download_basename(filename):
+    return Path(str(filename or "").replace("\\", "/")).name
+
+def download_file_progress(directory, filename, total):
+    found = find_download_file(directory, filename, include_partial=True)
+    if not found:
+        return {"bytesOnDisk": None, "bytesTotal": total, "complete": False}
+    return {
+        "bytesOnDisk": found.stat().st_size,
+        "bytesTotal": total,
+        "complete": found.name.casefold() == filename.casefold(),
+    }
+
+def aggregate_download_state(states):
+    normalized = {str(state or "").lower() for state in states}
+    if not normalized:
+        return "queued"
+    if normalized & {"failed", "error", "cancelled"}:
+        return "failed"
+    if normalized <= {"downloaded", "completed", "succeeded"}:
+        return "downloaded"
+    if "downloading" in normalized:
+        return "downloading"
+    return "queued"
+
+def record_file_downloads(track_id, source_job_id, files, jobs):
+    conn = db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO download_batches (track_id, kind, source_job_id, state) VALUES (%s, 'files', %s, 'downloading') RETURNING id",
+            (track_id, source_job_id),
+        )
+        batch_id = cur.fetchone()[0]
+        for file_ref, job in zip(files, jobs):
+            cur.execute(
+                "INSERT INTO download_items (batch_id, track_id, username, filename, download_job_id, state) VALUES (%s, %s, %s, %s, %s, 'downloading')",
+                (batch_id, track_id, file_ref["username"], file_ref["filename"], job),
+            )
+        conn.commit()
+    except psycopg2.errors.UndefinedTable:
+        conn.rollback()
+        append_log("[download] batch tracking unavailable; apply migrations/002_download_batches.sql")
+    finally:
+        conn.close()
+
+def record_file_download(track_id, source_job_id, username, filename, download_job_id):
+    record_file_downloads(track_id, source_job_id, [{"username": username, "filename": filename}], [download_job_id])
+
+def update_download_item(track_id, download_job_id, state, downloaded_path=None, error=None):
+    conn = db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE download_items SET state=%s, downloaded_path=COALESCE(%s, downloaded_path), error=%s WHERE track_id=%s AND download_job_id=%s",
+            (state, downloaded_path, error, track_id, download_job_id),
+        )
+        conn.commit()
+    except psycopg2.errors.UndefinedTable:
+        conn.rollback()
+    finally:
+        conn.close()
+
+def get_download_status(track_id):
+    track = get_track(track_id)
+    candidate_sizes = {}
+    try:
+        for ranked in json.loads(track.get("candidate_json") or "[]"):
+            candidate = ranked.get("candidate", ranked)
+            filename = download_basename(candidate.get("filename", "")).casefold()
+            if filename and candidate.get("size"):
+                candidate_sizes[filename] = candidate["size"]
+    except (TypeError, ValueError):
+        candidate_sizes = {}
+    conn = db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT b.id AS batch_id, b.track_id, i.id AS item_id, i.username, i.filename, i.download_job_id, i.state, i.downloaded_path, i.bytes_on_disk, i.bytes_total, i.error FROM download_batches b JOIN download_items i ON i.batch_id=b.id WHERE b.track_id=%s ORDER BY b.created_at DESC, i.id",
+            (track_id,),
+        )
+        rows = [row_json(row) for row in cur.fetchall()]
+    except psycopg2.errors.UndefinedTable:
+        conn.rollback()
+        rows = []
+    finally:
+        conn.close()
+    items = []
+    stale_job = False
+    for row in rows:
+        item = {
+            "id": row["item_id"],
+            "batchId": row["batch_id"],
+            "trackId": row["track_id"],
+            "username": row["username"],
+            "filename": row["filename"],
+            "downloadJobId": row["download_job_id"],
+            "state": row["state"],
+            "downloadedPath": row["downloaded_path"],
+            "bytesOnDisk": row["bytes_on_disk"],
+            "bytesTotal": row["bytes_total"],
+            "error": row["error"],
+            "remoteState": None,
+        }
+        if item["state"] in {"queued", "downloading"}:
+            filename = download_basename(item["filename"])
+            progress = download_file_progress(INBOX_DIR, filename, candidate_sizes.get(filename.casefold()))
+            item["bytesOnDisk"] = progress["bytesOnDisk"]
+            item["bytesTotal"] = progress["bytesTotal"]
+            if progress["complete"]:
+                found = find_download_file(INBOX_DIR, filename)
+                update_download_item(track_id, item["downloadJobId"], "downloaded", str(found))
+                item["state"] = "downloaded"
+                item["downloadedPath"] = str(found)
+            else:
+                try:
+                    remote = request("GET", f"/api/jobs/{item['downloadJobId']}", timeout=5)
+                    item["remoteState"] = remote.get("lifecycleState") or remote.get("summary", {}).get("lifecycleState") or remote.get("state")
+                    if str(item["remoteState"]).lower() in {"failed", "cancelled", "error"}:
+                        item["state"] = "failed"
+                        item["error"] = f"Sockseek job {item['remoteState']}"
+                        update_download_item(track_id, item["downloadJobId"], "failed", error=item["error"])
+                        update(track_id, "UPDATE tracks SET state='failed',error=%s WHERE id=%s", (item["error"],))
+                except urllib.error.HTTPError as error:
+                    if error.code == 404:
+                        stale_job = True
+                        item["state"] = "failed"
+                        item["remoteState"] = "missing"
+                        item["error"] = "Sockseek download job expired — re-search and download again"
+                        update_download_item(track_id, item["downloadJobId"], "failed", error=item["error"])
+                    else:
+                        item["remoteState"] = "unavailable"
+                except Exception:
+                    item["remoteState"] = "unavailable"
+        items.append(item)
+    aggregate_state = aggregate_download_state([item["state"] for item in items])
+    if stale_job:
+        update(track_id, "UPDATE tracks SET state='requested',search_job_id=NULL,selected_username=NULL,selected_filename=NULL,download_job_id=NULL,error=%s WHERE id=%s", ("Sockseek download job expired — re-search and download again",))
+    elif aggregate_state == "downloaded" and items:
+        first_path = next((item["downloadedPath"] for item in items if item["downloadedPath"]), None)
+        update(track_id, "UPDATE tracks SET downloaded_path=%s,state='downloaded',error=NULL WHERE id=%s", (first_path,))
+    elif aggregate_state == "failed" and items:
+        error = next((item["error"] for item in items if item["error"]), "Download failed")
+        update(track_id, "UPDATE tracks SET state='failed',error=%s WHERE id=%s", (error,))
+    if not items:
+        track = get_track(track_id)
+        if track.get("download_job_id"):
+            items.append({
+                "id": None,
+                "batchId": None,
+                "trackId": track_id,
+                "username": track.get("selected_username"),
+                "filename": track.get("selected_filename"),
+                "downloadJobId": track["download_job_id"],
+                "state": "downloaded" if track.get("downloaded_path") else track.get("state", "queued"),
+                "downloadedPath": track.get("downloaded_path"),
+                "bytesOnDisk": None,
+                "bytesTotal": None,
+                "error": track.get("error"),
+                "remoteState": None,
+            })
+            try:
+                remote = request("GET", f"/api/jobs/{track['download_job_id']}", timeout=5)
+                items[0]["remoteState"] = remote.get("lifecycleState") or remote.get("summary", {}).get("lifecycleState") or remote.get("state")
+            except urllib.error.HTTPError as error:
+                if error.code == 404:
+                    stale_job = True
+                    items[0]["state"] = "failed"
+                    items[0]["remoteState"] = "missing"
+                    items[0]["error"] = "Sockseek download job expired — re-search and download again"
+            except Exception:
+                items[0]["remoteState"] = "unavailable"
+    aggregate_state = aggregate_download_state([item["state"] for item in items])
+    if stale_job:
+        update(track_id, "UPDATE tracks SET state='requested',search_job_id=NULL,selected_username=NULL,selected_filename=NULL,download_job_id=NULL,error=%s WHERE id=%s", ("Sockseek download job expired — re-search and download again",))
+    return {"trackId": track_id, "state": aggregate_state, "items": items}
+
 def convert_to_mp3(source_path, artist, title):
     source = Path(source_path)
     if not source.is_file():
@@ -448,10 +639,10 @@ def convert_to_mp3(source_path, artist, title):
         raise ValueError("ffmpeg produced no output file")
     return str(output)
 
-def request(method, path, payload=None):
+def request(method, path, payload=None, timeout=30):
     body = None if payload is None else json.dumps(payload).encode()
     req = urllib.request.Request(SOCKSEEK_URL + path, data=body, method=method, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with urllib.request.urlopen(req, timeout=timeout) as response:
         return json.loads(response.read().decode())
 
 def youtube_token():
@@ -517,7 +708,7 @@ def telegram_request(payload):
     return json.loads(lines[-1])
 
 def command(name, payload):
-    if name not in {"get_logs", "list_tracks", "list_activity", "list_playlists", "get_playlist_tracks", "create_playlist", "rename_playlist", "delete_playlist", "add_tracks_to_playlist", "remove_tracks_from_playlist", "get_settings", "check_daemon", "list_backups", "search_track", "search_track_loose", "approve_candidate", "start_download", "cancel_download", "check_download_progress", "poll_download", "run_quality_check", "convert_track", "clear_tracks", "import_rekordbox_xml", "import_rekordbox_playlist", "import_text", "import_csv", "import_youtube", "import_telegram", "update_track", "update_track_state", "delete_track", "finish_rekordbox", "tag_track", "get_similar_tracks", "get_similar_tracks_for_query"}:
+    if name not in {"get_logs", "list_tracks", "list_activity", "list_playlists", "get_playlist_tracks", "create_playlist", "rename_playlist", "delete_playlist", "add_tracks_to_playlist", "remove_tracks_from_playlist", "get_settings", "check_daemon", "list_backups", "search_track", "search_track_loose", "approve_candidate", "start_download", "start_download_files", "cancel_download", "check_download_progress", "get_download_status", "poll_download", "run_quality_check", "convert_track", "clear_tracks", "import_rekordbox_xml", "import_rekordbox_playlist", "import_text", "import_csv", "import_youtube", "import_telegram", "update_track", "update_track_state", "delete_track", "finish_rekordbox", "tag_track", "get_similar_tracks", "get_similar_tracks_for_query"}:
         append_log(f"[app] {name}")
     if name == "get_logs": return get_logs()
     if name == "list_playlists": return list_playlists()
@@ -888,7 +1079,25 @@ def command(name, payload):
             raise
         job = result[0].get("jobId", "") if isinstance(result, list) and result else ""
         append_log(f"[download] started: {track['artist']} - {track['title']}")
-        return update(track["id"], "UPDATE tracks SET download_job_id=%s,state='downloading' WHERE id=%s", (job,))
+        updated = update(track["id"], "UPDATE tracks SET download_job_id=%s,state='downloading' WHERE id=%s", (job,))
+        record_file_download(track["id"], track["search_job_id"], track["selected_username"], track["selected_filename"], job)
+        return updated
+    if name == "start_download_files":
+        track = get_track(int(payload["trackId"]))
+        files = [{"username": str(item.get("username", "")), "filename": str(item.get("filename", ""))} for item in payload.get("files", [])]
+        files = [item for item in files if item["username"] and item["filename"]]
+        if not track.get("search_job_id") or not files:
+            raise ValueError("Select at least one Soulseek file before downloading")
+        if len(files) > 25:
+            raise ValueError("Select at most 25 files per download batch")
+        result = request("POST", f'/api/jobs/{track["search_job_id"]}/downloads/files', {"files": files})
+        jobs = [item.get("jobId", "") for item in result if item.get("jobId")] if isinstance(result, list) else []
+        if len(jobs) != len(files):
+            raise ValueError("Sockseek returned an incomplete download job list")
+        updated = update(track["id"], "UPDATE tracks SET selected_username=%s,selected_filename=%s,download_job_id=%s,state='downloading',error=NULL WHERE id=%s", (files[0]["username"], files[0]["filename"], jobs[0]))
+        record_file_downloads(track["id"], track["search_job_id"], files, jobs)
+        append_log(f"[download] started batch: {track['artist']} - {track['title']} ({len(files)} files)")
+        return updated
     if name == "cancel_download":
         track = get_track(int(payload["trackId"]))
         job_id = track.get("download_job_id")
@@ -896,12 +1105,13 @@ def command(name, payload):
             raise ValueError("track has no download job")
         request("POST", f"/api/jobs/{job_id}/cancel")
         append_log(f"[download] cancelled: {track['artist']} - {track['title']}")
+        update_download_item(track["id"], job_id, "failed", error="Download cancelled by user")
         return update(track["id"], "UPDATE tracks SET state='failed',error=%s WHERE id=%s", ("Download cancelled by user",))
     if name == "check_download_progress":
         track = get_track(int(payload["trackId"]))
-        name_part = Path(track.get("selected_filename") or "").name
-        found = next((path for path in (INBOX_DIR / name_part, INBOX_DIR / (name_part + ".part"), INBOX_DIR / (name_part + ".incomplete"), INBOX_DIR / (name_part + ".tmp")) if path.exists()), None)
-        total = next((item["candidate"].get("size") for item in json.loads(track.get("candidate_json") or "[]") if Path(item["candidate"].get("filename", "")).name.lower() == name_part.lower()), None)
+        name_part = download_basename(track.get("selected_filename"))
+        found = find_download_file(INBOX_DIR, name_part, include_partial=True)
+        total = next((item["candidate"].get("size") for item in json.loads(track.get("candidate_json") or "[]") if download_basename(item["candidate"].get("filename", "")).lower() == name_part.lower()), None)
         bytes_on_disk = found.stat().st_size if found else None
         progress = (bytes_on_disk, total)
         if DOWNLOAD_PROGRESS.get(track["id"]) != progress:
@@ -909,6 +1119,8 @@ def command(name, payload):
             if bytes_on_disk is not None and total:
                 append_log(f"[download] progress: {track['artist']} - {track['title']}: {bytes_on_disk}/{total} bytes")
         return {"bytesOnDisk": bytes_on_disk, "bytesTotal": total}
+    if name == "get_download_status":
+        return get_download_status(int(payload["trackId"]))
     if name == "get_youtube_auth_url":
         if not YOUTUBE_CLIENT_ID or not YOUTUBE_CLIENT_SECRET or not YOUTUBE_REDIRECT_URI: raise ValueError("YouTube OAuth is not configured on the server")
         if youtube_token(): return {"authorized": True, "url": None}
@@ -942,12 +1154,14 @@ def command(name, payload):
         return {"playlistUrl": f"https://www.youtube.com/playlist?list={playlist['id']}", "added": added, "skipped": skipped}
     if name == "poll_download":
         track = get_track(int(payload["trackId"]))
-        expected = Path(track.get("selected_filename") or "").name
+        expected = download_basename(track.get("selected_filename"))
         for _ in range(120):
-            found = next((path for path in INBOX_DIR.iterdir() if path.name.lower() == expected.lower()), None) if INBOX_DIR.exists() else None
+            found = find_download_file(INBOX_DIR, expected)
             if found:
                 append_log(f"[download] completed: {track['artist']} - {track['title']}")
-                return update(track["id"], "UPDATE tracks SET downloaded_path=%s,state='downloaded' WHERE id=%s", (str(found),))["downloaded_path"]
+                if track.get("download_job_id"):
+                    update_download_item(track["id"], track["download_job_id"], "downloaded", str(found))
+                return update(track["id"], "UPDATE tracks SET downloaded_path=%s,state='downloaded' WHERE id=%s", (str(found),))
             time.sleep(5)
         append_log(f"[download] timed out: {track['artist']} - {track['title']}")
         raise ValueError("download timed out after 10 minutes")
@@ -981,7 +1195,7 @@ def command(name, payload):
         if not key: raise ValueError("cosine_api_key not configured — add it in Settings")
         env = os.environ.copy(); env["COSINE_API_KEY"] = key
         append_log(f"[similar] looking up: {artist} - {title}")
-        result = subprocess.run([PYTHON, str(ROOT / "py" / "cosine_fetch.py"), artist, title], capture_output=True, text=True, env=env, check=False)
+        result = subprocess.run(cosine_fetch_command(artist, title, payload.get("filters")), capture_output=True, text=True, env=env, check=False)
         if result.returncode: raise ValueError(result.stderr.strip() or "Similarity lookup failed")
         items = [{"artist": item.get("artist", ""), "title": item.get("title", ""), "mixVersion": item.get("mix_version"), "videoUrl": item.get("video_url"), "cosineId": item.get("cosine_id", ""), "score": item.get("score", 0)} for item in (json.loads(line) for line in result.stdout.splitlines() if line.strip())]
         append_log(f"[similar] {artist} - {title}: {len(items)} result(s)")
@@ -992,7 +1206,7 @@ def command(name, payload):
         if not source: raise ValueError("No downloaded file — run poll_download first")
         append_log(f"[beets] importing: {track['artist']} - {track['title']}")
         beets_url = setting("beets_url", BEETS_URL).rstrip("/")
-        req_body = json.dumps({"path": source}).encode()
+        req_body = json.dumps({"path": source, "artist": track["artist"], "title": track["title"]}).encode()
         req = urllib.request.Request(f"{beets_url}/import", data=req_body, headers={"Content-Type": "application/json"}, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=120) as resp:
@@ -1001,8 +1215,9 @@ def command(name, payload):
             result = json.loads(exc.read())
         if not result.get("ok"):
             raise ValueError(result.get("output") or "beets import failed")
-        output_line = next((l for l in result.get("output", "").splitlines() if "/music/archive" in l), None)
-        tagged_path = output_line.strip() if output_line else str(Path(source).with_suffix(".mp3"))
+        tagged_path = next((path for path in result.get("paths", []) if path.startswith(str(ARCHIVE_DIR))), None)
+        if not tagged_path:
+            raise ValueError("Beets did not import this file into the archive")
         append_log(f"[beets] done: {track['artist']} - {track['title']} → {Path(tagged_path).name}")
         return update(track["id"], "UPDATE tracks SET archive_path=%s,state='ready_for_rekordbox',error=NULL WHERE id=%s", (tagged_path,))
     if name in ("open_folder", "launch_sockseek"):
@@ -1149,10 +1364,15 @@ class Handler(BaseHTTPRequestHandler):
         if not self.path.startswith("/api/invoke/"): self.send_json(404, {"error": "not found"}); return
         length = int(self.headers.get("Content-Length", "0")); payload = json.loads(self.rfile.read(length) or b"{}")
         name = self.path.rsplit("/", 1)[-1]
-        try: self.send_json(200, {"result": command(name, payload)})
+        try:
+            result = command(name, payload)
         except Exception as error:
             append_log(f"[error] {name}: {error}")
-            self.send_json(400, {"error": str(error)})
+            try: self.send_json(400, {"error": str(error)})
+            except OSError: pass
+            return
+        try: self.send_json(200, {"result": result})
+        except OSError: pass
 
 if __name__ == "__main__":
     try:

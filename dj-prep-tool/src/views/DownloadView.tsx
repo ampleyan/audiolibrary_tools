@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, WORKBENCH_DATA_CHANGED_EVENT } from "../lib/api";
-import type { QualityResult, TrackRow, TrackState } from "../lib/types";
+import type { DownloadStatus, QualityResult, TrackRow, TrackState } from "../lib/types";
 
 const DOWNLOAD_STATES: TrackState[] = [
   "approved",
@@ -142,6 +142,7 @@ function DownloadCard({
   const [busyLabel, setBusyLabel] = useState("");
   const [returnStage, setReturnStage] = useState<TrackState>("requested");
   const [progress, setProgress] = useState<{ bytesOnDisk: number | null; bytesTotal: number | null; speed: number | null } | null>(null);
+  const [downloadStatus, setDownloadStatus] = useState<DownloadStatus | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressSample = useRef<{ bytes: number; at: number } | null>(null);
 
@@ -149,23 +150,33 @@ function DownloadCard({
     if (track.state !== "downloading") {
       if (pollRef.current) clearInterval(pollRef.current);
       progressSample.current = null;
+      setDownloadStatus(null);
       return;
     }
-    const tick = () => api.checkDownloadProgress(track.id).then((next) => {
+    const tick = () => api.getDownloadStatus(track.id).then((status: DownloadStatus) => {
+      setDownloadStatus(status);
+      const item = status.items[0];
+      if (item?.state === "downloaded" && item.downloadedPath) {
+        onUpdate({ ...track, state: "downloaded", downloaded_path: item.downloadedPath, error: null });
+      } else if (status.state === "failed") {
+        onUpdate({ ...track, state: "failed", error: item?.error ?? "Download failed" });
+      }
       const now = Date.now();
       const previous = progressSample.current;
-      const speed = previous && next.bytesOnDisk != null && next.bytesOnDisk >= previous.bytes
-        ? (next.bytesOnDisk - previous.bytes) / Math.max(1, (now - previous.at) / 1000)
+      const bytesOnDisk = item?.bytesOnDisk ?? null;
+      const bytesTotal = item?.bytesTotal ?? null;
+      const speed = previous && bytesOnDisk != null && bytesOnDisk >= previous.bytes
+        ? (bytesOnDisk - previous.bytes) / Math.max(1, (now - previous.at) / 1000)
         : null;
-      if (next.bytesOnDisk != null) progressSample.current = { bytes: next.bytesOnDisk, at: now };
-      setProgress({ ...next, speed });
+      if (bytesOnDisk != null) progressSample.current = { bytes: bytesOnDisk, at: now };
+      setProgress({ bytesOnDisk, bytesTotal, speed });
     }).catch(() => {});
     tick();
     pollRef.current = setInterval(tick, 3000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [track.id, track.state]);
+  }, [track.id, track.state, onUpdate]);
 
   const act = async (label: string, fn: () => Promise<unknown>, refresh = true) => {
     setBusy(true);
@@ -309,6 +320,15 @@ function DownloadCard({
             <p style={{ fontSize: 10, color: "#d97706", margin: "4px 0 0" }}>
               {fmt(progress.bytesOnDisk)} on disk…
             </p>
+          )}
+          {isDownloading && downloadStatus && downloadStatus.items.length > 1 && (
+            <div style={{ marginTop: 6, display: "grid", gap: 3 }}>
+              {downloadStatus.items.map((item) => (
+                <p key={item.downloadJobId} style={{ fontSize: 10, color: item.state === "failed" ? "#f87171" : item.state === "downloaded" ? "#4ade80" : "#d97706", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={item.filename ?? undefined}>
+                  {item.state.replace(/_/g, " ")} · {item.filename ? item.filename.replace(/\\/g, "/").split("/").pop() : "file"}
+                </p>
+              ))}
+            </div>
           )}
           {track.downloaded_path && (
             <p style={{ fontSize: 11, color: "#374151", margin: "4px 0 0" }}>

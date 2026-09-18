@@ -38,10 +38,13 @@ function updateRow(rows: ImportPreviewRow[], id: string, field: "artist" | "titl
 
 export default function ImportPreview({ model, onChange }: { model: ImportPreviewModel; onChange: (rows: ImportPreviewRow[]) => void }) {
   const { counts, rows } = model;
+  const allIncluded = rows.length > 0 && rows.every((row) => !row.skipped);
+  const toggleAll = () => onChange(rows.map((row) => ({ ...row, skipped: allIncluded })));
   return <section className="import-preview" aria-label="Import preview">
     <div className="import-preview-summary" aria-live="polite">
       <strong>Preview before import</strong>
       <span>{counts.new} new</span><span>{counts.duplicate} duplicate</span><span>{counts.skipped} skipped</span><span>{counts.warning} warning{counts.warning === 1 ? "" : "s"}</span>
+      <button type="button" onClick={toggleAll} disabled={!rows.length}>{allIncluded ? "Deselect all" : "Select all"}</button>
     </div>
     <p>Review entries before adding them. Duplicate entries are skipped by default; edit a row to keep both versions.</p>
     <div className="import-preview-rows">

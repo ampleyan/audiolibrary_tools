@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, WORKBENCH_DATA_CHANGED_EVENT } from "../lib/api";
-import type { RankedCandidate, SimilarTrack, TrackRow, TrackState } from "../lib/types";
+import type { CosineFilters, RankedCandidate, SimilarTrack, TrackRow, TrackState } from "../lib/types";
 import { PipelineSeedListbox } from "../components/PipelineSeedListbox";
 
 function parseCandidates(track: TrackRow): RankedCandidate[] {
@@ -26,28 +26,77 @@ const editInput: React.CSSProperties = {
 
 const DEFAULT_REVIEW_STATES: TrackState[] = ["requested", "needs_review", "matched", "not_found"];
 
+export const DEFAULT_COSINE_FILTERS: CosineFilters = {
+  yearStart: 1950,
+  yearEnd: 2026,
+  minHave: 0,
+  maxHave: 10000,
+  minWant: 0,
+  maxWant: 5000,
+  minPrice: 0,
+  maxPrice: 500,
+};
+
+const COSINE_PAGE_SIZE = 20;
+
+function similarLibraryKey(artist: string, title: string, mixVersion?: string | null) {
+  return [artist, title, mixVersion ?? ""].map((value) => value.trim().replace(/\s+/g, " ").toLowerCase()).join("\u0000");
+}
+
+export function CosineFiltersForm({ filters, onChange, onApply, onReset, disabled = false }: { filters: CosineFilters; onChange: (filters: CosineFilters) => void; onApply: () => void; onReset: () => void; disabled?: boolean }) {
+  const fields: Array<[keyof CosineFilters, string]> = [
+    ["yearStart", "Year start"],
+    ["yearEnd", "Year end"],
+    ["minHave", "Have min"],
+    ["maxHave", "Have max"],
+    ["minWant", "Want min"],
+    ["maxWant", "Want max"],
+    ["minPrice", "Price min ($)"],
+    ["maxPrice", "Price max ($)"],
+  ];
+  const update = (key: keyof CosineFilters, value: string) => onChange({ ...filters, [key]: value === "" ? undefined : Number(value) });
+  return <details open style={{ marginTop: 10 }}>
+    <summary style={{ color: "#9ca3af", fontSize: 11, cursor: "pointer" }}>Cosine filters</summary>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 8 }}>
+      {fields.map(([key, label]) => <label key={key} style={{ color: "#6b7280", fontSize: 10 }}>{label}<input type="number" value={filters[key] ?? ""} onChange={(event) => update(key, event.target.value)} disabled={disabled} style={{ ...editInput, marginTop: 2 }} /></label>)}
+    </div>
+    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+      <button onClick={onApply} disabled={disabled} style={{ background: "#1e3a5f", color: "#93c5fd", border: "1px solid #1e40af", borderRadius: 4, padding: "3px 8px", fontSize: 11, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit" }}>Apply filters</button>
+      <button onClick={onReset} disabled={disabled} style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 4, padding: "3px 8px", fontSize: 11, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit" }}>Reset</button>
+    </div>
+  </details>;
+}
+
 export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: TrackRow[]; onOpenLibrary?: () => void; onPlayTrack: (tracks: SimilarTrack[], index: number) => void }) {
   const [sourceIds, setSourceIds] = useState<number[]>(tracks[0] ? [tracks[0].id] : []);
   const [similarTracks, setSimilarTracks] = useState<SimilarTrack[] | null>(null);
+  const [similarPage, setSimilarPage] = useState(1);
+  const [hasMoreSimilar, setHasMoreSimilar] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importedCount, setImportedCount] = useState<number | null>(null);
-  const [maxResults, setMaxResults] = useState(25);
+  const [maxResults, setMaxResults] = useState(100);
   const [minimumScore, setMinimumScore] = useState(0);
+  const [cosineFilters, setCosineFilters] = useState<CosineFilters>(DEFAULT_COSINE_FILTERS);
   const [sourceProgress, setSourceProgress] = useState<string | null>(null);
   const [sourceLabels, setSourceLabels] = useState<Record<string, string[]>>({});
   const [youtubeResult, setYoutubeResult] = useState<{ playlistUrl: string; added: number; skipped: string[] } | null>(null);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
   const [creatingYoutube, setCreatingYoutube] = useState(false);
+  const [showExisting, setShowExisting] = useState(false);
 
   const getVideoId = (url: string) => url.match(/[?&]v=([^&]+)/)?.[1] ?? null;
   const selectedSources = tracks.filter((track) => sourceIds.includes(track.id));
   const selectedTrack = selectedSources[0] ?? tracks[0];
+  const existingKeys = new Set(tracks.map((track) => similarLibraryKey(track.artist, track.title, track.mix_version)));
+  const existingTrack = (track: SimilarTrack) => existingKeys.has(similarLibraryKey(track.artist, track.title, track.mixVersion));
+  const existingCount = similarTracks?.filter(existingTrack).length ?? 0;
   const visibleTracks = similarTracks
-    ?.filter((track) => track.score >= minimumScore)
+    ?.filter((track) => track.score >= minimumScore && (showExisting || !existingTrack(track)))
     .slice(0, maxResults);
 
   useEffect(() => {
@@ -59,6 +108,8 @@ export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: T
 
   useEffect(() => {
     setSelected(new Set());
+    setSimilarPage(1);
+    setHasMoreSimilar(false);
   }, [maxResults, minimumScore]);
 
   const load = async () => {
@@ -69,6 +120,8 @@ export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: T
     setSimilarTracks(null);
     setSourceLabels({});
     setSelected(new Set());
+    setSimilarPage(1);
+    setHasMoreSimilar(false);
     try {
       const combined = new Map<string, SimilarTrack>();
       const labels: Record<string, string[]> = {};
@@ -76,7 +129,8 @@ export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: T
       for (const [index, source] of selectedSources.entries()) {
         setSourceProgress(`${index + 1}/${selectedSources.length}`);
         try {
-          const results = await api.getSimilarTracks(source.id);
+          const results = await api.getSimilarTracks(source.id, { ...cosineFilters, page: 1, limit: COSINE_PAGE_SIZE });
+          if (results.length === COSINE_PAGE_SIZE) setHasMoreSimilar(true);
           for (const result of results) {
             const key = result.cosineId || `${result.artist}\u0000${result.title}`;
             combined.set(key, combined.get(key) ?? result);
@@ -94,6 +148,35 @@ export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: T
     } finally {
       setLoading(false);
       setSourceProgress(null);
+    }
+  };
+
+  const loadMore = async () => {
+    if (selectedSources.length === 0 || !similarTracks || loadingMore || !hasMoreSimilar) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const page = similarPage + 1;
+      const combined = new Map<string, SimilarTrack>(similarTracks.map((track) => [track.cosineId || `${track.artist}\u0000${track.title}`, track]));
+      const labels = { ...sourceLabels };
+      let receivedPage = false;
+      for (const source of selectedSources) {
+        const results = await api.getSimilarTracks(source.id, { ...cosineFilters, page, limit: COSINE_PAGE_SIZE });
+        if (results.length === COSINE_PAGE_SIZE) receivedPage = true;
+        for (const result of results) {
+          const key = result.cosineId || `${result.artist}\u0000${result.title}`;
+          combined.set(key, combined.get(key) ?? result);
+          labels[key] = [...(labels[key] ?? []), source.artist ? `${source.artist} – ${source.title}` : source.title];
+        }
+      }
+      setSimilarTracks([...combined.values()]);
+      setSourceLabels(labels);
+      setSimilarPage(page);
+      setHasMoreSimilar(receivedPage);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -182,11 +265,14 @@ export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: T
             setSimilarTracks(null);
             setSourceLabels({});
             setSelected(new Set());
+            setSimilarPage(1);
+            setHasMoreSimilar(false);
             setError(null);
           }} />
           <button onClick={load} disabled={selectedSources.length === 0 || loading} style={{ background: loading ? "#1f2937" : "#4c1d95", color: loading ? "#4b5563" : "#ddd6fe", border: "1px solid #6d28d9", borderRadius: 5, padding: "6px 12px", fontSize: 12, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
             {loading ? `Finding ${sourceProgress ?? "…"}` : similarTracks ? "Refresh" : "Find similar"}
           </button>
+          <CosineFiltersForm filters={cosineFilters} onChange={setCosineFilters} onApply={load} onReset={() => setCosineFilters(DEFAULT_COSINE_FILTERS)} disabled={loading} />
         </aside>
         <div className="similar-results-column">
           {error && <p style={{ color: "#f87171", fontSize: 12, margin: "0 0 8px" }}>{error}</p>}
@@ -197,9 +283,11 @@ export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: T
           {similarTracks !== null && (
             <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ color: "#6b7280", fontSize: 11 }}>{visibleTracks?.length ?? 0} of {similarTracks.length} similar tracks{selected.size > 0 && <span style={{ color: "#a78bfa" }}> · {selected.size} selected</span>}</span>
+            <span style={{ color: "#6b7280", fontSize: 11 }}>{visibleTracks?.length ?? 0} of {similarTracks.length} recommendations{existingCount > 0 && ` · ${existingCount} already in library`}{selected.size > 0 && <span style={{ color: "#a78bfa" }}> · {selected.size} selected</span>}</span>
             <div style={{ display: "flex", gap: 6 }}>
               {selected.size > 0 && <button onClick={addToQueue} disabled={importing} style={{ background: importing ? "#1f2937" : "#065f46", color: importing ? "#4b5563" : "#34d399", border: "none", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: importing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{importing ? "Adding…" : `Add ${selected.size} to Library`}</button>}
+              <button onClick={() => setSelected(selected.size === (visibleTracks?.length ?? 0) ? new Set() : new Set((visibleTracks ?? []).map((_, index) => index)))} disabled={!visibleTracks?.length} style={{ background: "transparent", color: "#a78bfa", border: "1px solid #4c1d95", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: visibleTracks?.length ? "pointer" : "not-allowed", fontFamily: "inherit" }}>{selected.size === (visibleTracks?.length ?? 0) && (visibleTracks?.length ?? 0) > 0 ? "Clear selection" : "Select all recommendations"}</button>
+              {existingCount > 0 && <button onClick={() => { setShowExisting((current) => !current); setSelected(new Set()); }} style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{showExisting ? `Hide existing (${existingCount})` : `Show existing (${existingCount})`}</button>}
               {(visibleTracks?.filter((t) => t.videoUrl).length ?? 0) > 0 && <button onClick={() => { const playable = visibleTracks?.filter((t) => t.videoUrl) ?? []; onPlayTrack(playable, 0); }} style={{ background: "#1e3a5f", color: "#60a5fa", border: "1px solid #1e40af", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>▶ Play all</button>}
               <button onClick={savePlaylist} style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{selected.size > 0 ? `Download ${selected.size}` : "Download all"} as text playlist</button>
               <button onClick={createYoutubePlaylist} disabled={creatingYoutube} title="Create a private YouTube playlist" style={{ background: "transparent", color: creatingYoutube ? "#4b5563" : "#9ca3af", border: "1px solid #374151", borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: creatingYoutube ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{creatingYoutube ? "Connecting…" : "Create YouTube playlist"}</button>
@@ -218,21 +306,32 @@ export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: T
             </label>
             {visibleTracks?.length === 0 && <span style={{ color: "#f59e0b", fontSize: 11 }}>No tracks match these filters.</span>}
           </div>
-          <div style={{ maxHeight: 320, overflowY: "auto" }}>
+          <div className="similar-results-list" aria-label="Similar track recommendations">
             {visibleTracks?.map((track, index) => {
               const videoId = track.videoUrl ? getVideoId(track.videoUrl) : null;
               const key = track.cosineId || `${track.artist}\u0000${track.title}`;
-              return <div key={`${track.cosineId}-${index}`} style={{ borderTop: index > 0 ? "1px solid #1f2937" : "none" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 12 }}>
-                  <input type="checkbox" checked={selected.has(index)} onChange={() => toggleSelect(index)} aria-label={`Select ${track.artist} ${track.title}`} style={{ flexShrink: 0, accentColor: "#a78bfa", cursor: "pointer" }} />
-                  <span style={{ color: "#6b7280", width: 34, textAlign: "right", flexShrink: 0 }}>{track.score.toFixed(3)}</span>
-                  <span style={{ flex: "0 1 auto", minWidth: 0, maxWidth: "calc(100% - 96px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#d1d5db" }}>{track.artist} – {track.title}{track.mixVersion && <span style={{ color: "#6b7280", marginLeft: 6 }}>{track.mixVersion}</span>}</span>
-                {videoId && <button onClick={() => onPlayTrack(visibleTracks ?? [], index)} aria-label="Play preview" style={{ flexShrink: 0, background: "transparent", color: "#4b5563", border: "none", borderRadius: 4, padding: "2px 7px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>▶</button>}
+              const isInLibrary = existingTrack(track);
+              return <div key={`${track.cosineId}-${index}`} className={`similar-result-row${isInLibrary ? " is-in-library" : ""}`}>
+                <input type="checkbox" checked={selected.has(index)} onChange={() => toggleSelect(index)} disabled={isInLibrary} aria-label={`Select ${track.artist} ${track.title}`} />
+                <div className="similar-result-main">
+                  <strong title={`${track.artist} – ${track.title}`}>{track.artist} – {track.title}</strong>
+                  <div className="similar-result-meta">
+                    {track.mixVersion && <span>{track.mixVersion}</span>}
+                    <span>{sourceLabels[key]?.length ? `From ${sourceLabels[key].join(", ")}` : "Recommendation"}</span>
+                    {isInLibrary && <span className="similar-result-library">Already in library</span>}
+                  </div>
                 </div>
-                <div style={{ color: "#4b5563", fontSize: 10, padding: "0 0 5px 78px" }}>From {sourceLabels[key]?.join(", ")}</div>
+                <span className="similar-result-score" title={`Cosine score ${track.score.toFixed(3)}`}>
+                  {(track.score * 100).toFixed(0)}%
+                  <small>{track.score.toFixed(3)}</small>
+                </span>
+                <div className="similar-result-action">
+                  {videoId ? <button onClick={() => onPlayTrack(visibleTracks ?? [], index)} aria-label={`Play preview for ${track.artist} ${track.title}`}>▶ Listen</button> : <span>No preview</span>}
+                </div>
               </div>;
             })}
           </div>
+          {hasMoreSimilar && <button onClick={loadMore} disabled={loadingMore} style={{ width: "100%", marginTop: 8, background: "transparent", color: "#a78bfa", border: "1px solid #4c1d95", borderRadius: 4, padding: "5px 10px", fontSize: 11, cursor: loadingMore ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{loadingMore ? "Loading more…" : `Load more recommendations (${COSINE_PAGE_SIZE})`}</button>}
             </>
           )}
         </div>

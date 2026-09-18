@@ -9,6 +9,19 @@ Music library automation toolkit. Two separate tools:
 
 ## DJ Prep Tool
 
+### Docker Windows runtime
+
+The Windows Docker runtime uses the PostgreSQL `audiotool` database hosted on Kodi, while Sockseek and Beets run in local containers. Downloaded and archived music is mounted from `E:\MUSIC`.
+
+Copy `dj-prep-tool/.env.example` to `dj-prep-tool/.env`, set the database host and password, then run:
+
+```powershell
+cd dj-prep-tool
+docker compose -f docker-compose-win.yml up -d --build
+```
+
+The local service URLs are `http://sockseek:5030` and `http://beets:8337` from inside Compose. Do not add credentials to `sockseek-daemon.conf`; Compose passes them through `SOCKSEEK_USERNAME` and `SOCKSEEK_PASSWORD`.
+
 ### Prerequisites
 
 | Requirement | Install |

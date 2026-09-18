@@ -71,7 +71,27 @@ def serialize_track(track):
     return json.dumps(track, ensure_ascii=True)
 
 
-def fetch(artist, title, api_key):
+def build_similar_url(cosine_id, filters=None):
+    import urllib.parse
+
+    names = (
+        ("page", "page"),
+        ("limit", "limit"),
+        ("yearStart", "start"),
+        ("yearEnd", "end"),
+        ("minHave", "min_have"),
+        ("maxHave", "max_have"),
+        ("minWant", "min_want"),
+        ("maxWant", "max_want"),
+        ("minPrice", "min_price"),
+        ("maxPrice", "max_price"),
+    )
+    query = [(api_name, filters[client_name]) for client_name, api_name in names if filters and filters.get(client_name) is not None]
+    suffix = f"?{urllib.parse.urlencode(query)}" if query else ""
+    return f"https://cosine.club/api/v1/tracks/{cosine_id}/similar{suffix}"
+
+
+def fetch(artist, title, api_key, filters=None):
     import urllib.request
     import urllib.parse
 
@@ -98,7 +118,7 @@ def fetch(artist, title, api_key):
     cosine_id = best["id"]
 
     # 3. Get similar tracks
-    similar_data = get(f"https://cosine.club/api/v1/tracks/{cosine_id}/similar")
+    similar_data = get(build_similar_url(cosine_id, filters))
     similar = similar_data.get("data", {}).get("similar_tracks", [])
 
     for t in similar:
@@ -118,7 +138,7 @@ def fetch(artist, title, api_key):
 def main():
     if len(sys.argv) < 3:
         print(
-            json.dumps({"error": "Usage: cosine_fetch.py <artist> <title>"}),
+            json.dumps({"error": "Usage: cosine_fetch.py <artist> <title> [filters_json]"}),
             file=sys.stderr,
         )
         sys.exit(1)
@@ -132,8 +152,9 @@ def main():
         sys.exit(1)
 
     artist, title = sys.argv[1], sys.argv[2]
+    filters = json.loads(sys.argv[3]) if len(sys.argv) > 3 else None
     try:
-        for track in fetch(artist, title, api_key):
+        for track in fetch(artist, title, api_key, filters):
             print(serialize_track(track), flush=True)
     except Exception as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)

@@ -41,7 +41,7 @@ const WORKFLOW_BY_STATE: Record<TrackState, WorkflowMetadata> = {
     stage: "download",
     statusLabel: "Downloading",
     nextAction: { id: "monitor_download", label: "Monitor download" },
-    actionable: false,
+    actionable: true,
   },
   downloaded: {
     bucket: "needs_attention",

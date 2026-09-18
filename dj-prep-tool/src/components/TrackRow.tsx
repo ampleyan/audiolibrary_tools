@@ -4,6 +4,12 @@ import TrackStatusBadge from "./TrackStatusBadge";
 
 export type TrackMenuAction = "edit" | "retry" | "move_stage" | "reveal" | "delete";
 
+export interface TrackDownloadProgress {
+  bytesOnDisk: number | null;
+  bytesTotal: number | null;
+  speed: number | null;
+}
+
 interface TrackRowProps {
   track: Track;
   metadata: WorkflowMetadata;
@@ -14,6 +20,7 @@ interface TrackRowProps {
   onOpen: () => void;
   onPrimaryAction: () => void;
   onMenuAction: (action: TrackMenuAction) => void;
+  downloadProgress?: TrackDownloadProgress;
   showSelection?: boolean;
   showMenu?: boolean;
 }
@@ -26,6 +33,11 @@ function formatUpdatedAt(value: string) {
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) return value;
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(timestamp);
+}
+
+function formatBytes(value: number) {
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(0)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
 const MENU_ACTIONS: Array<{ id: TrackMenuAction; label: string }> = [
@@ -45,8 +57,10 @@ export function BlockerIndicator({ track }: { track: Track }) {
   return <span className={`workbench-blocker-icon ${duplicate || notFound ? "attention" : "error"}`} title={label} aria-label={label}><Icon aria-hidden="true" size={14} /></span>;
 }
 
-export default function TrackRow({ track, metadata, selected, checked = false, busy = false, onCheckedChange, onOpen, onPrimaryAction, onMenuAction, showSelection = true, showMenu = true }: TrackRowProps) {
+export default function TrackRow({ track, metadata, selected, checked = false, busy = false, onCheckedChange, onOpen, onPrimaryAction, onMenuAction, downloadProgress, showSelection = true, showMenu = true }: TrackRowProps) {
   const name = trackName(track);
+  const hasProgress = track.state === "downloading" && downloadProgress?.bytesOnDisk != null && downloadProgress.bytesTotal != null && downloadProgress.bytesTotal > 0;
+  const progressPercent = hasProgress ? Math.max(0, Math.min(100, Math.round((downloadProgress.bytesOnDisk! / downloadProgress.bytesTotal!) * 100))) : null;
 
   return (
     <div className={`workbench-track-row${selected ? " is-selected" : ""}${busy ? " is-busy" : ""}${!track.artist ? " no-artist" : ""}`} aria-selected={selected} data-track-id={track.id}>
@@ -54,6 +68,8 @@ export default function TrackRow({ track, metadata, selected, checked = false, b
       <button className="workbench-track-identity" type="button" onClick={onOpen} disabled={busy}>
         <strong>{track.artist || "Unknown artist"}</strong>
         <span>{track.title}</span>
+        {hasProgress && <span className="workbench-track-progress"><progress max="100" value={progressPercent ?? 0} aria-label={`Download progress for ${name}`} aria-valuetext={`${progressPercent}% downloaded`} /><span className="workbench-track-progress-summary"><strong>{progressPercent}%</strong><span>{formatBytes(downloadProgress.bytesOnDisk!)} / {formatBytes(downloadProgress.bytesTotal!)}{downloadProgress.speed ? ` · ${formatBytes(downloadProgress.speed)}/s` : ""}</span></span></span>}
+        {track.state === "downloading" && !hasProgress && <span className="workbench-track-progress pending">{downloadProgress?.bytesOnDisk != null ? `${formatBytes(downloadProgress.bytesOnDisk)} downloaded` : "Waiting for download data…"}</span>}
       </button>
       <span className="workbench-track-mix" title={track.mix_version ?? undefined}>{track.mix_version || "—"}</span>
       <TrackStatusBadge metadata={metadata} />

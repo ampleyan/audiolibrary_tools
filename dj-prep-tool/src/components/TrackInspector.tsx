@@ -8,6 +8,7 @@ import TrackStatusBadge from "./TrackStatusBadge";
 
 export type InspectorMatchingAction =
   | { id: "approve"; candidate: RankedCandidate }
+  | { id: "download_candidates"; candidates: RankedCandidate[] }
   | { id: "search_again" | "loose_search" | "mark_unavailable" }
   | { id: "edit_query"; artist: string; title: string; mixVersion: string | null };
 
@@ -102,6 +103,7 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState("");
   const [playlistMessage, setPlaylistMessage] = useState<string | null>(null);
+  const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set());
   const progressSample = useRef<{ bytes: number; at: number } | null>(null);
 
   useEffect(() => {
@@ -156,6 +158,7 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
     setTitle(track?.title ?? "");
     setMixVersion(track?.mix_version ?? "");
     setMoveBackState("requested");
+    setSelectedCandidates(new Set());
   }, [track?.id]);
 
   if (!track) {
@@ -266,10 +269,11 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
 
       {candidates.length > 0 && (
         <section>
-          <h4>Candidates <span>{candidates.length}</span></h4>
+          <h4>Candidates <span>{candidates.length}</span> <button type="button" onClick={() => setSelectedCandidates((current) => current.size === candidates.length ? new Set() : new Set(candidates.map(({ candidate }) => `${candidate.username}\n${candidate.filename}`)))} disabled={busy}>{selectedCandidates.size === candidates.length ? "Deselect all" : "Select all"}</button></h4>
           <div className="track-inspector-candidates">
             {candidates.map(({ candidate, score }, index) => (
               <div key={`${candidate.username}-${candidate.filename}-${index}`}>
+                <label><input type="checkbox" checked={selectedCandidates.has(`${candidate.username}\n${candidate.filename}`)} onChange={(event) => setSelectedCandidates((current) => { const next = new Set(current); const key = `${candidate.username}\n${candidate.filename}`; if (event.target.checked) next.add(key); else next.delete(key); return next; })} disabled={busy} /> Select for batch</label>
                 <strong>{fileName(candidate.filename)}</strong>
                 <dl>
                   <dt>User</dt><dd>{candidate.username}</dd>
@@ -284,6 +288,7 @@ export default function TrackInspector({ track, pathMapFrom, pathMapTo, loading 
               </div>
             ))}
           </div>
+          {selectedCandidates.size > 0 && <button type="button" onClick={() => onMatchingAction(track, { id: "download_candidates", candidates: candidates.filter(({ candidate }) => selectedCandidates.has(`${candidate.username}\n${candidate.filename}`)) })} disabled={busy}>Download selected ({selectedCandidates.size})</button>}
         </section>
       )}
 

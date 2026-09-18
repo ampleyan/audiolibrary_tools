@@ -1,11 +1,10 @@
 services:
   sockseek:
     image: heiso/sockseek:latest
-    command: ["daemon", "--server-ip", "0.0.0.0", "--server-port", "5030", "--config", "/config/sockseek.conf"]
+    command: ["daemon", "--server-ip", "0.0.0.0", "--server-port", "5030", "--no-config", "--user", "${SOCKSEEK_USERNAME:?SOCKSEEK_USERNAME is required}", "--pass", "${SOCKSEEK_PASSWORD:?SOCKSEEK_PASSWORD is required}", "--output-dir", "/data"]
     ports:
       - "5030:5030"
     volumes:
-      - ./sockseek-daemon.conf:/config/sockseek.conf:ro
       - ${MUSIC_INBOX_DIR:-./music-inbox}:/data
     restart: unless-stopped
 
@@ -32,7 +31,7 @@ services:
       DJ_PREP_LIBRARY_DIR: /music/library
       DJ_PREP_REKORDBOX_XML: ${DJ_PREP_REKORDBOX_XML:-}
       SOCKSEEK_URL: ${SOCKSEEK_URL:-http://sockseek:5030}
-      BEETS_URL: http://beets:8337
+      BEETS_URL: ${BEETS_URL:-http://beets:8337}
       YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
       YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
       YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-}

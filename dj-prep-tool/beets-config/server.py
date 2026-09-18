@@ -6,6 +6,18 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 CONFIG = "/config/config.yaml"
 
 
+def build_import_args(path, nowrite, artist, title):
+    args = ["import", "--singletons", "--quiet-fallback=asis"]
+    if artist:
+        args.extend(["--set", f"artist={artist}"])
+    if title:
+        args.extend(["--set", f"title={title}"])
+    if nowrite:
+        args.append("--nowrite")
+    args.append(path)
+    return args
+
+
 def beet(*args):
     result = subprocess.run(
         ["beet", "--config", CONFIG, *args],
@@ -38,8 +50,15 @@ class Handler(BaseHTTPRequestHandler):
         if not path or not os.path.exists(path):
             self.send_json(400, {"error": f"path not found: {path}"})
             return
-        ok, output = beet("import", "--nowrite" if body.get("nowrite") else "", path)
-        self.send_json(200 if ok else 500, {"ok": ok, "output": output.strip()})
+        artist = body.get("artist", "").strip()
+        title = body.get("title", "").strip()
+        ok, output = beet(*build_import_args(path, body.get("nowrite"), artist, title))
+        paths = []
+        if ok and artist and title:
+            listed, listing = beet("ls", "-p", f"artist:{artist}", f"title:{title}")
+            if listed:
+                paths = [line.strip() for line in listing.splitlines() if line.strip()]
+        self.send_json(200 if ok else 500, {"ok": ok, "output": output.strip(), "paths": paths})
 
 
 if __name__ == "__main__":

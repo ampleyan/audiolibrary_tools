@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { TrackRow as Track } from "../lib/types";
+import ActivityDrawer from "./ActivityDrawer";
 import { getWorkflowMeta } from "../lib/workflow";
 import TrackInspector from "./TrackInspector";
 import TrackRow, { BlockerIndicator } from "./TrackRow";
@@ -80,6 +81,68 @@ describe("TrackRow", () => {
     const html = renderToStaticMarkup(<BlockerIndicator track={{ ...track, error: "Duplicate import" }} />);
     expect(html).toContain("Duplicate track");
     expect(html).toContain("aria-label");
+  });
+
+  it("renders download progress in the queue row", () => {
+    const html = renderToStaticMarkup(
+      <TrackRow
+        track={{ ...track, state: "downloading", error: null }}
+        metadata={getWorkflowMeta({ ...track, state: "downloading", error: null })}
+        selected={false}
+        downloadProgress={{ bytesOnDisk: 5_000_000, bytesTotal: 10_000_000, speed: 2_000_000 }}
+        onOpen={() => {}}
+        onPrimaryAction={() => {}}
+        onMenuAction={() => {}}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Download progress for Night Drive – Signal"');
+    expect(html).toContain('aria-valuetext="50% downloaded"');
+    expect(html).toContain('value="50"');
+    expect(html).toContain("50%");
+    expect(html).toContain("4.8 MB / 9.5 MB");
+  });
+
+  it("clamps visible progress to the valid percentage range", () => {
+    const html = renderToStaticMarkup(
+      <TrackRow
+        track={{ ...track, state: "downloading", error: null }}
+        metadata={getWorkflowMeta({ ...track, state: "downloading", error: null })}
+        selected={false}
+        downloadProgress={{ bytesOnDisk: 12_000_000, bytesTotal: 10_000_000, speed: null }}
+        onOpen={() => {}}
+        onPrimaryAction={() => {}}
+        onMenuAction={() => {}}
+      />,
+    );
+
+    expect(html).toContain('value="100"');
+    expect(html).toContain("100%");
+  });
+
+  it("shows a waiting state when the downloader has not reported byte counts", () => {
+    const html = renderToStaticMarkup(
+      <TrackRow
+        track={{ ...track, state: "downloading", error: null }}
+        metadata={getWorkflowMeta({ ...track, state: "downloading", error: null })}
+        selected={false}
+        onOpen={() => {}}
+        onPrimaryAction={() => {}}
+        onMenuAction={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Waiting for download data");
+  });
+});
+
+describe("ActivityDrawer", () => {
+  it("keeps the log interactive without blocking the workbench", () => {
+    const html = renderToStaticMarkup(<ActivityDrawer entries={[]} open onClose={() => {}} />);
+
+    expect(html).toContain('role="dialog"');
+    expect(html).not.toContain('aria-modal="true"');
+    expect(html).toContain("activity-drawer-layer");
   });
 });
 
@@ -205,7 +268,7 @@ describe("Prepare queue derivation", () => {
       withState(1, "downloading"),
     ];
 
-    expect(prioritizeActionableTracks(tracks).map((item) => item.id)).toEqual([3, 4, 5]);
+    expect(prioritizeActionableTracks(tracks).map((item) => item.id)).toEqual([3, 4, 1, 5]);
   });
 
   it("filters by track details and sorts the result by the requested column", () => {
