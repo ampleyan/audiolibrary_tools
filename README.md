@@ -9,18 +9,33 @@ Music library automation toolkit. Two separate tools:
 
 ## DJ Prep Tool
 
-### Docker Windows runtime
+### Docker web app — Raspberry Pi or Windows
 
-The Windows Docker runtime uses the PostgreSQL `audiotool` database hosted on Kodi, while Sockseek and Beets run in local containers. Downloaded and archived music is mounted from `E:\MUSIC`.
+**[Full launch, setup, stop, update, and troubleshooting guide](dj-prep-tool/README-RPI5.md)**
 
-Copy `dj-prep-tool/.env.example` to `dj-prep-tool/.env`, set the database host and password, then run:
+On the current Raspberry Pi (`192.168.129.39`):
+
+```bash
+cd /home/ampleyan/projects/audiolibrary_tools/dj-prep-tool
+docker compose -f docker-compose.rpi5.yml up -d --wait
+```
+
+Open **http://192.168.129.39:8080**. PostgreSQL and the separately managed
+Sockseek daemon must already be running. This starts the web app and Beets.
+
+On Windows, complete the [Windows settings steps](dj-prep-tool/README-RPI5.md#windows--docker-desktop)
+first, then run from the repository root in PowerShell:
 
 ```powershell
 cd dj-prep-tool
 docker compose -f docker-compose-win.yml up -d --build
 ```
 
-The local service URLs are `http://sockseek:5030` and `http://beets:8337` from inside Compose. Do not add credentials to `sockseek-daemon.conf`; Compose passes them through `SOCKSEEK_USERNAME` and `SOCKSEEK_PASSWORD`.
+Open **http://localhost:8080**. Windows runs the app, Sockseek, and Beets
+locally and connects to PostgreSQL on the Pi.
+
+The prerequisites below are for the **native Tauri desktop app**. The Docker
+web app does not require a host Rust, Node.js, or Python installation.
 
 ### Prerequisites
 

@@ -1,14 +1,25 @@
 services:
+  beets:
+    extends:
+      file: docker-compose.beets.yml
+      service: beets
+
   dj-prep:
+    extends:
+      file: docker-compose.yml
+      service: dj-prep
+    depends_on:
+      - beets
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3)"]
+      test: ["CMD", "python", "-c", "import json, urllib.request; response = json.load(urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3)); raise SystemExit(0 if response.get('ok') else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 15s
     environment:
       DATABASE_MODE: local
-      BEETS_URL: ${BEETS_URL:-http://host.docker.internal:8337}
+      SOCKSEEK_URL: http://sockseek:5030
+      BEETS_URL: http://beets:8337
     volumes:
       - ./data:/data
       - ./music-library:/music/library
@@ -16,4 +27,3 @@ services:
       - /mnt/media/MUSIC/RECENT:/music/archive
       - ./rekordbox:/rekordbox:ro
       - /home/ampleyan/projects/rpi-postgresql/infrastructure/postgres/run:/var/run/postgresql
-
