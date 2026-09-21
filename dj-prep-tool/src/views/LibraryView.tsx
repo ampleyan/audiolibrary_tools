@@ -5,6 +5,7 @@ import type { TrackMenuAction } from "../components/TrackRow";
 import { api, WORKBENCH_DATA_CHANGED_EVENT } from "../lib/api";
 import type { Playlist, TrackRow as Track, TrackState } from "../lib/types";
 import { getWorkflowMeta } from "../lib/workflow";
+import { downloadSockseekCsv } from "../lib/sockseekCsv";
 
 type SortKey = "priority" | "artist" | "title" | "status" | "updated" | "created";
 
@@ -148,6 +149,9 @@ export default function LibraryView({ onNavigate }: { onNavigate?: (tab: string)
       <button type="button" onClick={toggleVisibleSelection} disabled={!filteredTracks.length}>{allVisibleSelected ? "Deselect all shown" : "Select all shown"}</button>
       {(query || stateFilter !== "all") && <button className="workbench-clear-filters" type="button" onClick={() => { setQuery(""); setStateFilter("all"); }}>Clear</button>}
       <span className="workbench-table-result-count">{filteredTracks.length} of {tracks.length} shown</span>
+      <button className="button secondary" type="button" disabled={loading || !filteredTracks.length} onClick={() => {
+        try { downloadSockseekCsv(filteredTracks, "library"); } catch (reason) { setError(String(reason)); }
+      }}>Export Sockseek CSV ({filteredTracks.length})</button>
     </div>
     {selectedIds.size > 0 && <div className="library-selection-bar"><strong>{selectedIds.size} selected</strong><select value={playlistId} onChange={(event) => setPlaylistId(event.target.value)} aria-label="Choose playlist"><option value="">Choose playlist…</option>{playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}</select><button className="button primary" type="button" disabled={!playlistId} onClick={addSelectedToPlaylist}>Add to playlist</button><button className="button secondary" type="button" onClick={createPlaylist}>New playlist</button><button className="button secondary" type="button" onClick={() => setSelectedIds(new Set())}>Clear</button></div>}
     <div className="work-queue-layout library-workbench-layout"><section className="work-queue-list" aria-label="Library track table"><div className="work-queue-columns" aria-hidden="true"><span /><span>Track</span><span>Mix</span><span>Status</span><span>Blocker</span><span>Updated</span><span>Next action</span><span /></div>{loading ? <p className="work-queue-empty">Loading library…</p> : filteredTracks.length ? filteredTracks.map((track) => <TrackRow key={track.id} track={track} metadata={getWorkflowMeta(track)} selected={selectedTrackId === track.id} checked={selectedIds.has(track.id)} showSelection showMenu={false} onCheckedChange={(checked) => setSelectedIds((current) => { const next = new Set(current); checked ? next.add(track.id) : next.delete(track.id); return next; })} onOpen={() => setSelectedTrackId(track.id)} onPrimaryAction={() => openTrack(track)} onMenuAction={(action) => handleMenuAction(track, action)} />) : <p className="work-queue-empty">{tracks.length ? "No tracks match this filter." : "No tracks in your library yet. Add tracks to get started."}</p>}</section><TrackInspector track={selectedTrack} busy={false} onClose={() => setSelectedTrackId(null)} onPrimaryAction={openTrack} onMenuAction={handleMenuAction} onMatchingAction={handleMatchingAction} onPipelineAction={handlePipelineAction} /></div>

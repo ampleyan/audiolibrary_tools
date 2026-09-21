@@ -93,6 +93,17 @@ Import → Review → Downloads → Pipeline
 3. **Downloads** — click **Start download**, then **Poll for completion** (waits up to 10 min). Convert lossless files when needed, run **Quality check**, and run **Beets tagging**.
 4. **Pipeline** — kanban board showing every track across all preparation stages. The Rekordbox handoff checks the configured XML first and does not copy a track already present there.
 
+### Export a tracklist to Sockseek
+
+In **Library**, filter and sort the tracks, then click **Export Sockseek CSV**
+to download all shown tracks. Clear the filters to export the whole library.
+In **Playlists**, open a playlist and use **Export Sockseek CSV** to download
+that playlist. Exports follow the displayed order and do not change track states.
+
+The UTF-8 CSV uses Sockseek's `artist,title` headers and includes mix versions
+in the title, for example `Song (Extended Mix)`. Choose the downloaded CSV as
+Sockseek's input file; no custom column mapping is needed.
+
 ### Telegram imports
 
 Open **Add tracks → Telegram**, authorize once with Telegram API credentials, preview the newest posts, and import the displayed YouTube links. Existing tracks are skipped using a case-insensitive trimmed Artist + Title match, including duplicates within the same import. **Stop import** finishes the current metadata request and prevents the next link from starting.
