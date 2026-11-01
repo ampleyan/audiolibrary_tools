@@ -297,7 +297,7 @@ export function SimilarPanel({ tracks, onOpenLibrary, onPlayTrack }: { tracks: T
             <label style={{ color: "#6b7280", fontSize: 11 }}>
               Show
               <select value={maxResults} onChange={(event) => setMaxResults(Number(event.target.value))} style={{ ...editInput, width: 72, marginLeft: 6 }} aria-label="Maximum similar tracks">
-                {[10, 25, 50, 100].map((count) => <option key={count} value={count}>{count}</option>)}
+                {[10, 25, 50, 100,1000].map((count) => <option key={count} value={count}>{count}</option>)}
               </select>
             </label>
             <label style={{ color: "#6b7280", fontSize: 11 }}>
