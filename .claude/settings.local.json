@@ -38,7 +38,8 @@
       "mcp__chrome-devtools-mcp__navigate_page",
       "mcp__chrome-devtools-mcp__take_screenshot",
       "mcp__chrome-devtools-mcp__take_snapshot",
-      "mcp__chrome-devtools-mcp__click"
+      "mcp__chrome-devtools-mcp__click",
+      "Bash(git *)"
     ]
   },
   "enableAllProjectMcpServers": true,
