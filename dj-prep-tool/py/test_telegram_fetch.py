@@ -1,1 +1,0 @@
-class TelegramFetchTests(unittest.TestCase):
