@@ -1,6 +1,9 @@
 directory: /music/archive
 library: /data/beets.db
 
+paths:
+  default: $albumartist - $title
+
 import:
   write: yes
   copy: no
